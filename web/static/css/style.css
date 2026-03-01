@@ -168,3 +168,174 @@ a:hover { text-decoration: underline; }
 
 /* ===== Profile ===== */
 .profile-card { max-width: 540px; }
+
+/* ===== Room blocks ===== */
+.room-hidden { display: none !important; }
+
+.room-block {
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    margin-bottom: 20px;
+    overflow: hidden;
+    border: 2px solid #e8ecff;
+}
+
+.room-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    background: #4361ee;
+    color: #fff;
+}
+.room-title { display: flex; align-items: center; gap: 14px; }
+.room-label { font-weight: 700; font-size: 16px; white-space: nowrap; }
+.room-header input[type=text] {
+    background: rgba(255,255,255,.2);
+    border: 1px solid rgba(255,255,255,.4);
+    border-radius: 6px;
+    color: #fff;
+    padding: 6px 12px;
+    font-size: 14px;
+    width: 220px;
+}
+.room-header input::placeholder { color: rgba(255,255,255,.7); }
+
+/* Замеры */
+.measures-block { padding: 0 20px; border-bottom: 1px solid #f0f2f8; }
+.measures-block summary {
+    padding: 10px 0;
+    cursor: pointer;
+    font-size: 13px;
+    color: #666;
+    user-select: none;
+}
+.measures-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 10px;
+    padding: 10px 0 14px;
+}
+.measures-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 12px;
+    color: #888;
+    font-weight: 600;
+}
+.measures-grid input {
+    padding: 6px 8px;
+    border: 1px solid #dde2f0;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+/* Секции дефектов */
+.defects-section {
+    border-top: 1px solid #f0f2f8;
+    padding: 14px 20px;
+}
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+}
+.section-header h4 {
+    font-size: 14px;
+    font-weight: 700;
+    color: #1a1a2e;
+    min-width: 80px;
+}
+
+/* Radio-кнопки типа */
+.type-radio {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    font-size: 13px;
+    color: #555;
+}
+.type-radio span { font-weight: 600; }
+.type-radio label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
+.type-radio input[type=radio] { accent-color: #4361ee; }
+
+/* Сетка дефектов */
+.defects-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.defect-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 8px;
+    border-bottom: 1px solid #f4f6fb;
+}
+.defect-row:hover { background: #fafbff; }
+.defect-name { flex: 1; font-size: 13px; color: #333; line-height: 1.3; }
+.threshold { font-size: 11px; color: #999; }
+.defect-input {
+    width: 88px;
+    padding: 5px 7px;
+    border: 1px solid #dde2f0;
+    border-radius: 4px;
+    font-size: 12px;
+    text-align: center;
+    flex-shrink: 0;
+}
+.defect-input:focus { outline: none; border-color: #4361ee; box-shadow: 0 0 0 2px rgba(67,97,238,.15); }
+
+/* Стены */
+.wall-headers {
+    display: grid;
+    grid-template-columns: 1fr 72px 72px 72px 72px;
+    gap: 4px;
+    padding: 6px 8px;
+    background: #f8f9fe;
+    font-size: 11px;
+    font-weight: 700;
+    color: #888;
+    text-transform: uppercase;
+    border-radius: 4px;
+    margin-bottom: 4px;
+}
+.wall-row {
+    display: grid;
+    grid-template-columns: 1fr 72px 72px 72px 72px;
+    gap: 4px;
+    padding: 6px 8px;
+    border-bottom: 1px solid #f4f6fb;
+    align-items: center;
+}
+.wall-row:hover { background: #fafbff; }
+.wall-row .defect-input { width: 100%; }
+
+/* Прочее */
+.notes-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #555;
+}
+.notes-row input {
+    flex: 1;
+    padding: 7px 10px;
+    border: 1px solid #dde2f0;
+    border-radius: 4px;
+    font-size: 13px;
+}
+
+/* Кнопка добавить помещение */
+#add-room-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 0;
+}
+
+/* Optional label */
+.optional-label { font-size: 13px; color: #999; font-weight: 400; }

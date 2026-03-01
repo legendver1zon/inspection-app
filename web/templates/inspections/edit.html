@@ -7,161 +7,224 @@
     <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
-    {{ template "navbar" . }}
+{{ template "navbar" . }}
 
-    <main class="container">
-        <div class="page-header">
-            <h1>{{ .title }}</h1>
-            <a href="/inspections/{{ .inspection.ID }}" class="btn btn-secondary">← К осмотру</a>
+<main class="container">
+    <div class="page-header">
+        <h1>{{ .title }}</h1>
+        <a href="/inspections/{{ .inspection.ID }}" class="btn btn-secondary">← К осмотру</a>
+    </div>
+
+    <!-- Загрузка плана -->
+    <div class="form-card">
+        <h2>План помещений <span class="optional-label">(необязательно)</span></h2>
+        {{ if .inspection.PlanImage }}
+        <div style="margin-bottom:12px">
+            <img src="{{ .inspection.PlanImage }}" style="max-width:360px;border-radius:6px;border:1px solid #eee">
         </div>
-
-        <!-- Загрузка плана (необязательно) -->
-        <div class="form-card">
-            <h2>План помещений <span style="font-weight:400;font-size:13px;color:#999">(необязательно)</span></h2>
-            {{ if .inspection.PlanImage }}
-            <div style="margin-bottom:16px">
-                <img src="{{ .inspection.PlanImage }}" style="max-width:400px;border-radius:6px;border:1px solid #eee">
+        {{ end }}
+        <form method="POST" action="/inspections/{{ .inspection.ID }}/upload-plan" enctype="multipart/form-data">
+            <div style="display:flex;align-items:center;gap:12px">
+                <input type="file" name="plan_image" accept="image/*">
+                <button type="submit" class="btn">Загрузить фото</button>
             </div>
-            {{ end }}
-            <form method="POST" action="/inspections/{{ .inspection.ID }}/upload-plan" enctype="multipart/form-data">
-                <div style="display:flex;align-items:center;gap:12px">
-                    <input type="file" name="plan_image" accept="image/*">
-                    <button type="submit" class="btn">Загрузить фото плана</button>
+        </form>
+    </div>
+
+    <!-- Основная форма дефектов -->
+    <form method="POST" action="/inspections/{{ .inspection.ID }}/edit" enctype="multipart/form-data" id="main-form">
+        <input type="hidden" name="active_rooms" id="active_rooms" value="{{ .activeRooms }}">
+
+        <!-- Помещения -->
+        {{ range .roomNums }}
+        {{ $i := . }}
+        {{ $visible := le $i $.activeRooms }}
+        <div class="room-block {{ if not $visible }}room-hidden{{ end }}" id="room-{{ $i }}" data-room="{{ $i }}">
+
+            <!-- Заголовок помещения -->
+            <div class="room-header">
+                <div class="room-title">
+                    <span class="room-label">Помещение {{ $i }}</span>
+                    <input type="text"
+                           name="room_name_{{ $i }}"
+                           value="{{ roomField $.roomMap $i "name" }}"
+                           placeholder="Кухня, Зал, Спальня...">
                 </div>
-            </form>
-        </div>
+                {{ if gt $i 1 }}
+                <button type="button" class="btn btn-sm btn-danger" onclick="removeRoom({{ $i }})">× Убрать</button>
+                {{ end }}
+            </div>
 
-        <!-- Замеры помещений (необязательно) -->
-        <div class="form-card">
-            <h2>Замеры помещений <span style="font-weight:400;font-size:13px;color:#999">(необязательно)</span></h2>
-            <form id="rooms-form">
-                <div style="overflow-x:auto">
-                    <table class="table" style="min-width:800px">
-                        <thead>
-                            <tr>
-                                <th>№</th>
-                                <th>Помещение</th>
-                                <th colspan="3">Размеры (м)</th>
-                                <th colspan="2">Окно 1 откос</th>
-                                <th colspan="2">Окно 2</th>
-                                <th colspan="2">Дверь/проём</th>
-                            </tr>
-                            <tr style="font-size:11px;color:#999">
-                                <th></th><th></th>
-                                <th>Длина</th><th>Ширина</th><th>Высота</th>
-                                <th>Выс.</th><th>Шир.</th>
-                                <th>Выс.</th><th>Шир.</th>
-                                <th>Выс.</th><th>Шир.</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {{ range .rooms }}
-                            <tr>
-                                <td style="color:#999;text-align:center">{{ .RoomNumber }}</td>
-                                <td><input type="text" name="room_name_{{ .RoomNumber }}" value="{{ .RoomName }}" style="width:120px;padding:4px 6px;border:1px solid #dde2f0;border-radius:4px"></td>
-                                <td><input type="number" step="0.01" name="room_length_{{ .RoomNumber }}" value="{{ if .Length }}{{ .Length }}{{ end }}" style="width:70px;padding:4px 6px;border:1px solid #dde2f0;border-radius:4px"></td>
-                                <td><input type="number" step="0.01" name="room_width_{{ .RoomNumber }}" value="{{ if .Width }}{{ .Width }}{{ end }}" style="width:70px;padding:4px 6px;border:1px solid #dde2f0;border-radius:4px"></td>
-                                <td><input type="number" step="0.01" name="room_height_{{ .RoomNumber }}" value="{{ if .Height }}{{ .Height }}{{ end }}" style="width:70px;padding:4px 6px;border:1px solid #dde2f0;border-radius:4px"></td>
-                                <td><input type="number" step="0.01" name="window1_height_{{ .RoomNumber }}" value="{{ if .Window1Height }}{{ .Window1Height }}{{ end }}" style="width:65px;padding:4px 6px;border:1px solid #dde2f0;border-radius:4px"></td>
-                                <td><input type="number" step="0.01" name="window1_width_{{ .RoomNumber }}" value="{{ if .Window1Width }}{{ .Window1Width }}{{ end }}" style="width:65px;padding:4px 6px;border:1px solid #dde2f0;border-radius:4px"></td>
-                                <td><input type="number" step="0.01" name="window2_height_{{ .RoomNumber }}" value="{{ if .Window2Height }}{{ .Window2Height }}{{ end }}" style="width:65px;padding:4px 6px;border:1px solid #dde2f0;border-radius:4px"></td>
-                                <td><input type="number" step="0.01" name="window2_width_{{ .RoomNumber }}" value="{{ if .Window2Width }}{{ .Window2Width }}{{ end }}" style="width:65px;padding:4px 6px;border:1px solid #dde2f0;border-radius:4px"></td>
-                                <td><input type="number" step="0.01" name="door_height_{{ .RoomNumber }}" value="{{ if .DoorHeight }}{{ .DoorHeight }}{{ end }}" style="width:65px;padding:4px 6px;border:1px solid #dde2f0;border-radius:4px"></td>
-                                <td><input type="number" step="0.01" name="door_width_{{ .RoomNumber }}" value="{{ if .DoorWidth }}{{ .DoorWidth }}{{ end }}" style="width:65px;padding:4px 6px;border:1px solid #dde2f0;border-radius:4px"></td>
-                            </tr>
-                            {{ end }}
-                        </tbody>
-                    </table>
+            <!-- Замеры (сворачиваемые) -->
+            <details class="measures-block">
+                <summary>Замеры помещения (необязательно)</summary>
+                <div class="measures-grid">
+                    <label>Длина (м)<input type="number" step="0.01" name="room_length_{{ $i }}" value="{{ roomField $.roomMap $i "length" }}"></label>
+                    <label>Ширина (м)<input type="number" step="0.01" name="room_width_{{ $i }}" value="{{ roomField $.roomMap $i "width" }}"></label>
+                    <label>Высота (м)<input type="number" step="0.01" name="room_height_{{ $i }}" value="{{ roomField $.roomMap $i "height" }}"></label>
+                    <label>Окно 1 выс.<input type="number" step="0.01" name="room_w1h_{{ $i }}" value="{{ roomField $.roomMap $i "w1h" }}"></label>
+                    <label>Окно 1 шир.<input type="number" step="0.01" name="room_w1w_{{ $i }}" value="{{ roomField $.roomMap $i "w1w" }}"></label>
+                    <label>Окно 2 выс.<input type="number" step="0.01" name="room_w2h_{{ $i }}" value="{{ roomField $.roomMap $i "w2h" }}"></label>
+                    <label>Окно 2 шир.<input type="number" step="0.01" name="room_w2w_{{ $i }}" value="{{ roomField $.roomMap $i "w2w" }}"></label>
+                    <label>Дверь выс.<input type="number" step="0.01" name="room_dh_{{ $i }}" value="{{ roomField $.roomMap $i "dh" }}"></label>
+                    <label>Дверь шир.<input type="number" step="0.01" name="room_dw_{{ $i }}" value="{{ roomField $.roomMap $i "dw" }}"></label>
                 </div>
-            </form>
-        </div>
-
-        <!-- Форма дефектов -->
-        <form method="POST" action="/inspections/{{ .inspection.ID }}/edit" enctype="multipart/form-data" id="defects-form">
-
-            <!-- Скрытые поля замеров — переносятся из rooms-form при submit -->
+            </details>
 
             <!-- ОКНА -->
-            <div class="form-card defects-section">
-                <h2>Окна</h2>
-                <div style="margin-bottom:12px">
-                    <label style="font-weight:600;font-size:13px">Помещение №</label>
-                    <input type="text" name="window_room_number" style="padding:6px 10px;border:1px solid #dde2f0;border-radius:4px;width:120px">
-                    <span style="margin-left:16px;font-weight:600;font-size:13px">Тип:</span>
-                    <label style="margin-left:8px"><input type="checkbox" name="window_pvc"> ПВХ</label>
-                    <label style="margin-left:8px"><input type="checkbox" name="window_al"> Al</label>
-                    <label style="margin-left:8px"><input type="checkbox" name="window_wood"> Дерево</label>
+            <div class="defects-section">
+                <div class="section-header">
+                    <h4>Окна</h4>
+                    <div class="type-radio">
+                        <span>Тип:</span>
+                        <label><input type="radio" name="room_window_type_{{ $i }}" value="pvc"  {{ if eq (roomField $.roomMap $i "window_type") "pvc"  }}checked{{ end }}> ПВХ</label>
+                        <label><input type="radio" name="room_window_type_{{ $i }}" value="al"   {{ if eq (roomField $.roomMap $i "window_type") "al"   }}checked{{ end }}> Al</label>
+                        <label><input type="radio" name="room_window_type_{{ $i }}" value="wood" {{ if eq (roomField $.roomMap $i "window_type") "wood" }}checked{{ end }}> Дерево</label>
+                    </div>
                 </div>
-
                 <div class="defects-grid">
-                    {{ range .templates }}
-                    {{ if eq .Section "window" }}
+                    {{ range $.templates_window }}
+                    {{ $tid := .ID }}
                     <div class="defect-row">
-                        <span class="defect-name">
-                            {{ .Name }}
-                            {{ if .Threshold }}<span class="defect-threshold">({{ .Threshold }}{{ if .Unit }} {{ .Unit }}{{ end }})</span>{{ end }}
-                        </span>
-                        <input type="text" name="defect_{{ .ID }}" class="defect-input"
+                        <span class="defect-name">{{ .Name }}{{ if .Threshold }} <span class="threshold">({{ .Threshold }}{{ .Unit }})</span>{{ end }}</span>
+                        <input type="text" name="defect_{{ $tid }}_{{ $i }}" class="defect-input"
+                               value="{{ defectVal $.roomMap $i $tid 0 }}"
                                placeholder="{{ if .Threshold }}{{ .Threshold }}{{ .Unit }}+{{ end }}">
                     </div>
                     {{ end }}
-                    {{ end }}
                 </div>
-                <div style="margin-top:12px">
-                    <label style="font-weight:600;font-size:13px">Прочее:</label>
-                    <input type="text" name="notes_window" style="width:100%;padding:7px 10px;border:1px solid #dde2f0;border-radius:4px;margin-top:4px" placeholder="Дополнительные замечания...">
+                <div class="notes-row">
+                    <label>Прочее:</label>
+                    <input type="text" name="notes_window_{{ $i }}" value="{{ notesVal $.roomMap $i "window" }}" placeholder="Дополнительные замечания...">
                 </div>
             </div>
 
             <!-- ПОТОЛОК -->
-            <div class="form-card defects-section">
-                <h2>Потолок</h2>
+            <div class="defects-section">
+                <div class="section-header"><h4>Потолок</h4></div>
                 <div class="defects-grid">
-                    {{ range .templates }}
-                    {{ if eq .Section "ceiling" }}
+                    {{ range $.templates_ceiling }}
+                    {{ $tid := .ID }}
                     <div class="defect-row">
                         <span class="defect-name">{{ .Name }}</span>
-                        <input type="text" name="defect_{{ .ID }}" class="defect-input" placeholder="значение">
+                        <input type="text" name="defect_{{ $tid }}_{{ $i }}" class="defect-input"
+                               value="{{ defectVal $.roomMap $i $tid 0 }}" placeholder="значение">
                     </div>
                     {{ end }}
-                    {{ end }}
                 </div>
-                <div style="margin-top:12px">
-                    <label style="font-weight:600;font-size:13px">Прочее:</label>
-                    <input type="text" name="notes_ceiling" style="width:100%;padding:7px 10px;border:1px solid #dde2f0;border-radius:4px;margin-top:4px" placeholder="Дополнительные замечания...">
+                <div class="notes-row">
+                    <label>Прочее:</label>
+                    <input type="text" name="notes_ceiling_{{ $i }}" value="{{ notesVal $.roomMap $i "ceiling" }}" placeholder="Дополнительные замечания...">
                 </div>
             </div>
 
             <!-- СТЕНЫ -->
-            <div class="form-card defects-section">
-                <h2>Стены — Окраска</h2>
+            <div class="defects-section">
+                <div class="section-header">
+                    <h4>Стены</h4>
+                    <div class="type-radio">
+                        <span>Тип:</span>
+                        <label><input type="radio" name="room_wall_type_{{ $i }}" value="paint" {{ if eq (roomField $.roomMap $i "wall_type") "paint" }}checked{{ end }}> Окраска</label>
+                        <label><input type="radio" name="room_wall_type_{{ $i }}" value="tile"  {{ if eq (roomField $.roomMap $i "wall_type") "tile"  }}checked{{ end }}> Плитка</label>
+                        <label><input type="radio" name="room_wall_type_{{ $i }}" value="gkl"   {{ if eq (roomField $.roomMap $i "wall_type") "gkl"   }}checked{{ end }}> ГКЛ</label>
+                    </div>
+                </div>
                 <div class="wall-headers">
                     <span>Дефект</span>
-                    <span style="text-align:center">Ст 1</span>
-                    <span style="text-align:center">Ст 2</span>
-                    <span style="text-align:center">Ст 3</span>
-                    <span style="text-align:center">Ст 4</span>
+                    <span>Ст 1</span><span>Ст 2</span><span>Ст 3</span><span>Ст 4</span>
                 </div>
-                {{ range .templates }}
-                {{ if eq .Section "wall_paint" }}
+                {{ range $.templates_wall }}
+                {{ $tmpl := . }}
                 <div class="wall-row">
-                    <span class="defect-name">
-                        {{ .Name }}
-                        {{ if .Threshold }}<span class="defect-threshold">({{ .Threshold }}{{ if .Unit }} {{ .Unit }}{{ end }})</span>{{ end }}
-                    </span>
-                    <input type="text" name="defect_{{ .ID }}_wall1" class="defect-input" placeholder="ст1">
-                    <input type="text" name="defect_{{ .ID }}_wall2" class="defect-input" placeholder="ст2">
-                    <input type="text" name="defect_{{ .ID }}_wall3" class="defect-input" placeholder="ст3">
-                    <input type="text" name="defect_{{ .ID }}_wall4" class="defect-input" placeholder="ст4">
+                    <span class="defect-name">{{ $tmpl.Name }}{{ if $tmpl.Threshold }} <span class="threshold">({{ $tmpl.Threshold }}{{ $tmpl.Unit }})</span>{{ end }}</span>
+                    {{ range $.wallNums }}
+                    <input type="text"
+                           name="defect_{{ $tmpl.ID }}_{{ $i }}_wall{{ . }}"
+                           class="defect-input"
+                           value="{{ defectVal $.roomMap $i $tmpl.ID . }}"
+                           placeholder="ст{{ . }}">
+                    {{ end }}
                 </div>
                 {{ end }}
-                {{ end }}
-                <div style="margin-top:12px">
-                    <label style="font-weight:600;font-size:13px">Прочее:</label>
-                    <input type="text" name="notes_wall_paint" style="width:100%;padding:7px 10px;border:1px solid #dde2f0;border-radius:4px;margin-top:4px" placeholder="Дополнительные замечания...">
+                <div class="notes-row">
+                    <label>Прочее:</label>
+                    <input type="text" name="notes_wall_{{ $i }}" value="{{ notesVal $.roomMap $i "wall" }}" placeholder="Дополнительные замечания...">
                 </div>
             </div>
 
+            <!-- ПОЛ -->
+            <div class="defects-section">
+                <div class="section-header"><h4>Пол</h4></div>
+                <div class="defects-grid">
+                    {{ range $.templates_floor }}
+                    {{ $tid := .ID }}
+                    <div class="defect-row">
+                        <span class="defect-name">{{ .Name }}{{ if .Threshold }} <span class="threshold">({{ .Threshold }}{{ .Unit }})</span>{{ end }}</span>
+                        <input type="text" name="defect_{{ $tid }}_{{ $i }}" class="defect-input"
+                               value="{{ defectVal $.roomMap $i $tid 0 }}"
+                               placeholder="{{ if .Threshold }}{{ .Threshold }}{{ .Unit }}+{{ end }}">
+                    </div>
+                    {{ end }}
+                </div>
+                <div class="notes-row">
+                    <label>Прочее:</label>
+                    <input type="text" name="notes_floor_{{ $i }}" value="{{ notesVal $.roomMap $i "floor" }}" placeholder="Дополнительные замечания...">
+                </div>
+            </div>
+
+            <!-- ДВЕРИ -->
+            <div class="defects-section">
+                <div class="section-header"><h4>Двери</h4></div>
+                <div class="defects-grid">
+                    {{ range $.templates_door }}
+                    {{ $tid := .ID }}
+                    <div class="defect-row">
+                        <span class="defect-name">{{ .Name }}{{ if .Threshold }} <span class="threshold">({{ .Threshold }}{{ .Unit }})</span>{{ end }}</span>
+                        <input type="text" name="defect_{{ $tid }}_{{ $i }}" class="defect-input"
+                               value="{{ defectVal $.roomMap $i $tid 0 }}"
+                               placeholder="{{ if .Threshold }}{{ .Threshold }}{{ .Unit }}+{{ end }}">
+                    </div>
+                    {{ end }}
+                </div>
+                <div class="notes-row">
+                    <label>Прочее:</label>
+                    <input type="text" name="notes_door_{{ $i }}" value="{{ notesVal $.roomMap $i "door" }}" placeholder="Дополнительные замечания...">
+                </div>
+            </div>
+
+            <!-- САНТЕХНИКА -->
+            <div class="defects-section">
+                <div class="section-header"><h4>Сантехника</h4></div>
+                <div class="defects-grid">
+                    {{ range $.templates_plumbing }}
+                    {{ $tid := .ID }}
+                    <div class="defect-row">
+                        <span class="defect-name">{{ .Name }}{{ if .Threshold }} <span class="threshold">({{ .Threshold }}{{ .Unit }})</span>{{ end }}</span>
+                        <input type="text" name="defect_{{ $tid }}_{{ $i }}" class="defect-input"
+                               value="{{ defectVal $.roomMap $i $tid 0 }}"
+                               placeholder="{{ if .Threshold }}{{ .Threshold }}{{ .Unit }}+{{ end }}">
+                    </div>
+                    {{ end }}
+                </div>
+                <div class="notes-row">
+                    <label>Прочее:</label>
+                    <input type="text" name="notes_plumbing_{{ $i }}" value="{{ notesVal $.roomMap $i "plumbing" }}" placeholder="Дополнительные замечания...">
+                </div>
+            </div>
+
+        </div><!-- /room-block -->
+        {{ end }}
+
+        <!-- Кнопка добавить помещение -->
+        <div id="add-room-bar">
+            <button type="button" id="btn-add-room" class="btn btn-secondary" onclick="addRoom()">
+                + Добавить помещение
+            </button>
+            <span id="room-count-label" style="color:#999;font-size:13px"></span>
+        </div>
+
+        <!-- Статус и сохранение -->
+        <div class="form-card" style="margin-top:16px">
             <div class="form-actions" style="justify-content:space-between;align-items:center">
                 <div>
                     <label style="font-weight:600;margin-right:8px">Статус акта:</label>
@@ -172,22 +235,80 @@
                 </div>
                 <button type="submit" class="btn btn-primary">Сохранить дефекты</button>
             </div>
-        </form>
-    </main>
+        </div>
 
-    <script>
-    // При отправке основной формы — добавляем данные из таблицы замеров
-    document.getElementById('defects-form').addEventListener('submit', function() {
-        const roomsForm = document.getElementById('rooms-form');
-        const inputs = roomsForm.querySelectorAll('input');
-        inputs.forEach(input => {
-            const hidden = document.createElement('input');
-            hidden.type = 'hidden';
-            hidden.name = input.name;
-            hidden.value = input.value;
-            this.appendChild(hidden);
-        });
+    </form>
+</main>
+
+<script>
+const MAX_ROOMS = 10;
+let activeRooms = {{ .activeRooms }};
+
+function updateUI() {
+    document.getElementById('active_rooms').value = activeRooms;
+    const label = document.getElementById('room-count-label');
+    label.textContent = activeRooms + ' из ' + MAX_ROOMS + ' помещений';
+    document.getElementById('btn-add-room').disabled = activeRooms >= MAX_ROOMS;
+
+    for (let i = 1; i <= MAX_ROOMS; i++) {
+        const block = document.getElementById('room-' + i);
+        if (!block) continue;
+        if (i <= activeRooms) {
+            block.classList.remove('room-hidden');
+            block.querySelectorAll('input, select, textarea').forEach(el => el.disabled = false);
+        } else {
+            block.classList.add('room-hidden');
+            block.querySelectorAll('input, select, textarea').forEach(el => el.disabled = true);
+        }
+    }
+}
+
+function addRoom() {
+    if (activeRooms >= MAX_ROOMS) return;
+    activeRooms++;
+    updateUI();
+    const newRoom = document.getElementById('room-' + activeRooms);
+    if (newRoom) newRoom.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function removeRoom(num) {
+    if (activeRooms <= 1) return;
+    // Очищаем значения в убираемой комнате
+    const block = document.getElementById('room-' + num);
+    if (block) {
+        block.querySelectorAll('input[type=text], input[type=number]').forEach(el => el.value = '');
+        block.querySelectorAll('input[type=radio]').forEach(el => el.checked = false);
+    }
+    // Если убираем не последнюю — перемещаем данные вверх
+    for (let i = num; i < activeRooms; i++) {
+        swapRoomData(i, i + 1);
+    }
+    activeRooms--;
+    updateUI();
+}
+
+function swapRoomData(to, from) {
+    const toBlock = document.getElementById('room-' + to);
+    const fromBlock = document.getElementById('room-' + from);
+    if (!toBlock || !fromBlock) return;
+
+    const toInputs = toBlock.querySelectorAll('input, select, textarea');
+    const fromInputs = fromBlock.querySelectorAll('input, select, textarea');
+
+    fromInputs.forEach((fromEl, idx) => {
+        const toEl = toInputs[idx];
+        if (!toEl) return;
+        if (fromEl.type === 'radio' || fromEl.type === 'checkbox') {
+            toEl.checked = fromEl.checked;
+        } else {
+            toEl.value = fromEl.value;
+        }
     });
-    </script>
+}
+
+// Инициализация при загрузке
+updateUI();
+</script>
+
 </body>
 </html>

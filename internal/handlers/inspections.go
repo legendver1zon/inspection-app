@@ -18,19 +18,16 @@ func GetInspections(c *gin.Context) {
 
 	var inspections []models.Inspection
 	query := storage.DB.Preload("User").Order("created_at desc")
-
-	// Инспектор видит только свои осмотры
 	if role != "admin" {
 		query = query.Where("user_id = ?", userID)
 	}
-
 	query.Find(&inspections)
 
 	var user models.User
 	storage.DB.First(&user, userID)
 
 	c.HTML(http.StatusOK, "list.html", gin.H{
-		"title":       "Мои осмотры",
+		"title":       "Осмотры",
 		"inspections": inspections,
 		"user":        user,
 		"isAdmin":     role == "admin",
@@ -43,28 +40,21 @@ func GetNewInspection(c *gin.Context) {
 	var user models.User
 	storage.DB.First(&user, userID)
 
-	// Считаем следующий номер акта
 	var count int64
 	storage.DB.Model(&models.Inspection{}).Count(&count)
-	actNumber := strconv.FormatInt(count+1, 10)
 
 	c.HTML(http.StatusOK, "new.html", gin.H{
 		"title":     "Новый осмотр",
 		"user":      user,
-		"actNumber": actNumber,
+		"actNumber": strconv.FormatInt(count+1, 10),
 		"today":     time.Now().Format("02.01.2006"),
+		"isAdmin":   c.GetString("userRole") == "admin",
 	})
 }
 
 // PostInspection — создание нового осмотра
 func PostInspection(c *gin.Context) {
 	userID := c.GetUint("userID")
-
-	actNumber := c.PostForm("act_number")
-	address := c.PostForm("address")
-	inspTime := c.PostForm("inspection_time")
-	ownerName := c.PostForm("owner_name")
-	devRepName := c.PostForm("developer_rep_name")
 
 	roomsCount, _ := strconv.Atoi(c.PostForm("rooms_count"))
 	floor, _ := strconv.Atoi(c.PostForm("floor"))
@@ -74,24 +64,24 @@ func PostInspection(c *gin.Context) {
 	humidity, _ := strconv.ParseFloat(c.PostForm("humidity"), 64)
 
 	inspection := models.Inspection{
-		ActNumber:        actNumber,
+		ActNumber:        c.PostForm("act_number"),
 		UserID:           userID,
 		Date:             time.Now(),
-		InspectionTime:   inspTime,
-		Address:          address,
+		InspectionTime:   c.PostForm("inspection_time"),
+		Address:          c.PostForm("address"),
 		RoomsCount:       roomsCount,
 		Floor:            floor,
 		TotalArea:        totalArea,
 		TempOutside:      tempOut,
 		TempInside:       tempIn,
 		Humidity:         humidity,
-		OwnerName:        ownerName,
-		DeveloperRepName: devRepName,
+		OwnerName:        c.PostForm("owner_name"),
+		DeveloperRepName: c.PostForm("developer_rep_name"),
 		Status:           "draft",
 	}
 
 	if err := storage.DB.Create(&inspection).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания осмотра"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания"})
 		return
 	}
 
@@ -113,171 +103,179 @@ func GetInspection(c *gin.Context) {
 	storage.DB.First(&user, userID)
 
 	c.HTML(http.StatusOK, "view.html", gin.H{
-		"title":       "Акт №" + inspection.ActNumber,
-		"inspection":  inspection,
-		"documents":   documents,
-		"user":        user,
-		"isAdmin":     c.GetString("userRole") == "admin",
+		"title":      "Акт №" + inspection.ActNumber,
+		"inspection": inspection,
+		"documents":  documents,
+		"user":       user,
+		"isAdmin":    c.GetString("userRole") == "admin",
 	})
 }
 
-// GetEditInspection — форма редактирования осмотра (дефекты)
+// GetEditInspection — форма редактирования (дефекты по помещениям)
 func GetEditInspection(c *gin.Context) {
 	inspection, ok := loadInspection(c)
 	if !ok {
 		return
 	}
 
-	// Загружаем все шаблоны дефектов
-	var templates []models.DefectTemplate
-	storage.DB.Order("section, order_index").Find(&templates)
-
-	// Загружаем уже заполненные дефекты
-	var filled []models.InspectionDefect
-	storage.DB.Preload("DefectTemplate").
-		Where("inspection_id = ?", inspection.ID).
-		Find(&filled)
-
-	// Загружаем комнаты
 	var rooms []models.InspectionRoom
-	storage.DB.Where("inspection_id = ?", inspection.ID).
-		Order("room_number").Find(&rooms)
+	storage.DB.Preload("Defects.DefectTemplate").
+		Where("inspection_id = ?", inspection.ID).
+		Order("room_number").
+		Find(&rooms)
 
-	// Если комнат нет — создаём пустые 10 строк
-	if len(rooms) == 0 {
-		for i := 1; i <= 10; i++ {
-			rooms = append(rooms, models.InspectionRoom{
-				InspectionID: inspection.ID,
-				RoomNumber:   i,
-			})
-		}
+	roomMap := make(map[int]*models.InspectionRoom)
+	for i := range rooms {
+		roomMap[rooms[i].RoomNumber] = &rooms[i]
 	}
+
+	activeRooms := len(rooms)
+	if activeRooms < 3 {
+		activeRooms = 3
+	}
+
+	templates := loadTemplatesBySection()
 
 	userID := c.GetUint("userID")
 	var user models.User
 	storage.DB.First(&user, userID)
 
 	c.HTML(http.StatusOK, "edit.html", gin.H{
-		"title":      "Редактировать акт №" + inspection.ActNumber,
-		"inspection": inspection,
-		"templates":  templates,
-		"filled":     filled,
-		"rooms":      rooms,
-		"user":       user,
-		"isAdmin":    c.GetString("userRole") == "admin",
+		"title":              "Редактировать акт №" + inspection.ActNumber,
+		"inspection":         inspection,
+		"user":               user,
+		"isAdmin":            c.GetString("userRole") == "admin",
+		"roomNums":           makeRange(1, 10),
+		"wallNums":           []int{1, 2, 3, 4},
+		"roomMap":            roomMap,
+		"activeRooms":        activeRooms,
+		"templates_window":   templates["window"],
+		"templates_ceiling":  templates["ceiling"],
+		"templates_wall":     templates["wall"],
+		"templates_floor":    templates["floor"],
+		"templates_door":     templates["door"],
+		"templates_plumbing": templates["plumbing"],
 	})
 }
 
-// PostEditInspection — сохранение дефектов осмотра
+// PostEditInspection — сохранение дефектов по помещениям
 func PostEditInspection(c *gin.Context) {
 	inspection, ok := loadInspection(c)
 	if !ok {
 		return
 	}
 
-	// Удаляем старые дефекты и перезаписываем
-	storage.DB.Where("inspection_id = ?", inspection.ID).Delete(&models.InspectionDefect{})
+	c.Request.ParseMultipartForm(32 << 20)
+
+	activeRooms, _ := strconv.Atoi(c.PostForm("active_rooms"))
+	if activeRooms < 1 {
+		activeRooms = 3
+	}
+
+	// Удаляем старые данные
+	var oldRooms []models.InspectionRoom
+	storage.DB.Where("inspection_id = ?", inspection.ID).Find(&oldRooms)
+	for _, r := range oldRooms {
+		storage.DB.Where("room_id = ?", r.ID).Delete(&models.RoomDefect{})
+	}
 	storage.DB.Where("inspection_id = ?", inspection.ID).Delete(&models.InspectionRoom{})
 
-	// Сохраняем дефекты
-	form, _ := c.MultipartForm()
-	if form != nil {
-		values := form.Value
+	var allTemplates []models.DefectTemplate
+	storage.DB.Order("section, order_index").Find(&allTemplates)
 
-		var templates []models.DefectTemplate
-		storage.DB.Find(&templates)
+	simpleSections := []string{"window", "ceiling", "floor", "door", "plumbing"}
 
-		for _, tmpl := range templates {
-			key := "defect_" + strconv.FormatUint(uint64(tmpl.ID), 10)
-			if tmpl.Section == "wall_paint" {
-				// Для стен — 4 поля
-				for wall := 1; wall <= 4; wall++ {
-					wallKey := key + "_wall" + strconv.Itoa(wall)
-					if vals, ok := values[wallKey]; ok && vals[0] != "" {
-						defect := models.InspectionDefect{
-							InspectionID:     inspection.ID,
-							DefectTemplateID: tmpl.ID,
-							Value:            vals[0],
-							WallNumber:       wall,
-						}
-						storage.DB.Create(&defect)
-					}
-				}
-			} else {
-				if vals, ok := values[key]; ok && vals[0] != "" {
-					defect := models.InspectionDefect{
-						InspectionID:     inspection.ID,
+	for i := 1; i <= activeRooms; i++ {
+		iStr := strconv.Itoa(i)
+
+		length, _ := strconv.ParseFloat(c.PostForm("room_length_"+iStr), 64)
+		width, _ := strconv.ParseFloat(c.PostForm("room_width_"+iStr), 64)
+		height, _ := strconv.ParseFloat(c.PostForm("room_height_"+iStr), 64)
+		w1h, _ := strconv.ParseFloat(c.PostForm("room_w1h_"+iStr), 64)
+		w1w, _ := strconv.ParseFloat(c.PostForm("room_w1w_"+iStr), 64)
+		w2h, _ := strconv.ParseFloat(c.PostForm("room_w2h_"+iStr), 64)
+		w2w, _ := strconv.ParseFloat(c.PostForm("room_w2w_"+iStr), 64)
+		dh, _ := strconv.ParseFloat(c.PostForm("room_dh_"+iStr), 64)
+		dw, _ := strconv.ParseFloat(c.PostForm("room_dw_"+iStr), 64)
+
+		room := models.InspectionRoom{
+			InspectionID:  inspection.ID,
+			RoomNumber:    i,
+			RoomName:      c.PostForm("room_name_" + iStr),
+			Length:        length,
+			Width:         width,
+			Height:        height,
+			Window1Height: w1h,
+			Window1Width:  w1w,
+			Window2Height: w2h,
+			Window2Width:  w2w,
+			DoorHeight:    dh,
+			DoorWidth:     dw,
+			WindowType:    c.PostForm("room_window_type_" + iStr),
+			WallType:      c.PostForm("room_wall_type_" + iStr),
+		}
+
+		if err := storage.DB.Create(&room).Error; err != nil {
+			continue
+		}
+
+		// Простые секции (одно значение на дефект)
+		for _, tmpl := range allTemplates {
+			if !containsStr(simpleSections, tmpl.Section) {
+				continue
+			}
+			key := "defect_" + strconv.FormatUint(uint64(tmpl.ID), 10) + "_" + iStr
+			if val := c.PostForm(key); val != "" {
+				storage.DB.Create(&models.RoomDefect{
+					RoomID:           room.ID,
+					DefectTemplateID: tmpl.ID,
+					Section:          tmpl.Section,
+					Value:            val,
+				})
+			}
+		}
+
+		// Стены — 4 значения на дефект
+		for _, tmpl := range allTemplates {
+			if tmpl.Section != "wall" {
+				continue
+			}
+			for w := 1; w <= 4; w++ {
+				key := "defect_" + strconv.FormatUint(uint64(tmpl.ID), 10) + "_" + iStr + "_wall" + strconv.Itoa(w)
+				if val := c.PostForm(key); val != "" {
+					storage.DB.Create(&models.RoomDefect{
+						RoomID:           room.ID,
 						DefectTemplateID: tmpl.ID,
-						Value:            vals[0],
-					}
-					storage.DB.Create(&defect)
+						Section:          "wall",
+						Value:            val,
+						WallNumber:       w,
+					})
 				}
 			}
 		}
 
-		// Сохраняем "Прочее" по секциям
-		for _, section := range []string{"window", "ceiling", "wall_paint"} {
-			notesKey := "notes_" + section
-			if vals, ok := values[notesKey]; ok && vals[0] != "" {
-				defect := models.InspectionDefect{
-					InspectionID:     inspection.ID,
-					DefectTemplateID: 0,
-					Notes:            vals[0],
-					Value:            section + "_notes",
-				}
-				storage.DB.Create(&defect)
-			}
-		}
-
-		// Сохраняем замеры помещений
-		for i := 1; i <= 10; i++ {
-			iStr := strconv.Itoa(i)
-			roomName := ""
-			if vals, ok := values["room_name_"+iStr]; ok {
-				roomName = vals[0]
-			}
-			length, _ := strconv.ParseFloat(getFormValue(values, "room_length_"+iStr), 64)
-			width, _ := strconv.ParseFloat(getFormValue(values, "room_width_"+iStr), 64)
-			height, _ := strconv.ParseFloat(getFormValue(values, "room_height_"+iStr), 64)
-			w1h, _ := strconv.ParseFloat(getFormValue(values, "window1_height_"+iStr), 64)
-			w1w, _ := strconv.ParseFloat(getFormValue(values, "window1_width_"+iStr), 64)
-			w2h, _ := strconv.ParseFloat(getFormValue(values, "window2_height_"+iStr), 64)
-			w2w, _ := strconv.ParseFloat(getFormValue(values, "window2_width_"+iStr), 64)
-			dh, _ := strconv.ParseFloat(getFormValue(values, "door_height_"+iStr), 64)
-			dw, _ := strconv.ParseFloat(getFormValue(values, "door_width_"+iStr), 64)
-
-			// Сохраняем только непустые строки
-			if roomName != "" || length != 0 || width != 0 || height != 0 {
-				room := models.InspectionRoom{
-					InspectionID:  inspection.ID,
-					RoomNumber:    i,
-					RoomName:      roomName,
-					Length:        length,
-					Width:         width,
-					Height:        height,
-					Window1Height: w1h,
-					Window1Width:  w1w,
-					Window2Height: w2h,
-					Window2Width:  w2w,
-					DoorHeight:    dh,
-					DoorWidth:     dw,
-				}
-				storage.DB.Create(&room)
+		// Прочее для каждой секции
+		for _, sec := range append(simpleSections, "wall") {
+			if notes := c.PostForm("notes_" + sec + "_" + iStr); notes != "" {
+				storage.DB.Create(&models.RoomDefect{
+					RoomID:  room.ID,
+					Section: sec,
+					Notes:   notes,
+				})
 			}
 		}
 	}
 
-	// Обновляем статус
 	status := c.PostForm("status")
 	if status == "" {
 		status = "draft"
 	}
-	storage.DB.Model(&inspection).Update("status", status)
+	storage.DB.Model(inspection).Update("status", status)
 
 	c.Redirect(http.StatusFound, "/inspections/"+strconv.FormatUint(uint64(inspection.ID), 10))
 }
 
-// PostUploadPlan — загрузка фото плана помещений
+// PostUploadPlan — загрузка фото плана
 func PostUploadPlan(c *gin.Context) {
 	inspection, ok := loadInspection(c)
 	if !ok {
@@ -292,18 +290,15 @@ func PostUploadPlan(c *gin.Context) {
 
 	ext := filepath.Ext(file.Filename)
 	filename := "plan_" + strconv.FormatUint(uint64(inspection.ID), 10) + ext
-	savePath := "web/static/uploads/" + filename
-
-	if err := c.SaveUploadedFile(file, savePath); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения файла"})
+	if err := c.SaveUploadedFile(file, "web/static/uploads/"+filename); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения"})
 		return
 	}
 
-	storage.DB.Model(&inspection).Update("plan_image", "/static/uploads/"+filename)
+	storage.DB.Model(inspection).Update("plan_image", "/static/uploads/"+filename)
 	c.Redirect(http.StatusFound, "/inspections/"+strconv.FormatUint(uint64(inspection.ID), 10)+"/edit")
 }
 
-// loadInspection — вспомогательная функция загрузки осмотра с проверкой доступа
 func loadInspection(c *gin.Context) (*models.Inspection, bool) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
@@ -312,8 +307,7 @@ func loadInspection(c *gin.Context) (*models.Inspection, bool) {
 	}
 
 	var inspection models.Inspection
-	if err := storage.DB.Preload("User").Preload("Rooms").
-		Preload("Defects.DefectTemplate").
+	if err := storage.DB.Preload("User").Preload("Rooms.Defects.DefectTemplate").
 		First(&inspection, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Осмотр не найден"})
 		return nil, false
@@ -321,7 +315,6 @@ func loadInspection(c *gin.Context) (*models.Inspection, bool) {
 
 	userID := c.GetUint("userID")
 	role := c.GetString("userRole")
-
 	if role != "admin" && inspection.UserID != userID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещён"})
 		return nil, false
@@ -330,9 +323,29 @@ func loadInspection(c *gin.Context) (*models.Inspection, bool) {
 	return &inspection, true
 }
 
-func getFormValue(values map[string][]string, key string) string {
-	if vals, ok := values[key]; ok && len(vals) > 0 {
-		return vals[0]
+func loadTemplatesBySection() map[string][]models.DefectTemplate {
+	var all []models.DefectTemplate
+	storage.DB.Order("section, order_index").Find(&all)
+	result := make(map[string][]models.DefectTemplate)
+	for _, t := range all {
+		result[t.Section] = append(result[t.Section], t)
 	}
-	return ""
+	return result
+}
+
+func makeRange(min, max int) []int {
+	r := make([]int, max-min+1)
+	for i := range r {
+		r[i] = min + i
+	}
+	return r
+}
+
+func containsStr(slice []string, s string) bool {
+	for _, v := range slice {
+		if v == s {
+			return true
+		}
+	}
+	return false
 }

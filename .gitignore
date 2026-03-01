@@ -12,6 +12,8 @@ inspection-app
 *.db-shm
 *.db-wal
 web/static/uploads/
+web/static/documents/*.pdf
+web/static/documents/*.docx
 
 # Переменные окружения
 .env

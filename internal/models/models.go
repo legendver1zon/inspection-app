@@ -9,7 +9,7 @@ import (
 type Role string
 
 const (
-	RoleAdmin    Role = "admin"
+	RoleAdmin     Role = "admin"
 	RoleInspector Role = "inspector"
 )
 
@@ -18,46 +18,45 @@ type User struct {
 	gorm.Model
 	Email        string `gorm:"uniqueIndex;not null"`
 	PasswordHash string `gorm:"not null"`
-	FullName     string `gorm:"not null"` // ФИО полностью
-	Initials     string `gorm:"not null"` // Фамилия И.О.
+	FullName     string `gorm:"not null"`
+	Initials     string `gorm:"not null"`
 	Role         Role   `gorm:"not null;default:'inspector'"`
 }
 
 // Inspection — акт осмотра объекта
 type Inspection struct {
 	gorm.Model
-	ActNumber       string `gorm:"not null"`
-	UserID          uint   `gorm:"not null"`
-	User            User
-	Date            time.Time `gorm:"not null"`
-	InspectionTime  string    // Время осмотра, вводится вручную (например "10:30")
-	Address         string    `gorm:"not null"`
-	RoomsCount      int
-	Floor           int
-	TotalArea       float64
-	TempOutside     float64
-	TempInside      float64
-	Humidity        float64
-	PlanImage       string // путь к фото плана (nullable)
-	OwnerName       string // ФИО собственника
-	DeveloperRepName string // ФИО представителя застройщика
-	Status          string `gorm:"not null;default:'draft'"` // draft | completed
+	ActNumber        string `gorm:"not null"`
+	UserID           uint   `gorm:"not null"`
+	User             User
+	Date             time.Time `gorm:"not null"`
+	InspectionTime   string
+	Address          string `gorm:"not null"`
+	RoomsCount       int
+	Floor            int
+	TotalArea        float64
+	TempOutside      float64
+	TempInside       float64
+	Humidity         float64
+	PlanImage        string
+	OwnerName        string
+	DeveloperRepName string
+	Status           string `gorm:"not null;default:'draft'"`
 
-	Rooms   []InspectionRoom   `gorm:"foreignKey:InspectionID"`
-	Defects []InspectionDefect `gorm:"foreignKey:InspectionID"`
+	Rooms []InspectionRoom `gorm:"foreignKey:InspectionID"`
 }
 
-// InspectionRoom — замеры помещений (необязательная секция)
+// InspectionRoom — помещение (основная единица, содержит замеры и дефекты)
 type InspectionRoom struct {
 	gorm.Model
-	InspectionID uint `gorm:"not null"`
-	RoomNumber   int  // 1-10
+	InspectionID uint `gorm:"not null;index"`
+	RoomNumber   int
 	RoomName     string
 
-	// Размеры помещения
-	Length  float64
-	Width   float64
-	Height  float64
+	// Замеры помещения
+	Length float64
+	Width  float64
+	Height float64
 
 	// Откос Окно 1
 	Window1Height float64
@@ -70,36 +69,43 @@ type InspectionRoom struct {
 	// Дверь/проём
 	DoorHeight float64
 	DoorWidth  float64
+
+	// Типы отделки
+	WindowType string // pvc | al | wood
+	WallType   string // paint
+
+	// Дефекты этого помещения
+	Defects []RoomDefect `gorm:"foreignKey:RoomID"`
 }
 
-// DefectTemplate — справочник дефектов (шаблоны)
+// RoomDefect — дефект в конкретном помещении
+type RoomDefect struct {
+	gorm.Model
+	RoomID           uint           `gorm:"not null;index"`
+	DefectTemplateID uint           // 0 = запись "Прочее"
+	DefectTemplate   DefectTemplate `gorm:"foreignKey:DefectTemplateID"`
+	Section          string         // window | ceiling | wall | floor | door | plumbing
+	Value            string
+	WallNumber       int    // 0 = не стена, 1-4 = ст1-ст4
+	Notes            string // текст поля "Прочее"
+}
+
+// DefectTemplate — справочник дефектов
 type DefectTemplate struct {
 	gorm.Model
-	Section    string  // window | ceiling | wall | floor | plumbing | other
-	Name       string  `gorm:"not null"`
-	Threshold  string  // значение в скобках, например "1" для "(1)"
-	Unit       string  // единица измерения, например "мм"
-	OrderIndex int     // порядок отображения
-}
-
-// InspectionDefect — заполненный дефект в рамках осмотра
-type InspectionDefect struct {
-	gorm.Model
-	InspectionID     uint `gorm:"not null"`
-	DefectTemplateID uint `gorm:"not null"`
-	DefectTemplate   DefectTemplate
-
-	Value      string // введённое значение, например "2мм"
-	WallNumber int    // 0 = не стена, 1-4 = ст1-ст4
-	Notes      string // поле "Прочее" — произвольный текст
+	Section    string `gorm:"not null;index"`
+	Name       string `gorm:"not null"`
+	Threshold  string
+	Unit       string
+	OrderIndex int
 }
 
 // Document — сгенерированный документ
 type Document struct {
 	gorm.Model
-	InspectionID uint   `gorm:"not null"`
+	InspectionID uint `gorm:"not null"`
 	Inspection   Inspection
 	Format       string `gorm:"not null"` // pdf | docx
 	FilePath     string `gorm:"not null"`
-	GeneratedBy  uint   `gorm:"not null"` // user_id
+	GeneratedBy  uint   `gorm:"not null"`
 }

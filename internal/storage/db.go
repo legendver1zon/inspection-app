@@ -28,8 +28,8 @@ func Migrate() {
 		&models.User{},
 		&models.Inspection{},
 		&models.InspectionRoom{},
+		&models.RoomDefect{},
 		&models.DefectTemplate{},
-		&models.InspectionDefect{},
 		&models.Document{},
 	)
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"html/template"
 	"inspection-app/internal/auth"
 	"inspection-app/internal/handlers"
+	"inspection-app/internal/models"
 	"inspection-app/internal/seed"
 	"inspection-app/internal/storage"
 	"log"
@@ -14,19 +15,97 @@ import (
 )
 
 func main() {
-	// Подключение к БД
 	storage.Connect("inspection.db")
 	storage.Migrate()
 	seed.SeedDefects()
 
 	r := gin.Default()
 
-	// Загрузка HTML-шаблонов с кастомными функциями
 	funcMap := template.FuncMap{
 		"string": func(v interface{}) string {
 			return fmt.Sprintf("%v", v)
 		},
+		// defectVal — значение дефекта для комнаты из roomMap
+		"defectVal": func(roomMap map[int]*models.InspectionRoom, roomNum int, templateID uint, wallNum int) string {
+			if room, ok := roomMap[roomNum]; ok && room != nil {
+				for _, d := range room.Defects {
+					if d.DefectTemplateID == templateID && d.WallNumber == wallNum {
+						return d.Value
+					}
+				}
+			}
+			return ""
+		},
+		// notesVal — текст "Прочее" для секции комнаты
+		"notesVal": func(roomMap map[int]*models.InspectionRoom, roomNum int, section string) string {
+			if room, ok := roomMap[roomNum]; ok && room != nil {
+				for _, d := range room.Defects {
+					if d.DefectTemplateID == 0 && d.Section == section {
+						return d.Notes
+					}
+				}
+			}
+			return ""
+		},
+		// roomField — поле замеров/типов комнаты
+		"roomField": func(roomMap map[int]*models.InspectionRoom, roomNum int, field string) string {
+			if room, ok := roomMap[roomNum]; ok && room != nil {
+				switch field {
+				case "name":
+					return room.RoomName
+				case "window_type":
+					return room.WindowType
+				case "wall_type":
+					return room.WallType
+				case "length":
+					if room.Length != 0 {
+						return fmt.Sprintf("%g", room.Length)
+					}
+				case "width":
+					if room.Width != 0 {
+						return fmt.Sprintf("%g", room.Width)
+					}
+				case "height":
+					if room.Height != 0 {
+						return fmt.Sprintf("%g", room.Height)
+					}
+				case "w1h":
+					if room.Window1Height != 0 {
+						return fmt.Sprintf("%g", room.Window1Height)
+					}
+				case "w1w":
+					if room.Window1Width != 0 {
+						return fmt.Sprintf("%g", room.Window1Width)
+					}
+				case "w2h":
+					if room.Window2Height != 0 {
+						return fmt.Sprintf("%g", room.Window2Height)
+					}
+				case "w2w":
+					if room.Window2Width != 0 {
+						return fmt.Sprintf("%g", room.Window2Width)
+					}
+				case "dh":
+					if room.DoorHeight != 0 {
+						return fmt.Sprintf("%g", room.DoorHeight)
+					}
+				case "dw":
+					if room.DoorWidth != 0 {
+						return fmt.Sprintf("%g", room.DoorWidth)
+					}
+				}
+			}
+			return ""
+		},
+		// roomExists — есть ли комната в roomMap
+		"roomExists": func(roomMap map[int]*models.InspectionRoom, roomNum int) bool {
+			room, ok := roomMap[roomNum]
+			return ok && room != nil
+		},
+		// add — сложение для шаблонов
+		"add": func(a, b int) int { return a + b },
 	}
+
 	tmpl := template.New("").Funcs(funcMap)
 	tmpl = template.Must(tmpl.ParseGlob("web/templates/partials/*.html"))
 	tmpl = template.Must(tmpl.ParseGlob("web/templates/auth/*.html"))
@@ -34,10 +113,8 @@ func main() {
 	tmpl = template.Must(tmpl.ParseGlob("web/templates/admin/*.html"))
 	r.SetHTMLTemplate(tmpl)
 
-	// Статические файлы
 	r.Static("/static", "./web/static")
 
-	// Маршруты без авторизации
 	r.GET("/", func(c *gin.Context) {
 		c.Redirect(http.StatusFound, "/inspections")
 	})
@@ -47,11 +124,9 @@ func main() {
 	r.POST("/register", handlers.PostRegister)
 	r.POST("/logout", handlers.PostLogout)
 
-	// Маршруты с авторизацией
 	protected := r.Group("/")
 	protected.Use(auth.RequireAuth())
 	{
-		// Осмотры
 		protected.GET("/inspections", handlers.GetInspections)
 		protected.GET("/inspections/new", handlers.GetNewInspection)
 		protected.POST("/inspections", handlers.PostInspection)
@@ -59,18 +134,14 @@ func main() {
 		protected.GET("/inspections/:id/edit", handlers.GetEditInspection)
 		protected.POST("/inspections/:id/edit", handlers.PostEditInspection)
 
-		// Генерация документов
 		protected.POST("/inspections/:id/generate", handlers.PostGenerateDocument)
 		protected.GET("/documents/:id/download", handlers.GetDownloadDocument)
 
-		// Загрузка фото плана
 		protected.POST("/inspections/:id/upload-plan", handlers.PostUploadPlan)
 
-		// Профиль
 		protected.GET("/profile", handlers.GetProfile)
 		protected.POST("/profile", handlers.PostProfile)
 
-		// Админ-панель
 		admin := protected.Group("/admin")
 		admin.Use(auth.RequireAdmin())
 		{
