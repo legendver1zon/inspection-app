@@ -1,7 +1,9 @@
 package handlers
 
 import (
+	"fmt"
 	"inspection-app/internal/models"
+	"inspection-app/internal/pdf"
 	"inspection-app/internal/storage"
 	"net/http"
 	"os"
@@ -10,7 +12,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// PostGenerateDocument — генерация документа (заглушка, реализуем позже)
+// PostGenerateDocument — генерация PDF документа
 func PostGenerateDocument(c *gin.Context) {
 	inspection, ok := loadInspection(c)
 	if !ok {
@@ -23,12 +25,29 @@ func PostGenerateDocument(c *gin.Context) {
 	}
 
 	userID := c.GetUint("userID")
+	outputDir := "web/static/documents"
 
-	// TODO: реализовать генерацию PDF/DOCX в следующем этапе
+	var filePath string
+	var genErr error
+
+	if format == "pdf" {
+		filePath, genErr = pdf.Generate(inspection, outputDir)
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Формат не поддерживается: " + format})
+		return
+	}
+
+	if genErr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error": fmt.Sprintf("Ошибка генерации PDF: %v", genErr),
+		})
+		return
+	}
+
 	doc := models.Document{
 		InspectionID: inspection.ID,
 		Format:       format,
-		FilePath:     "", // будет заполнено после генерации
+		FilePath:     filePath,
 		GeneratedBy:  userID,
 	}
 	storage.DB.Create(&doc)
@@ -46,7 +65,6 @@ func GetDownloadDocument(c *gin.Context) {
 		return
 	}
 
-	// Проверка доступа
 	userID := c.GetUint("userID")
 	role := c.GetString("userRole")
 	if role != "admin" && doc.Inspection.UserID != userID {
@@ -55,7 +73,7 @@ func GetDownloadDocument(c *gin.Context) {
 	}
 
 	if doc.FilePath == "" {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Файл ещё не сгенерирован"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Файл не сгенерирован"})
 		return
 	}
 
@@ -65,5 +83,8 @@ func GetDownloadDocument(c *gin.Context) {
 		return
 	}
 
+	c.Header("Content-Disposition", fmt.Sprintf(
+		`attachment; filename="act_%s.%s"`, doc.Inspection.ActNumber, doc.Format,
+	))
 	c.File(absPath)
 }
