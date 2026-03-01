@@ -124,9 +124,9 @@
                     <h4>Стены</h4>
                     <div class="type-radio">
                         <span>Тип:</span>
-                        <label><input type="radio" name="room_wall_type_{{ $i }}" value="paint" {{ if eq (roomField $.roomMap $i "wall_type") "paint" }}checked{{ end }}> Окраска</label>
-                        <label><input type="radio" name="room_wall_type_{{ $i }}" value="tile"  {{ if eq (roomField $.roomMap $i "wall_type") "tile"  }}checked{{ end }}> Плитка</label>
-                        <label><input type="radio" name="room_wall_type_{{ $i }}" value="gkl"   {{ if eq (roomField $.roomMap $i "wall_type") "gkl"   }}checked{{ end }}> ГКЛ</label>
+                        <label><input type="checkbox" name="room_wall_type_paint_{{ $i }}" value="1" {{ if hasWallType (roomField $.roomMap $i "wall_type") "paint" }}checked{{ end }}> Окраска</label>
+                        <label><input type="checkbox" name="room_wall_type_tile_{{ $i }}"  value="1" {{ if hasWallType (roomField $.roomMap $i "wall_type") "tile"  }}checked{{ end }}> Плитка</label>
+                        <label><input type="checkbox" name="room_wall_type_gkl_{{ $i }}"   value="1" {{ if hasWallType (roomField $.roomMap $i "wall_type") "gkl"   }}checked{{ end }}> ГКЛ</label>
                     </div>
                 </div>
                 <div class="wall-headers">
@@ -277,7 +277,7 @@ function removeRoom(num) {
     const block = document.getElementById('room-' + num);
     if (block) {
         block.querySelectorAll('input[type=text], input[type=number]').forEach(el => el.value = '');
-        block.querySelectorAll('input[type=radio]').forEach(el => el.checked = false);
+        block.querySelectorAll('input[type=radio], input[type=checkbox]').forEach(el => el.checked = false);
     }
     // Если убираем не последнюю — перемещаем данные вверх
     for (let i = num; i < activeRooms; i++) {

@@ -10,9 +10,14 @@ import (
 	"inspection-app/internal/storage"
 	"log"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
+
+type wallRow struct {
+	Name, W1, W2, W3, W4 string
+}
 
 func main() {
 	storage.Connect("inspection.db")
@@ -104,6 +109,112 @@ func main() {
 		},
 		// add — сложение для шаблонов
 		"add": func(a, b int) int { return a + b },
+
+		// roomHasDefects — есть ли хоть один дефект в помещении
+		"roomHasDefects": func(room models.InspectionRoom) bool {
+			for _, d := range room.Defects {
+				if d.Value != "" || d.Notes != "" {
+					return true
+				}
+			}
+			return false
+		},
+
+		// roomHasSection — есть ли данные в секции помещения
+		"roomHasSection": func(room models.InspectionRoom, section string) bool {
+			for _, d := range room.Defects {
+				if d.Section == section && (d.Value != "" || d.Notes != "") {
+					return true
+				}
+			}
+			return false
+		},
+
+		// sectionDefects — дефекты секции (только с Value, без Notes)
+		"sectionDefects": func(room models.InspectionRoom, section string) []models.RoomDefect {
+			var result []models.RoomDefect
+			for _, d := range room.Defects {
+				if d.Section == section && d.Notes == "" && d.Value != "" {
+					result = append(result, d)
+				}
+			}
+			return result
+		},
+
+		// sectionNotes — текст "Прочее" для секции
+		"sectionNotes": func(room models.InspectionRoom, section string) string {
+			for _, d := range room.Defects {
+				if d.Section == section && d.Notes != "" {
+					return d.Notes
+				}
+			}
+			return ""
+		},
+
+		// wallRows — дефекты стен, сгруппированные по шаблону (для таблицы ст1-ст4)
+		"wallRows": func(room models.InspectionRoom) []wallRow {
+			type entry struct {
+				name   string
+				values [5]string
+			}
+			entries := make(map[uint]*entry)
+			order := []uint{}
+			for _, d := range room.Defects {
+				if d.Section != "wall" || d.Notes != "" || d.WallNumber < 1 || d.WallNumber > 4 {
+					continue
+				}
+				if _, ok := entries[d.DefectTemplateID]; !ok {
+					entries[d.DefectTemplateID] = &entry{name: d.DefectTemplate.Name}
+					order = append(order, d.DefectTemplateID)
+				}
+				entries[d.DefectTemplateID].values[d.WallNumber] = d.Value
+			}
+			rows := make([]wallRow, 0, len(order))
+			for _, id := range order {
+				e := entries[id]
+				rows = append(rows, wallRow{Name: e.name, W1: e.values[1], W2: e.values[2], W3: e.values[3], W4: e.values[4]})
+			}
+			return rows
+		},
+
+		// windowTypeName — отображаемое название типа окна
+		"windowTypeName": func(t string) string {
+			switch t {
+			case "pvc":
+				return "ПВХ"
+			case "al":
+				return "Al"
+			case "wood":
+				return "Дерево"
+			}
+			return ""
+		},
+
+		// wallTypeName — отображаемые названия типов стен (через запятую)
+		"wallTypeName": func(t string) string {
+			var names []string
+			for _, p := range strings.Split(t, ",") {
+				switch strings.TrimSpace(p) {
+				case "paint":
+					names = append(names, "Окраска")
+				case "tile":
+					names = append(names, "Плитка")
+				case "gkl":
+					names = append(names, "ГКЛ")
+				}
+			}
+			return strings.Join(names, "/")
+		},
+
+		// hasWallType — есть ли конкретный тип в строке wall_type
+		"hasWallType": func(wallType, checkType string) bool {
+			for _, p := range strings.Split(wallType, ",") {
+				if strings.TrimSpace(p) == checkType {
+					return true
+				}
+			}
+			return false
+		},
 	}
 
 	tmpl := template.New("").Funcs(funcMap)

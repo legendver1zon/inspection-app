@@ -18,6 +18,7 @@
             </div>
         </div>
 
+        <!-- Общая информация -->
         <div class="form-card">
             <h2>Общая информация</h2>
             <div class="info-grid">
@@ -86,14 +87,155 @@
             </div>
         </div>
 
-        <!-- Генерация документа -->
+        <!-- План помещений -->
+        {{ if .inspection.PlanImage }}
+        <div class="form-card">
+            <h2>План помещений</h2>
+            <img src="{{ .inspection.PlanImage }}" style="max-width:100%;max-height:400px;border-radius:6px;border:1px solid #eee">
+        </div>
+        {{ end }}
+
+        <!-- Помещения с дефектами -->
+        {{ range .inspection.Rooms }}
+        {{ $room := . }}
+        <div class="room-block">
+            <div class="room-header">
+                <div class="room-title">
+                    <span class="room-label">Помещение {{ .RoomNumber }}</span>
+                    {{ if .RoomName }}<span style="font-size:15px;opacity:.85">{{ .RoomName }}</span>{{ end }}
+                </div>
+                {{ if not (roomHasDefects .) }}
+                <span style="font-size:12px;opacity:.7">нет дефектов</span>
+                {{ end }}
+            </div>
+
+            <!-- Окна -->
+            {{ if roomHasSection $room "window" }}
+            <div class="defects-section">
+                <div class="section-header">
+                    <h4>Окна</h4>
+                    {{ if .WindowType }}
+                    <span class="badge badge-inspector">{{ windowTypeName .WindowType }}</span>
+                    {{ end }}
+                </div>
+                {{ range sectionDefects $room "window" }}
+                <div class="defect-row">
+                    <span class="defect-name">{{ .DefectTemplate.Name }}</span>
+                    <span class="defect-value">{{ .Value }}</span>
+                </div>
+                {{ end }}
+                {{ with sectionNotes $room "window" }}
+                <div class="notes-display">Прочее: {{ . }}</div>
+                {{ end }}
+            </div>
+            {{ end }}
+
+            <!-- Потолок -->
+            {{ if roomHasSection $room "ceiling" }}
+            <div class="defects-section">
+                <div class="section-header"><h4>Потолок</h4></div>
+                {{ range sectionDefects $room "ceiling" }}
+                <div class="defect-row">
+                    <span class="defect-name">{{ .DefectTemplate.Name }}</span>
+                    <span class="defect-value">{{ .Value }}</span>
+                </div>
+                {{ end }}
+                {{ with sectionNotes $room "ceiling" }}
+                <div class="notes-display">Прочее: {{ . }}</div>
+                {{ end }}
+            </div>
+            {{ end }}
+
+            <!-- Стены -->
+            {{ if roomHasSection $room "wall" }}
+            <div class="defects-section">
+                <div class="section-header">
+                    <h4>Стены</h4>
+                    {{ if .WallType }}
+                    <span class="badge badge-inspector">{{ wallTypeName .WallType }}</span>
+                    {{ end }}
+                </div>
+                {{ $rows := wallRows $room }}
+                {{ if $rows }}
+                <div class="wall-headers">
+                    <span>Дефект</span>
+                    <span>Ст 1</span><span>Ст 2</span><span>Ст 3</span><span>Ст 4</span>
+                </div>
+                {{ range $rows }}
+                <div class="wall-row wall-row-view">
+                    <span class="defect-name">{{ .Name }}</span>
+                    <span class="wall-cell">{{ .W1 }}</span>
+                    <span class="wall-cell">{{ .W2 }}</span>
+                    <span class="wall-cell">{{ .W3 }}</span>
+                    <span class="wall-cell">{{ .W4 }}</span>
+                </div>
+                {{ end }}
+                {{ end }}
+                {{ with sectionNotes $room "wall" }}
+                <div class="notes-display">Прочее: {{ . }}</div>
+                {{ end }}
+            </div>
+            {{ end }}
+
+            <!-- Пол -->
+            {{ if roomHasSection $room "floor" }}
+            <div class="defects-section">
+                <div class="section-header"><h4>Пол</h4></div>
+                {{ range sectionDefects $room "floor" }}
+                <div class="defect-row">
+                    <span class="defect-name">{{ .DefectTemplate.Name }}</span>
+                    <span class="defect-value">{{ .Value }}</span>
+                </div>
+                {{ end }}
+                {{ with sectionNotes $room "floor" }}
+                <div class="notes-display">Прочее: {{ . }}</div>
+                {{ end }}
+            </div>
+            {{ end }}
+
+            <!-- Двери -->
+            {{ if roomHasSection $room "door" }}
+            <div class="defects-section">
+                <div class="section-header"><h4>Двери</h4></div>
+                {{ range sectionDefects $room "door" }}
+                <div class="defect-row">
+                    <span class="defect-name">{{ .DefectTemplate.Name }}</span>
+                    <span class="defect-value">{{ .Value }}</span>
+                </div>
+                {{ end }}
+                {{ with sectionNotes $room "door" }}
+                <div class="notes-display">Прочее: {{ . }}</div>
+                {{ end }}
+            </div>
+            {{ end }}
+
+            <!-- Сантехника -->
+            {{ if roomHasSection $room "plumbing" }}
+            <div class="defects-section">
+                <div class="section-header"><h4>Сантехника</h4></div>
+                {{ range sectionDefects $room "plumbing" }}
+                <div class="defect-row">
+                    <span class="defect-name">{{ .DefectTemplate.Name }}</span>
+                    <span class="defect-value">{{ .Value }}</span>
+                </div>
+                {{ end }}
+                {{ with sectionNotes $room "plumbing" }}
+                <div class="notes-display">Прочее: {{ . }}</div>
+                {{ end }}
+            </div>
+            {{ end }}
+
+        </div>
+        {{ end }}
+
+        <!-- Документы -->
         <div class="form-card">
             <h2>Документы</h2>
             {{ if .documents }}
             <div style="margin-bottom:16px">
                 {{ range .documents }}
-                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;border:1px solid #eee;border-radius:6px;margin-bottom:8px">
-                    <span>{{ .Format }} — {{ .CreatedAt.Format "02.01.2006 15:04" }}</span>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid #eee;border-radius:6px;margin-bottom:8px">
+                    <span style="font-size:13px;color:#555">{{ .Format }} — {{ .CreatedAt.Format "02.01.2006 15:04" }}</span>
                     <a href="/documents/{{ .ID }}/download" class="btn btn-sm btn-primary">Скачать</a>
                 </div>
                 {{ end }}
@@ -102,9 +244,8 @@
 
             <form method="POST" action="/inspections/{{ .inspection.ID }}/generate">
                 <div style="display:flex;align-items:center;gap:12px">
-                    <select name="format" class="form-group" style="padding:8px 12px;border:1px solid #dde2f0;border-radius:6px">
+                    <select name="format" style="padding:8px 12px;border:1px solid #dde2f0;border-radius:6px;font-size:14px">
                         <option value="pdf">PDF</option>
-                        <option value="docx">DOCX</option>
                     </select>
                     <button type="submit" class="btn btn-primary">Сгенерировать документ</button>
                 </div>

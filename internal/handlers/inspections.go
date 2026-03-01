@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -212,7 +213,7 @@ func PostEditInspection(c *gin.Context) {
 			DoorHeight:    dh,
 			DoorWidth:     dw,
 			WindowType:    c.PostForm("room_window_type_" + iStr),
-			WallType:      c.PostForm("room_wall_type_" + iStr),
+			WallType:      buildWallType(c, iStr),
 		}
 
 		if err := storage.DB.Create(&room).Error; err != nil {
@@ -348,4 +349,18 @@ func containsStr(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+func buildWallType(c *gin.Context, iStr string) string {
+	var types []string
+	if c.PostForm("room_wall_type_paint_"+iStr) != "" {
+		types = append(types, "paint")
+	}
+	if c.PostForm("room_wall_type_tile_"+iStr) != "" {
+		types = append(types, "tile")
+	}
+	if c.PostForm("room_wall_type_gkl_"+iStr) != "" {
+		types = append(types, "gkl")
+	}
+	return strings.Join(types, ",")
 }

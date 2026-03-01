@@ -339,3 +339,37 @@ a:hover { text-decoration: underline; }
 
 /* Optional label */
 .optional-label { font-size: 13px; color: #999; font-weight: 400; }
+
+/* ===== View: значение дефекта ===== */
+.defect-value {
+    font-weight: 600;
+    color: #4361ee;
+    min-width: 80px;
+    text-align: right;
+    flex-shrink: 0;
+    font-size: 13px;
+}
+
+/* View: ячейки стен (только текст, без инпута) */
+.wall-row-view span.wall-cell {
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    color: #4361ee;
+}
+.wall-row-view span.wall-cell:empty::after {
+    content: "—";
+    color: #ccc;
+    font-weight: 400;
+}
+
+/* View: блок "Прочее" */
+.notes-display {
+    margin-top: 8px;
+    padding: 7px 12px;
+    background: #fffdf0;
+    border-left: 3px solid #f0c040;
+    border-radius: 4px;
+    font-size: 13px;
+    color: #555;
+}
