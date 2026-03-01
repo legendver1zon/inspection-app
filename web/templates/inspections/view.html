@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .title }} — Акты осмотра</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    {{ template "navbar" . }}
+
+    <main class="container">
+        <div class="page-header">
+            <h1>Акт осмотра № {{ .inspection.ActNumber }}</h1>
+            <div style="display:flex;gap:10px">
+                <a href="/inspections/{{ .inspection.ID }}/edit" class="btn btn-secondary">Редактировать</a>
+                <a href="/inspections" class="btn">← Назад</a>
+            </div>
+        </div>
+
+        <div class="form-card">
+            <h2>Общая информация</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Дата</span>
+                    <span class="info-value">{{ .inspection.Date.Format "02.01.2006" }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Время</span>
+                    <span class="info-value">{{ .inspection.InspectionTime }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Адрес</span>
+                    <span class="info-value">{{ .inspection.Address }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Кол-во комнат</span>
+                    <span class="info-value">{{ .inspection.RoomsCount }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Этаж</span>
+                    <span class="info-value">{{ .inspection.Floor }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Площадь</span>
+                    <span class="info-value">{{ .inspection.TotalArea }} м²</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">t наружн.</span>
+                    <span class="info-value">{{ .inspection.TempOutside }} °C</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">t внутр.</span>
+                    <span class="info-value">{{ .inspection.TempInside }} °C</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">RH</span>
+                    <span class="info-value">{{ .inspection.Humidity }} %</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Статус</span>
+                    <span class="info-value">
+                        {{ if eq .inspection.Status "completed" }}
+                        <span class="badge badge-success">Завершён</span>
+                        {{ else }}
+                        <span class="badge badge-draft">Черновик</span>
+                        {{ end }}
+                    </span>
+                </div>
+            </div>
+
+            <h2>Подписанты</h2>
+            <div class="info-grid">
+                <div class="info-item">
+                    <span class="info-label">Осмотр проводил</span>
+                    <span class="info-value">{{ .inspection.User.Initials }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Собственник</span>
+                    <span class="info-value">{{ .inspection.OwnerName }}</span>
+                </div>
+                <div class="info-item">
+                    <span class="info-label">Представитель застройщика</span>
+                    <span class="info-value">{{ .inspection.DeveloperRepName }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Генерация документа -->
+        <div class="form-card">
+            <h2>Документы</h2>
+            {{ if .documents }}
+            <div style="margin-bottom:16px">
+                {{ range .documents }}
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px;border:1px solid #eee;border-radius:6px;margin-bottom:8px">
+                    <span>{{ .Format }} — {{ .CreatedAt.Format "02.01.2006 15:04" }}</span>
+                    <a href="/documents/{{ .ID }}/download" class="btn btn-sm btn-primary">Скачать</a>
+                </div>
+                {{ end }}
+            </div>
+            {{ end }}
+
+            <form method="POST" action="/inspections/{{ .inspection.ID }}/generate">
+                <div style="display:flex;align-items:center;gap:12px">
+                    <select name="format" class="form-group" style="padding:8px 12px;border:1px solid #dde2f0;border-radius:6px">
+                        <option value="pdf">PDF</option>
+                        <option value="docx">DOCX</option>
+                    </select>
+                    <button type="submit" class="btn btn-primary">Сгенерировать документ</button>
+                </div>
+            </form>
+        </div>
+    </main>
+</body>
+</html>

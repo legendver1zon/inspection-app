@@ -1,0 +1,17 @@
+{{ define "navbar" }}
+<nav class="navbar">
+    <div class="navbar-brand">
+        <a href="/inspections">Акты осмотра</a>
+    </div>
+    <div class="navbar-menu">
+        <a href="/inspections">Осмотры</a>
+        {{ if .isAdmin }}
+        <a href="/admin/users">Пользователи</a>
+        {{ end }}
+        <a href="/profile">{{ .user.Initials }}</a>
+        <form method="POST" action="/logout" style="display:inline">
+            <button type="submit" class="btn-link">Выйти</button>
+        </form>
+    </div>
+</nav>
+{{ end }}

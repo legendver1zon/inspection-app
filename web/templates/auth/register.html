@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .title }} — Акты осмотра</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="auth-page">
+    <div class="auth-container">
+        <h1>Регистрация</h1>
+        <p class="auth-subtitle">Создание аккаунта</p>
+
+        {{ if .error }}
+        <div class="alert alert-error">{{ .error }}</div>
+        {{ end }}
+
+        <form method="POST" action="/register">
+            <div class="form-group">
+                <label for="full_name">ФИО полностью</label>
+                <input type="text" id="full_name" name="full_name" required
+                       placeholder="Иванов Иван Иванович">
+            </div>
+            <div class="form-group">
+                <label for="initials">Фамилия и инициалы</label>
+                <input type="text" id="initials" name="initials" required
+                       placeholder="Иванов И.И.">
+                <span class="form-hint">Используется в подписи документа</span>
+            </div>
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" required
+                       placeholder="example@mail.ru">
+            </div>
+            <div class="form-group">
+                <label for="password">Пароль</label>
+                <input type="password" id="password" name="password" required
+                       placeholder="Минимум 6 символов">
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">Создать аккаунт</button>
+        </form>
+
+        <p class="auth-link">Уже есть аккаунт? <a href="/login">Войти</a></p>
+    </div>
+</body>
+</html>

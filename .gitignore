@@ -1,0 +1,27 @@
+# Бинарники
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+inspection-app
+
+# Бд и загруженные файлы
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+web/static/uploads/
+
+# Переменные окружения
+.env
+.env.*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Go
+vendor/

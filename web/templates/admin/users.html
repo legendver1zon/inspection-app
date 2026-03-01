@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .title }} — Акты осмотра</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    {{ template "navbar" . }}
+
+    <main class="container">
+        <div class="page-header">
+            <h1>Пользователи</h1>
+        </div>
+
+        <div class="table-wrapper">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ФИО</th>
+                        <th>Email</th>
+                        <th>Инициалы</th>
+                        <th>Роль</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{ range .users }}
+                    <tr>
+                        <td>{{ .FullName }}</td>
+                        <td>{{ .Email }}</td>
+                        <td>{{ .Initials }}</td>
+                        <td>
+                            {{ if eq (string .Role) "admin" }}
+                            <span class="badge badge-admin">Администратор</span>
+                            {{ else }}
+                            <span class="badge badge-inspector">Инспектор</span>
+                            {{ end }}
+                        </td>
+                        <td class="actions">
+                            {{ if ne .ID $.currentUser.ID }}
+                            <form method="POST" action="/admin/users/{{ .ID }}/role" style="display:inline">
+                                {{ if eq (string .Role) "inspector" }}
+                                <input type="hidden" name="role" value="admin">
+                                <button type="submit" class="btn btn-sm">→ Админ</button>
+                                {{ else }}
+                                <input type="hidden" name="role" value="inspector">
+                                <button type="submit" class="btn btn-sm">→ Инспектор</button>
+                                {{ end }}
+                            </form>
+                            {{ else }}
+                            <span style="color:#999;font-size:12px">(вы)</span>
+                            {{ end }}
+                        </td>
+                    </tr>
+                    {{ end }}
+                </tbody>
+            </table>
+        </div>
+    </main>
+</body>
+</html>

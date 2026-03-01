@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .title }} — Акты осмотра</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    {{ template "navbar" . }}
+
+    <main class="container">
+        <div class="page-header">
+            <h1>Новый осмотр</h1>
+            <a href="/inspections" class="btn btn-secondary">← Назад</a>
+        </div>
+
+        <form method="POST" action="/inspections" class="form-card">
+            <h2>Шапка акта</h2>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Акт осмотра объекта №</label>
+                    <input type="text" name="act_number" value="{{ .actNumber }}" required>
+                </div>
+                <div class="form-group">
+                    <label>Дата</label>
+                    <input type="text" value="{{ .today }}" readonly class="input-readonly">
+                </div>
+                <div class="form-group">
+                    <label>Время обследования</label>
+                    <input type="time" name="inspection_time" required>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Адрес объекта</label>
+                <input type="text" name="address" required placeholder="г. Москва, ул. Примерная, д. 1, кв. 10">
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Кол-во комнат</label>
+                    <input type="number" name="rooms_count" min="1" max="20">
+                </div>
+                <div class="form-group">
+                    <label>Этаж</label>
+                    <input type="number" name="floor" min="1">
+                </div>
+                <div class="form-group">
+                    <label>Общая площадь (м²)</label>
+                    <input type="number" name="total_area" step="0.1" min="0">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>t наружн. (°C)</label>
+                    <input type="number" name="temp_outside" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label>t внутр. (°C)</label>
+                    <input type="number" name="temp_inside" step="0.1">
+                </div>
+                <div class="form-group">
+                    <label>RH (%)</label>
+                    <input type="number" name="humidity" step="0.1" min="0" max="100">
+                </div>
+            </div>
+
+            <h2>Подписанты</h2>
+            <div class="form-group">
+                <label>Осмотр проводил</label>
+                <input type="text" value="{{ .user.Initials }}" readonly class="input-readonly">
+                <span class="form-hint">Автоматически из профиля</span>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Собственник (представитель) ФИО</label>
+                    <input type="text" name="owner_name" placeholder="Петров П.П.">
+                </div>
+                <div class="form-group">
+                    <label>Представитель застройщика ФИО</label>
+                    <input type="text" name="developer_rep_name" placeholder="Сидоров С.С.">
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" class="btn btn-primary">Создать и перейти к заполнению дефектов →</button>
+            </div>
+        </form>
+    </main>
+</body>
+</html>

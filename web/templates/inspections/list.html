@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .title }} — Акты осмотра</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    {{ template "navbar" . }}
+
+    <main class="container">
+        <div class="page-header">
+            <h1>Осмотры</h1>
+            <a href="/inspections/new" class="btn btn-primary">+ Новый осмотр</a>
+        </div>
+
+        {{ if .inspections }}
+        <div class="table-wrapper">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Акт №</th>
+                        <th>Дата</th>
+                        <th>Адрес</th>
+                        {{ if .isAdmin }}<th>Мастер</th>{{ end }}
+                        <th>Статус</th>
+                        <th>Действия</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {{ range .inspections }}
+                    <tr>
+                        <td><strong>{{ .ActNumber }}</strong></td>
+                        <td>{{ .Date.Format "02.01.2006" }}</td>
+                        <td>{{ .Address }}</td>
+                        {{ if $.isAdmin }}<td>{{ .User.Initials }}</td>{{ end }}
+                        <td>
+                            {{ if eq .Status "completed" }}
+                            <span class="badge badge-success">Завершён</span>
+                            {{ else }}
+                            <span class="badge badge-draft">Черновик</span>
+                            {{ end }}
+                        </td>
+                        <td class="actions">
+                            <a href="/inspections/{{ .ID }}" class="btn btn-sm">Просмотр</a>
+                            <a href="/inspections/{{ .ID }}/edit" class="btn btn-sm btn-secondary">Редактировать</a>
+                        </td>
+                    </tr>
+                    {{ end }}
+                </tbody>
+            </table>
+        </div>
+        {{ else }}
+        <div class="empty-state">
+            <p>Осмотров пока нет.</p>
+            <a href="/inspections/new" class="btn btn-primary">Создать первый осмотр</a>
+        </div>
+        {{ end }}
+    </main>
+</body>
+</html>

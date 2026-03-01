@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .title }} — Акты осмотра</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    {{ template "navbar" . }}
+
+    <main class="container">
+        <div class="page-header">
+            <h1>Профиль</h1>
+        </div>
+
+        <div class="form-card profile-card">
+            {{ if .error }}
+            <div class="alert alert-error">{{ .error }}</div>
+            {{ end }}
+            {{ if .success }}
+            <div class="alert alert-success">{{ .success }}</div>
+            {{ end }}
+
+            <form method="POST" action="/profile">
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="text" value="{{ .user.Email }}" readonly class="input-readonly">
+                </div>
+                <div class="form-group">
+                    <label>ФИО полностью</label>
+                    <input type="text" name="full_name" value="{{ .user.FullName }}" required>
+                </div>
+                <div class="form-group">
+                    <label>Фамилия и инициалы (для подписи)</label>
+                    <input type="text" name="initials" value="{{ .user.Initials }}" required>
+                </div>
+                <div class="form-group">
+                    <label>Роль</label>
+                    <input type="text" value="{{ if eq (string .user.Role) "admin" }}Администратор{{ else }}Инспектор{{ end }}" readonly class="input-readonly">
+                </div>
+                <hr style="margin: 20px 0; border-color: #eee">
+                <div class="form-group">
+                    <label>Новый пароль <span style="color:#999;font-weight:400">(оставьте пустым чтобы не менять)</span></label>
+                    <input type="password" name="new_password" placeholder="Минимум 6 символов">
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </div>
+            </form>
+        </div>
+    </main>
+</body>
+</html>

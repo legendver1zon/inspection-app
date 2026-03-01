@@ -1,0 +1,170 @@
+/* ===== Reset & Base ===== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; color: #1a1a2e; background: #f4f6fb; }
+a { color: #4361ee; text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ===== Navbar ===== */
+.navbar {
+    background: #1a1a2e;
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 24px;
+    height: 52px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+}
+.navbar-brand a { color: #fff; font-weight: 700; font-size: 16px; }
+.navbar-menu { display: flex; align-items: center; gap: 20px; }
+.navbar-menu a { color: #ccc; font-size: 14px; }
+.navbar-menu a:hover { color: #fff; text-decoration: none; }
+.btn-link { background: none; border: none; color: #ccc; cursor: pointer; font-size: 14px; padding: 0; }
+.btn-link:hover { color: #fff; }
+
+/* ===== Container ===== */
+.container { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
+
+/* ===== Page Header ===== */
+.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.page-header h1 { font-size: 22px; font-weight: 700; }
+
+/* ===== Buttons ===== */
+.btn {
+    display: inline-block;
+    padding: 8px 18px;
+    border-radius: 6px;
+    border: 1px solid #dde2f0;
+    background: #fff;
+    color: #1a1a2e;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background .15s, border-color .15s;
+    white-space: nowrap;
+}
+.btn:hover { background: #f0f3ff; text-decoration: none; }
+.btn-primary { background: #4361ee; border-color: #4361ee; color: #fff; }
+.btn-primary:hover { background: #3451d1; border-color: #3451d1; }
+.btn-secondary { background: #eef0f8; border-color: #dde2f0; }
+.btn-danger { background: #e74c3c; border-color: #e74c3c; color: #fff; }
+.btn-danger:hover { background: #c0392b; }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+.btn-full { width: 100%; text-align: center; }
+
+/* ===== Auth Pages ===== */
+.auth-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.auth-container {
+    background: #fff;
+    border-radius: 12px;
+    padding: 40px;
+    width: 100%;
+    max-width: 420px;
+    box-shadow: 0 4px 24px rgba(67,97,238,.1);
+}
+.auth-container h1 { font-size: 24px; margin-bottom: 4px; }
+.auth-subtitle { color: #666; margin-bottom: 28px; }
+.auth-link { margin-top: 20px; text-align: center; color: #666; }
+
+/* ===== Forms ===== */
+.form-group { display: flex; flex-direction: column; gap: 4px; margin-bottom: 16px; }
+.form-group label { font-weight: 600; font-size: 13px; color: #444; }
+.form-group input, .form-group select, .form-group textarea {
+    padding: 9px 12px;
+    border: 1px solid #dde2f0;
+    border-radius: 6px;
+    font-size: 14px;
+    outline: none;
+    transition: border-color .15s;
+    background: #fff;
+}
+.form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+    border-color: #4361ee;
+    box-shadow: 0 0 0 3px rgba(67,97,238,.1);
+}
+.form-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
+.form-hint { font-size: 11px; color: #999; }
+.input-readonly { background: #f4f6fb !important; color: #666; }
+.form-actions { margin-top: 24px; display: flex; gap: 12px; justify-content: flex-end; }
+
+.form-card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 28px;
+    box-shadow: 0 2px 12px rgba(0,0,0,.06);
+    margin-bottom: 24px;
+}
+.form-card h2 { font-size: 16px; margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #eee; color: #444; }
+
+/* ===== Table ===== */
+.table-wrapper { background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 2px 12px rgba(0,0,0,.06); }
+.table { width: 100%; border-collapse: collapse; }
+.table th { background: #f8f9fe; padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 700; color: #888; text-transform: uppercase; letter-spacing: .05em; border-bottom: 1px solid #eee; }
+.table td { padding: 12px 16px; border-bottom: 1px solid #f0f2f8; vertical-align: middle; }
+.table tr:last-child td { border-bottom: none; }
+.table tr:hover td { background: #fafbff; }
+.actions { display: flex; gap: 8px; }
+
+/* ===== Badges ===== */
+.badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.badge-success { background: #d4edda; color: #155724; }
+.badge-draft { background: #fff3cd; color: #856404; }
+.badge-admin { background: #cfe2ff; color: #084298; }
+.badge-inspector { background: #e2e3e5; color: #41464b; }
+
+/* ===== Alerts ===== */
+.alert { padding: 12px 16px; border-radius: 6px; margin-bottom: 16px; font-size: 13px; }
+.alert-error { background: #fde8e8; color: #c0392b; border: 1px solid #f5c6cb; }
+.alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+
+/* ===== Empty State ===== */
+.empty-state { text-align: center; padding: 60px 20px; color: #888; }
+.empty-state p { margin-bottom: 16px; font-size: 16px; }
+
+/* ===== Defects Form ===== */
+.defects-section { margin-bottom: 28px; }
+.defects-section h3 {
+    font-size: 15px;
+    font-weight: 700;
+    margin-bottom: 14px;
+    padding: 10px 16px;
+    background: #f0f3ff;
+    border-radius: 6px;
+    border-left: 4px solid #4361ee;
+}
+.defects-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0; }
+.defect-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #f0f2f8;
+}
+.defect-row:hover { background: #fafbff; }
+.defect-name { flex: 1; font-size: 13px; color: #333; }
+.defect-threshold { font-size: 11px; color: #999; white-space: nowrap; }
+.defect-input {
+    width: 90px;
+    padding: 5px 8px;
+    border: 1px solid #dde2f0;
+    border-radius: 4px;
+    font-size: 13px;
+    text-align: center;
+}
+.defect-input:focus { outline: none; border-color: #4361ee; }
+
+/* Стены — 4 колонки */
+.wall-headers { display: grid; grid-template-columns: 1fr 70px 70px 70px 70px; gap: 6px; padding: 6px 12px; background: #f8f9fe; font-size: 11px; font-weight: 700; color: #888; text-transform: uppercase; }
+.wall-row { display: grid; grid-template-columns: 1fr 70px 70px 70px 70px; gap: 6px; padding: 7px 12px; border-bottom: 1px solid #f0f2f8; align-items: center; }
+.wall-row:hover { background: #fafbff; }
+
+/* ===== View Page ===== */
+.info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 12px; margin-bottom: 20px; }
+.info-item { display: flex; flex-direction: column; gap: 2px; }
+.info-label { font-size: 11px; color: #999; text-transform: uppercase; }
+.info-value { font-size: 14px; font-weight: 600; }
+
+/* ===== Profile ===== */
+.profile-card { max-width: 540px; }

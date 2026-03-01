@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .title }} — Акты осмотра</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body class="auth-page">
+    <div class="auth-container">
+        <h1>Вход в систему</h1>
+        <p class="auth-subtitle">Акты осмотра объектов</p>
+
+        {{ if .error }}
+        <div class="alert alert-error">{{ .error }}</div>
+        {{ end }}
+
+        {{ if eq (index . "registered") "1" }}
+        <div class="alert alert-success">Регистрация прошла успешно. Войдите в систему.</div>
+        {{ end }}
+
+        <form method="POST" action="/login">
+            <div class="form-group">
+                <label for="email">Email</label>
+                <input type="email" id="email" name="email" required placeholder="example@mail.ru">
+            </div>
+            <div class="form-group">
+                <label for="password">Пароль</label>
+                <input type="password" id="password" name="password" required placeholder="••••••">
+            </div>
+            <button type="submit" class="btn btn-primary btn-full">Войти</button>
+        </form>
+
+        <p class="auth-link">Нет аккаунта? <a href="/register">Зарегистрироваться</a></p>
+    </div>
+</body>
+</html>
