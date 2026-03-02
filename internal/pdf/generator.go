@@ -108,36 +108,60 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 		"RH=", fmtHumidity(inspection.Humidity),
 	)
 
-	// План помещений — на первой странице под шапкой, занимает всё оставшееся место
-	planOnPage1 := false
+	// План помещений — на первой странице, пропорционально (без растяжки)
+	hasContent := false
 	if inspection.PlanImage != "" {
 		imgPath := "web/static/uploads/" + filepath.Base(inspection.PlanImage)
 		if _, err := os.Stat(imgPath); err == nil {
 			f.Ln(3)
 			setFont(f, "B", 11)
 			f.CellFormat(contentW, 7, "ПЛАН ПОМЕЩЕНИЙ", "", 1, "C", false, 0, "")
-			// Заполнить оставшееся место на странице 1
-			availH := pageH - marginB - 10 - f.GetY() - 2
-			if availH > 20 {
-				f.ImageOptions(imgPath, marginL, f.GetY()+2, contentW, availH, false,
-					fpdf.ImageOptions{ImageType: "", ReadDpi: true}, 0, "")
+			f.Ln(2)
+
+			// Получаем размеры изображения для пропорционального масштабирования
+			info := f.RegisterImageOptions(imgPath, fpdf.ImageOptions{})
+			if info != nil {
+				iW, iH := info.Extent()
+				if iW > 0 && iH > 0 {
+					// Примерная высота таблицы замеров (чтобы оставить место)
+					measH := 0.0
+					if hasAnyMeasurements(inspection.Rooms) {
+						measH = float64(len(inspection.Rooms)+2)*7 + 12
+					}
+					// Масштабируем под ширину страницы, сохраняем пропорции
+					drawW := contentW
+					drawH := iH * (drawW / iW)
+					// Ограничиваем высоту так, чтобы ниже поместилась таблица замеров
+					maxH := pageH - marginB - f.GetY() - measH - 5
+					if maxH < 30 {
+						maxH = 30
+					}
+					if drawH > maxH {
+						scale := maxH / drawH
+						drawH = maxH
+						drawW = drawW * scale
+					}
+					xOff := (contentW - drawW) / 2
+					f.ImageOptions(imgPath, marginL+xOff, f.GetY(), drawW, drawH, false, fpdf.ImageOptions{}, 0, "")
+					f.SetY(f.GetY() + drawH + 3)
+				}
 			}
-			planOnPage1 = true
-			f.AddPage() // Замеры и дефекты — с новой страницы
+			hasContent = true
 		}
 	}
 
-	// Таблица замеров — только если хоть в одной комнате есть данные
+	// Таблица замеров — на первой странице после плана
 	if hasAnyMeasurements(inspection.Rooms) {
-		if !planOnPage1 {
+		if !hasContent {
 			f.Ln(5)
 		}
 		drawMeasurementsTable(f, inspection.Rooms)
+		hasContent = true
 	}
 
-	// ===== Дефекты по помещениям — непрерывный поток =====
-	if planOnPage1 {
-		// уже на новой странице, отступ не нужен
+	// ===== Дефекты по помещениям — с новой страницы (если на стр.1 был план/замеры)
+	if hasContent {
+		f.AddPage()
 	} else {
 		f.Ln(6) // отступ между шапкой и первым помещением
 	}
