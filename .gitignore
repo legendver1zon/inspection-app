@@ -28,5 +28,4 @@ web/static/documents/*.docx
 # Go
 vendor/
 
-# Шрифты (добавляются локально или при сборке на сервере)
-internal/pdf/fonts/*.ttf
+# Шрифты включены в репозиторий (DejaVu, open-source)
