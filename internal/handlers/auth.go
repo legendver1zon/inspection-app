@@ -62,14 +62,30 @@ func GetRegister(c *gin.Context) {
 	})
 }
 
+// buildInitials генерирует «Фамилия И.О.» из полного ФИО
+func buildInitials(fullName string) string {
+	parts := strings.Fields(fullName)
+	if len(parts) == 0 {
+		return fullName
+	}
+	result := parts[0]
+	for i := 1; i < len(parts) && i <= 2; i++ {
+		runes := []rune(parts[i])
+		if len(runes) > 0 {
+			result += " " + string(runes[0]) + "."
+		}
+	}
+	return result
+}
+
 // PostRegister — обработка формы регистрации
 func PostRegister(c *gin.Context) {
 	email := strings.TrimSpace(c.PostForm("email"))
 	password := c.PostForm("password")
 	fullName := strings.TrimSpace(c.PostForm("full_name"))
-	initials := strings.TrimSpace(c.PostForm("initials"))
+	initials := buildInitials(fullName)
 
-	if email == "" || password == "" || fullName == "" || initials == "" {
+	if email == "" || password == "" || fullName == "" {
 		c.HTML(http.StatusBadRequest, "register.html", gin.H{
 			"title": "Регистрация",
 			"error": "Заполните все поля",

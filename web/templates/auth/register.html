@@ -19,13 +19,8 @@
             <div class="form-group">
                 <label for="full_name">ФИО полностью</label>
                 <input type="text" id="full_name" name="full_name" required
-                       placeholder="Иванов Иван Иванович">
-            </div>
-            <div class="form-group">
-                <label for="initials">Фамилия и инициалы</label>
-                <input type="text" id="initials" name="initials" required
-                       placeholder="Иванов И.И.">
-                <span class="form-hint">Используется в подписи документа</span>
+                       placeholder="Иванов Иван Иванович" autocomplete="name">
+                <span class="form-hint" id="initials-preview" style="color:var(--text-muted)"></span>
             </div>
             <div class="form-group">
                 <label for="email">Email</label>
@@ -42,5 +37,25 @@
 
         <p class="auth-link">Уже есть аккаунт? <a href="/login">Войти</a></p>
     </div>
+<script>
+(function() {
+    function toInitials(fullName) {
+        const parts = fullName.trim().split(/\s+/).filter(Boolean);
+        if (!parts.length) return '';
+        let r = parts[0];
+        for (let i = 1; i < parts.length && i <= 2; i++) {
+            const ch = [...parts[i]][0]; // правильно для кириллицы
+            if (ch) r += ' ' + ch + '.';
+        }
+        return r;
+    }
+    const inp = document.getElementById('full_name');
+    const hint = document.getElementById('initials-preview');
+    inp.addEventListener('input', function() {
+        const v = toInitials(this.value);
+        hint.textContent = v ? 'В подписи: ' + v : '';
+    });
+})();
+</script>
 </body>
 </html>
