@@ -22,14 +22,16 @@ func GetInspections(c *gin.Context) {
 		tab = "draft"
 	}
 
-	// Счётчики по статусам
-	countBase := storage.DB.Model(&models.Inspection{})
-	if role != "admin" {
-		countBase = countBase.Where("user_id = ?", userID)
-	}
+	// Счётчики по статусам — отдельные запросы во избежание мутации query
 	var draftCount, completedCount int64
-	countBase.Where("status = ?", "draft").Count(&draftCount)
-	countBase.Where("status = ?", "completed").Count(&completedCount)
+	draftQ := storage.DB.Model(&models.Inspection{}).Where("status = ?", "draft")
+	completedQ := storage.DB.Model(&models.Inspection{}).Where("status = ?", "completed")
+	if role != "admin" {
+		draftQ = draftQ.Where("user_id = ?", userID)
+		completedQ = completedQ.Where("user_id = ?", userID)
+	}
+	draftQ.Count(&draftCount)
+	completedQ.Count(&completedCount)
 
 	// Список по выбранной вкладке
 	var inspections []models.Inspection

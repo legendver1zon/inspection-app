@@ -35,6 +35,7 @@
                         <th>Дата</th>
                         <th>Адрес</th>
                         {{ if .isAdmin }}<th>Мастер</th>{{ end }}
+                        <th>Статус</th>
                         <th>Действия</th>
                     </tr>
                 </thead>
@@ -45,6 +46,13 @@
                         <td>{{ .Date.Format "02.01.2006" }}</td>
                         <td>{{ .Address }}</td>
                         {{ if $.isAdmin }}<td>{{ .User.Initials }}</td>{{ end }}
+                        <td>
+                            {{ if eq .Status "completed" }}
+                            <span class="badge badge-success">Завершён</span>
+                            {{ else }}
+                            <span class="badge badge-draft">В работе</span>
+                            {{ end }}
+                        </td>
                         <td class="actions">
                             <a href="/inspections/{{ .ID }}" class="btn btn-sm">Просмотр</a>
                             <a href="/inspections/{{ .ID }}/edit" class="btn btn-sm btn-secondary">Редактировать</a>

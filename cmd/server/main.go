@@ -236,9 +236,12 @@ func main() {
 
 	r.GET("/", func(c *gin.Context) {
 		if tok, err := c.Cookie("token"); err == nil {
-			if _, err := auth.ParseToken(tok); err == nil {
-				c.Redirect(http.StatusFound, "/inspections")
-				return
+			if claims, err := auth.ParseToken(tok); err == nil {
+				var u models.User
+				if storage.DB.First(&u, claims.UserID).Error == nil {
+					c.Redirect(http.StatusFound, "/inspections")
+					return
+				}
 			}
 		}
 		c.Redirect(http.StatusFound, "/login")
@@ -255,6 +258,17 @@ func main() {
 
 	protected := r.Group("/")
 	protected.Use(auth.RequireAuth())
+	protected.Use(func(c *gin.Context) {
+		userID := c.GetUint("userID")
+		var u models.User
+		if storage.DB.First(&u, userID).Error != nil {
+			c.SetCookie("token", "", -1, "/", "", false, true)
+			c.Redirect(http.StatusFound, "/login")
+			c.Abort()
+			return
+		}
+		c.Next()
+	})
 	{
 		protected.GET("/inspections", handlers.GetInspections)
 		protected.GET("/inspections/new", handlers.GetNewInspection)
