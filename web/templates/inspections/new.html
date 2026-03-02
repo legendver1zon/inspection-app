@@ -56,11 +56,17 @@
             <div class="form-row">
                 <div class="form-group">
                     <label>t наружн. (°C)</label>
-                    <input type="text" inputmode="decimal" name="temp_outside" placeholder="-5.0">
+                    <div class="temp-row">
+                        <button type="button" class="btn btn-sm temp-sign" onclick="toggleSign(this)">−</button>
+                        <input type="text" inputmode="decimal" name="temp_outside" placeholder="5.0">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>t внутр. (°C)</label>
-                    <input type="text" inputmode="decimal" name="temp_inside" placeholder="20.0">
+                    <div class="temp-row">
+                        <button type="button" class="btn btn-sm temp-sign" onclick="toggleSign(this)">−</button>
+                        <input type="text" inputmode="decimal" name="temp_inside" placeholder="20.0">
+                    </div>
                 </div>
                 <div class="form-group">
                     <label>RH (%)</label>
@@ -96,5 +102,20 @@
             </div>
         </form>
     </main>
+<script>
+function toggleSign(btn) {
+    const input = btn.nextElementSibling;
+    const val = input.value.trim();
+    if (val.startsWith('-')) {
+        input.value = val.slice(1);
+        btn.textContent = '−';
+        btn.classList.remove('active');
+    } else {
+        input.value = val ? '-' + val : '';
+        btn.textContent = '+';
+        btn.classList.add('active');
+    }
+}
+</script>
 </body>
 </html>
