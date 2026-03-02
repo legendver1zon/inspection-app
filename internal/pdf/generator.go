@@ -108,16 +108,17 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 		"RH=", fmtHumidity(inspection.Humidity),
 	)
 
-	// План помещений — только если загружен
+	// План помещений — отдельная страница на весь лист
 	if inspection.PlanImage != "" {
-		f.Ln(3)
-		setFont(f, "B", 11)
-		f.CellFormat(contentW, 7, "ПЛАН ПОМЕЩЕНИЙ", "", 1, "C", false, 0, "")
 		imgPath := "web/static/uploads/" + filepath.Base(inspection.PlanImage)
 		if _, err := os.Stat(imgPath); err == nil {
-			f.ImageOptions(imgPath, marginL, f.GetY()+2, contentW, 80, false,
+			f.AddPage()
+			setFont(f, "B", 11)
+			f.CellFormat(contentW, 7, "ПЛАН ПОМЕЩЕНИЙ", "", 1, "C", false, 0, "")
+			imgH := pageH - marginT - marginB - 14.0
+			f.ImageOptions(imgPath, marginL, f.GetY()+2, contentW, imgH, false,
 				fpdf.ImageOptions{ImageType: "", ReadDpi: true}, 0, "")
-			f.Ln(84)
+			f.AddPage()
 		}
 	}
 

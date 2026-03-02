@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ .title }} — Акты осмотра</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
 </head>
 <body>
 {{ template "navbar" . }}
@@ -20,15 +21,35 @@
         <h2>План помещений <span class="optional-label">(необязательно)</span></h2>
         {{ if .inspection.PlanImage }}
         <div style="margin-bottom:12px">
-            <img src="{{ .inspection.PlanImage }}" style="max-width:360px;border-radius:6px;border:1px solid #eee">
+            <img id="plan-preview" src="{{ .inspection.PlanImage }}" style="max-width:360px;border-radius:6px;border:1px solid #eee">
+        </div>
+        {{ else }}
+        <div id="plan-preview-wrap" style="margin-bottom:12px;display:none">
+            <img id="plan-preview" style="max-width:360px;border-radius:6px;border:1px solid #eee">
         </div>
         {{ end }}
-        <form method="POST" action="/inspections/{{ .inspection.ID }}/upload-plan" enctype="multipart/form-data">
+        <form id="upload-form" action="/inspections/{{ .inspection.ID }}/upload-plan" method="POST" enctype="multipart/form-data">
             <div class="upload-row">
-                <input type="file" name="plan_image" accept="image/*" class="upload-input">
-                <button type="submit" class="btn">Загрузить фото</button>
+                <input type="file" id="plan-file" name="plan_image" accept="image/*" class="upload-input">
+                <button type="submit" id="upload-btn" class="btn" disabled>Загрузить фото</button>
             </div>
         </form>
+    </div>
+
+    <!-- Модальный кроппер -->
+    <div id="crop-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:2000;align-items:center;justify-content:center">
+        <div style="background:#fff;border-radius:12px;padding:20px;max-width:min(92vw,700px);max-height:90vh;display:flex;flex-direction:column;gap:14px">
+            <div style="overflow:hidden;max-height:60vh;border-radius:8px;background:#000">
+                <img id="crop-img" style="display:block;max-width:100%">
+            </div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+                <button type="button" class="btn btn-sm" id="rot-left">↺ −90°</button>
+                <button type="button" class="btn btn-sm" id="rot-right">↻ +90°</button>
+                <button type="button" class="btn btn-primary" id="crop-apply">Применить</button>
+                <button type="button" class="btn" id="crop-cancel">Отмена</button>
+                <span id="crop-status" style="font-size:13px;color:var(--text-muted)"></span>
+            </div>
+        </div>
     </div>
 
     <!-- Основная форма дефектов -->
@@ -310,5 +331,85 @@ function swapRoomData(to, from) {
 updateUI();
 </script>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
+<script>
+(function() {
+    const planFile   = document.getElementById('plan-file');
+    const uploadBtn  = document.getElementById('upload-btn');
+    const uploadForm = document.getElementById('upload-form');
+    const cropModal  = document.getElementById('crop-modal');
+    const cropImg    = document.getElementById('crop-img');
+    const cropApply  = document.getElementById('crop-apply');
+    const cropCancel = document.getElementById('crop-cancel');
+    const cropStatus = document.getElementById('crop-status');
+    const rotLeft    = document.getElementById('rot-left');
+    const rotRight   = document.getElementById('rot-right');
+    let cropper = null;
+    let croppedBlob = null;
+
+    planFile.addEventListener('change', function() {
+        if (!this.files.length) return;
+        const url = URL.createObjectURL(this.files[0]);
+        if (cropper) { cropper.destroy(); cropper = null; }
+        cropImg.src = url;
+        cropModal.style.display = 'flex';
+        cropper = new Cropper(cropImg, {
+            viewMode: 1,
+            autoCropArea: 0.95,
+            movable: true,
+            zoomable: true,
+            rotatable: true,
+        });
+    });
+
+    rotLeft.addEventListener('click',  function() { if (cropper) cropper.rotate(-90); });
+    rotRight.addEventListener('click', function() { if (cropper) cropper.rotate(90); });
+
+    cropCancel.addEventListener('click', function() {
+        cropModal.style.display = 'none';
+        if (cropper) { cropper.destroy(); cropper = null; }
+        planFile.value = '';
+        uploadBtn.disabled = true;
+    });
+
+    cropApply.addEventListener('click', function() {
+        if (!cropper) return;
+        cropStatus.textContent = 'Обработка...';
+        cropApply.disabled = true;
+        cropper.getCroppedCanvas({ maxWidth: 2400, maxHeight: 2400 }).toBlob(function(blob) {
+            croppedBlob = blob;
+            cropModal.style.display = 'none';
+            cropper.destroy(); cropper = null;
+            cropApply.disabled = false;
+            cropStatus.textContent = '';
+            uploadBtn.disabled = false;
+            // показать превью
+            const previewWrap = document.getElementById('plan-preview-wrap');
+            const preview = document.getElementById('plan-preview');
+            if (preview) {
+                preview.src = URL.createObjectURL(blob);
+                if (previewWrap) previewWrap.style.display = 'block';
+            }
+        }, 'image/jpeg', 0.92);
+    });
+
+    uploadForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        if (!croppedBlob) return;
+        uploadBtn.disabled = true;
+        uploadBtn.textContent = 'Загрузка...';
+        const fd = new FormData();
+        fd.append('plan_image', croppedBlob, 'plan.jpg');
+        try {
+            await fetch(this.action, { method: 'POST', body: fd });
+            location.reload();
+        } catch(err) {
+            uploadBtn.disabled = false;
+            uploadBtn.textContent = 'Загрузить фото';
+            alert('Ошибка загрузки. Попробуйте ещё раз.');
+        }
+    });
+})();
+</script>
 </body>
 </html>
