@@ -56,50 +56,18 @@ func GetInspections(c *gin.Context) {
 	})
 }
 
-// GetNewInspection — форма нового осмотра
+// GetNewInspection — сразу создаёт пустой осмотр и редиректит на редактирование
 func GetNewInspection(c *gin.Context) {
 	userID := c.GetUint("userID")
-	var user models.User
-	storage.DB.First(&user, userID)
 
 	var count int64
 	storage.DB.Model(&models.Inspection{}).Count(&count)
 
-	c.HTML(http.StatusOK, "new.html", gin.H{
-		"title":     "Новый осмотр",
-		"user":      user,
-		"actNumber": strconv.FormatInt(count+1, 10),
-		"today":     time.Now().Format("02.01.2006"),
-		"isAdmin":   c.GetString("userRole") == "admin",
-	})
-}
-
-// PostInspection — создание нового осмотра
-func PostInspection(c *gin.Context) {
-	userID := c.GetUint("userID")
-
-	roomsCount, _ := strconv.Atoi(c.PostForm("rooms_count"))
-	floor, _ := strconv.Atoi(c.PostForm("floor"))
-	totalArea, _ := strconv.ParseFloat(c.PostForm("total_area"), 64)
-	tempOut, _ := strconv.ParseFloat(c.PostForm("temp_outside"), 64)
-	tempIn, _ := strconv.ParseFloat(c.PostForm("temp_inside"), 64)
-	humidity, _ := strconv.ParseFloat(c.PostForm("humidity"), 64)
-
 	inspection := models.Inspection{
-		ActNumber:        c.PostForm("act_number"),
-		UserID:           userID,
-		Date:             time.Now(),
-		InspectionTime:   c.PostForm("inspection_time"),
-		Address:          c.PostForm("address"),
-		RoomsCount:       roomsCount,
-		Floor:            floor,
-		TotalArea:        totalArea,
-		TempOutside:      tempOut,
-		TempInside:       tempIn,
-		Humidity:         humidity,
-		OwnerName:        c.PostForm("owner_name"),
-		DeveloperRepName: c.PostForm("developer_rep_name"),
-		Status:           "draft",
+		ActNumber: strconv.FormatInt(count+1, 10),
+		UserID:    userID,
+		Date:      time.Now(),
+		Status:    "draft",
 	}
 
 	if err := storage.DB.Create(&inspection).Error; err != nil {

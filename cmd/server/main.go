@@ -272,7 +272,6 @@ func main() {
 	{
 		protected.GET("/inspections", handlers.GetInspections)
 		protected.GET("/inspections/new", handlers.GetNewInspection)
-		protected.POST("/inspections", handlers.PostInspection)
 		protected.GET("/inspections/:id", handlers.GetInspection)
 		protected.GET("/inspections/:id/edit", handlers.GetEditInspection)
 		protected.POST("/inspections/:id/edit", handlers.PostEditInspection)

@@ -16,6 +16,67 @@
         <a href="/inspections/{{ .inspection.ID }}" class="btn btn-secondary">← К осмотру</a>
     </div>
 
+    <!-- Шапка акта — inputs связаны с main-form через form="main-form" -->
+    <div class="form-card">
+        <h2>Шапка акта</h2>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Акт осмотра объекта №</label>
+                <input type="text" name="act_number" form="main-form" value="{{ .inspection.ActNumber }}" required>
+            </div>
+            <div class="form-group">
+                <label>Дата</label>
+                <input type="text" value="{{ .inspection.Date.Format "02.01.2006" }}" readonly class="input-readonly">
+            </div>
+            <div class="form-group">
+                <label>Время обследования</label>
+                <input type="time" name="inspection_time" form="main-form" value="{{ .inspection.InspectionTime }}">
+            </div>
+        </div>
+        <div class="form-group">
+            <label>Адрес объекта</label>
+            <input type="text" name="address" form="main-form" value="{{ .inspection.Address }}" required>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Кол-во комнат</label>
+                <input type="number" name="rooms_count" form="main-form" value="{{ .inspection.RoomsCount }}" min="1" max="20">
+            </div>
+            <div class="form-group">
+                <label>Этаж</label>
+                <input type="number" name="floor" form="main-form" value="{{ .inspection.Floor }}" min="1">
+            </div>
+            <div class="form-group">
+                <label>Общая площадь (м²)</label>
+                <input type="number" name="total_area" form="main-form" value="{{ .inspection.TotalArea }}" step="0.1" min="0">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>t наружн. (°C)</label>
+                <input type="text" inputmode="decimal" name="temp_outside" form="main-form" value="{{ .inspection.TempOutside }}">
+            </div>
+            <div class="form-group">
+                <label>t внутр. (°C)</label>
+                <input type="text" inputmode="decimal" name="temp_inside" form="main-form" value="{{ .inspection.TempInside }}">
+            </div>
+            <div class="form-group">
+                <label>RH (%)</label>
+                <input type="number" name="humidity" form="main-form" value="{{ .inspection.Humidity }}" step="0.1" min="0" max="100">
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group">
+                <label>Собственник (представитель) ФИО</label>
+                <input type="text" name="owner_name" form="main-form" value="{{ .inspection.OwnerName }}">
+            </div>
+            <div class="form-group">
+                <label>Представитель застройщика ФИО</label>
+                <input type="text" name="developer_rep_name" form="main-form" value="{{ .inspection.DeveloperRepName }}">
+            </div>
+        </div>
+    </div>
+
     <!-- Загрузка плана -->
     <div class="form-card">
         <h2>План помещений <span class="optional-label">(необязательно)</span></h2>
@@ -52,70 +113,9 @@
         </div>
     </div>
 
-    <!-- Основная форма дефектов -->
+    <!-- Основная форма: помещения + статус -->
     <form method="POST" action="/inspections/{{ .inspection.ID }}/edit" enctype="multipart/form-data" id="main-form">
         <input type="hidden" name="active_rooms" id="active_rooms" value="{{ .activeRooms }}">
-
-        <!-- Шапка акта (редактируемая) -->
-        <div class="form-card">
-            <h2>Шапка акта</h2>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Акт осмотра объекта №</label>
-                    <input type="text" name="act_number" value="{{ .inspection.ActNumber }}" required>
-                </div>
-                <div class="form-group">
-                    <label>Дата</label>
-                    <input type="text" value="{{ .inspection.Date.Format "02.01.2006" }}" readonly class="input-readonly">
-                </div>
-                <div class="form-group">
-                    <label>Время обследования</label>
-                    <input type="time" name="inspection_time" value="{{ .inspection.InspectionTime }}">
-                </div>
-            </div>
-            <div class="form-group">
-                <label>Адрес объекта</label>
-                <input type="text" name="address" value="{{ .inspection.Address }}" required>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Кол-во комнат</label>
-                    <input type="number" name="rooms_count" value="{{ .inspection.RoomsCount }}" min="1" max="20">
-                </div>
-                <div class="form-group">
-                    <label>Этаж</label>
-                    <input type="number" name="floor" value="{{ .inspection.Floor }}" min="1">
-                </div>
-                <div class="form-group">
-                    <label>Общая площадь (м²)</label>
-                    <input type="number" name="total_area" value="{{ .inspection.TotalArea }}" step="0.1" min="0">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>t наружн. (°C)</label>
-                    <input type="text" inputmode="decimal" name="temp_outside" value="{{ .inspection.TempOutside }}">
-                </div>
-                <div class="form-group">
-                    <label>t внутр. (°C)</label>
-                    <input type="text" inputmode="decimal" name="temp_inside" value="{{ .inspection.TempInside }}">
-                </div>
-                <div class="form-group">
-                    <label>RH (%)</label>
-                    <input type="number" name="humidity" value="{{ .inspection.Humidity }}" step="0.1" min="0" max="100">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Собственник (представитель) ФИО</label>
-                    <input type="text" name="owner_name" value="{{ .inspection.OwnerName }}">
-                </div>
-                <div class="form-group">
-                    <label>Представитель застройщика ФИО</label>
-                    <input type="text" name="developer_rep_name" value="{{ .inspection.DeveloperRepName }}">
-                </div>
-            </div>
-        </div>
 
         <!-- Помещения -->
         {{ range .roomNums }}
