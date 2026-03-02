@@ -1,17 +1,136 @@
 {{ define "navbar" }}
 <nav class="navbar">
     <div class="navbar-brand">
-        <a href="/inspections">Акты осмотра</a>
+        <a href="/inspections">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.85">
+                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+                <rect x="9" y="3" width="6" height="4" rx="1"/>
+                <path d="M9 12h6M9 16h4"/>
+            </svg>
+            Акты осмотра
+        </a>
     </div>
-    <div class="navbar-menu">
-        <a href="/inspections">Осмотры</a>
+
+    <!-- Десктоп-ссылки (скрыты на мобиле) -->
+    <div class="navbar-links">
+        <a href="/inspections" class="nav-link">Осмотры</a>
         {{ if .isAdmin }}
-        <a href="/admin/users">Пользователи</a>
+        <a href="/admin/users" class="nav-link">Пользователи</a>
         {{ end }}
-        <a href="/profile">{{ .user.Initials }}</a>
-        <form method="POST" action="/logout" style="display:inline">
-            <button type="submit" class="btn-link">Выйти</button>
+    </div>
+
+    <!-- Кнопка-аватар (открывает drawer) -->
+    <button class="nav-avatar-btn" id="drawerToggle" aria-label="Открыть меню">
+        {{ if .user.AvatarURL }}
+        <img src="{{ .user.AvatarURL }}" class="nav-avatar-img" alt="">
+        {{ else }}
+        <span class="nav-avatar-initials">{{ initials2 .user.Initials }}</span>
+        {{ end }}
+    </button>
+</nav>
+
+<!-- Затемнение фона -->
+<div class="drawer-backdrop" id="drawerBackdrop"></div>
+
+<!-- Боковое меню (выезжает справа) -->
+<aside class="nav-drawer" id="navDrawer" aria-hidden="true">
+
+    <div class="drawer-user-section">
+        <div class="drawer-avatar-lg">
+            {{ if .user.AvatarURL }}
+            <img src="{{ .user.AvatarURL }}" alt="">
+            {{ else }}
+            <span>{{ initials2 .user.Initials }}</span>
+            {{ end }}
+        </div>
+        <div class="drawer-user-info">
+            <div class="drawer-user-name">{{ .user.FullName }}</div>
+            <div class="drawer-user-meta">{{ .user.Email }}</div>
+        </div>
+        <button class="drawer-close-btn" id="drawerClose" aria-label="Закрыть меню">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round">
+                <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+        </button>
+    </div>
+
+    <nav class="drawer-nav-links">
+        <a href="/inspections" class="drawer-link">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/>
+                <rect x="9" y="3" width="6" height="4" rx="1"/>
+                <path d="M9 12h6M9 16h4"/>
+            </svg>
+            Осмотры
+        </a>
+        {{ if .isAdmin }}
+        <a href="/admin/users" class="drawer-link">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                <circle cx="9" cy="7" r="4"/>
+                <path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/>
+            </svg>
+            Пользователи
+        </a>
+        {{ end }}
+        <a href="/profile" class="drawer-link">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/>
+                <circle cx="12" cy="7" r="4"/>
+            </svg>
+            Профиль
+        </a>
+    </nav>
+
+    <div class="drawer-footer">
+        <form method="POST" action="/logout">
+            <button type="submit" class="btn btn-danger btn-full">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/>
+                </svg>
+                Выйти
+            </button>
         </form>
     </div>
-</nav>
+</aside>
+
+<script>
+(function() {
+    const toggle   = document.getElementById('drawerToggle');
+    const closeBtn = document.getElementById('drawerClose');
+    const backdrop = document.getElementById('drawerBackdrop');
+    const drawer   = document.getElementById('navDrawer');
+
+    function open() {
+        drawer.classList.add('open');
+        backdrop.classList.add('show');
+        drawer.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+    }
+    function close() {
+        drawer.classList.remove('open');
+        backdrop.classList.remove('show');
+        drawer.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+    }
+
+    toggle.addEventListener('click', open);
+    closeBtn.addEventListener('click', close);
+    backdrop.addEventListener('click', close);
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') close();
+    });
+
+    // Подсвечиваем активный пункт
+    const path = window.location.pathname;
+    drawer.querySelectorAll('.drawer-link').forEach(function(link) {
+        if (link.getAttribute('href') === path ||
+            (path.startsWith('/inspections') && link.getAttribute('href') === '/inspections') ||
+            (path.startsWith('/admin/users') && link.getAttribute('href') === '/admin/users') ||
+            (path.startsWith('/profile')     && link.getAttribute('href') === '/profile')) {
+            link.classList.add('active');
+        }
+    });
+})();
+</script>
 {{ end }}

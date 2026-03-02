@@ -5,6 +5,8 @@ import (
 	"inspection-app/internal/models"
 	"inspection-app/internal/storage"
 	"net/http"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -72,4 +74,27 @@ func PostProfile(c *gin.Context) {
 		"success": "Профиль обновлён",
 		"isAdmin": c.GetString("userRole") == "admin",
 	})
+}
+
+// PostUploadAvatar — загрузка аватара пользователя
+func PostUploadAvatar(c *gin.Context) {
+	userID := c.GetUint("userID")
+	var user models.User
+	storage.DB.First(&user, userID)
+
+	file, err := c.FormFile("avatar")
+	if err != nil {
+		c.Redirect(http.StatusFound, "/profile")
+		return
+	}
+
+	ext := filepath.Ext(file.Filename)
+	filename := "avatar_" + strconv.FormatUint(uint64(userID), 10) + ext
+	if err := c.SaveUploadedFile(file, "web/static/uploads/"+filename); err != nil {
+		c.Redirect(http.StatusFound, "/profile")
+		return
+	}
+
+	storage.DB.Model(&user).Update("avatar_url", "/static/uploads/"+filename)
+	c.Redirect(http.StatusFound, "/profile")
 }

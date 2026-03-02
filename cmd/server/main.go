@@ -38,6 +38,24 @@ func main() {
 		"string": func(v interface{}) string {
 			return fmt.Sprintf("%v", v)
 		},
+		// initials2 — первые буквы первых двух слов (аббревиатура для аватара)
+		"initials2": func(s string) string {
+			parts := strings.Fields(s)
+			result := ""
+			for i, p := range parts {
+				if i >= 2 {
+					break
+				}
+				r := []rune(p)
+				if len(r) > 0 {
+					result += string(r[0])
+				}
+			}
+			if result == "" {
+				return "?"
+			}
+			return result
+		},
 		// defectVal — значение дефекта для комнаты из roomMap
 		"defectVal": func(roomMap map[int]*models.InspectionRoom, roomNum int, templateID uint, wallNum int) string {
 			if room, ok := roomMap[roomNum]; ok && room != nil {
@@ -307,6 +325,7 @@ func main() {
 
 		protected.GET("/profile", handlers.GetProfile)
 		protected.POST("/profile", handlers.PostProfile)
+		protected.POST("/profile/avatar", handlers.PostUploadAvatar)
 
 		protected.POST("/documents/:id/delete", handlers.PostDeleteDocument)
 
