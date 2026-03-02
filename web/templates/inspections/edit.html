@@ -407,30 +407,47 @@ updateUI();
     const rotRight   = document.getElementById('rot-right');
     let cropper = null;
     let croppedBlob = null;
+    let origBlobUrl = null;
+    let totalRot = 0;
 
-    planFile.addEventListener('change', function() {
-        if (!this.files.length) return;
-        const url = URL.createObjectURL(this.files[0]);
+    function initCropper(src) {
         if (cropper) { cropper.destroy(); cropper = null; }
-        cropImg.src = url;
+        cropImg.src = src;
         cropModal.style.display = 'flex';
         cropper = new Cropper(cropImg, {
             viewMode: 1,
             autoCropArea: 0.95,
             movable: true,
             zoomable: true,
-            rotatable: true,
+            rotatable: false,
         });
+    }
+
+    planFile.addEventListener('change', function() {
+        if (!this.files.length) return;
+        if (origBlobUrl) URL.revokeObjectURL(origBlobUrl);
+        origBlobUrl = URL.createObjectURL(this.files[0]);
+        totalRot = 0;
+        initCropper(origBlobUrl);
     });
 
     function rotateFit(deg) {
-        if (!cropper) return;
-        cropper.rotate(deg);
-        // После поворота растянуть crop box на весь холст
-        setTimeout(function() {
-            const cd = cropper.getCanvasData();
-            cropper.setCropBoxData({ left: cd.left, top: cd.top, width: cd.width, height: cd.height });
-        }, 50);
+        if (!origBlobUrl) return;
+        totalRot = (totalRot + deg + 360) % 360;
+        const img = new Image();
+        img.onload = function() {
+            const swap = totalRot === 90 || totalRot === 270;
+            const cw = swap ? img.height : img.width;
+            const ch = swap ? img.width : img.height;
+            const cv = document.createElement('canvas');
+            cv.width = cw; cv.height = ch;
+            const ctx = cv.getContext('2d');
+            ctx.translate(cw / 2, ch / 2);
+            ctx.rotate(totalRot * Math.PI / 180);
+            ctx.drawImage(img, -img.width / 2, -img.height / 2);
+            initCropper(cv.toDataURL('image/jpeg', 0.95));
+        };
+        img.src = origBlobUrl;
     }
     rotLeft.addEventListener('click',  function() { rotateFit(-90); });
     rotRight.addEventListener('click', function() { rotateFit(90); });
@@ -440,6 +457,8 @@ updateUI();
         if (cropper) { cropper.destroy(); cropper = null; }
         planFile.value = '';
         uploadBtn.disabled = true;
+        origBlobUrl = null;
+        totalRot = 0;
     });
 
     cropApply.addEventListener('click', function() {

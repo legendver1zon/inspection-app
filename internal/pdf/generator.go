@@ -431,7 +431,8 @@ func row4col(f *fpdf.Fpdf, l1, v1, l2, v2, l3, v3 string) {
 		setFont(f, "", 9)
 		f.CellFormat(third-lw, 6, p[1], "B", 0, "L", false, 0, "")
 	}
-	f.Ln(4)
+	f.Ln(-1) // перейти вниз на высоту ячейки (6мм от верха строки)
+	f.Ln(2)  // + 2мм отступ
 }
 
 func labelValue(f *fpdf.Fpdf, label, value string) {
