@@ -10,6 +10,7 @@ import (
 	"inspection-app/internal/storage"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -19,8 +20,15 @@ type wallRow struct {
 	Name, W1, W2, W3, W4 string
 }
 
+func dbPath() string {
+	if p := os.Getenv("DB_PATH"); p != "" {
+		return p
+	}
+	return "inspection.db"
+}
+
 func main() {
-	storage.Connect("inspection.db")
+	storage.Connect(dbPath())
 	storage.Migrate()
 	seed.SeedDefects()
 

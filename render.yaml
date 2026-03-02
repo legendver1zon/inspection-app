@@ -9,3 +9,10 @@ services:
       find /usr/share/fonts -name "LiberationSans-Bold.ttf" 2>/dev/null | head -1 | xargs -I{} cp {} internal/pdf/fonts/font_bold.ttf;
       go build -o app ./cmd/server
     startCommand: ./app
+    envVars:
+      - key: DB_PATH
+        value: /var/data/inspection.db
+    disk:
+      name: inspection-data
+      mountPath: /var/data
+      sizeGB: 1
