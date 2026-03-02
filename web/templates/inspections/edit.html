@@ -140,17 +140,27 @@
             <!-- Замеры (сворачиваемые) -->
             <details class="measures-block">
                 <summary>Замеры помещения (необязательно)</summary>
-                <div class="measures-grid">
+                <div class="measures-grid" id="meas-grid-{{ $i }}">
                     <label>Длина (м)<input type="number" step="0.01" name="room_length_{{ $i }}" value="{{ roomField $.roomMap $i "length" }}"></label>
                     <label>Ширина (м)<input type="number" step="0.01" name="room_width_{{ $i }}" value="{{ roomField $.roomMap $i "width" }}"></label>
                     <label>Высота (м)<input type="number" step="0.01" name="room_height_{{ $i }}" value="{{ roomField $.roomMap $i "height" }}"></label>
+                    <!-- Окно 1 — всегда видно -->
                     <label>Окно 1 выс.<input type="number" step="0.01" name="room_w1h_{{ $i }}" value="{{ roomField $.roomMap $i "w1h" }}"></label>
                     <label>Окно 1 шир.<input type="number" step="0.01" name="room_w1w_{{ $i }}" value="{{ roomField $.roomMap $i "w1w" }}"></label>
-                    <label>Окно 2 выс.<input type="number" step="0.01" name="room_w2h_{{ $i }}" value="{{ roomField $.roomMap $i "w2h" }}"></label>
-                    <label>Окно 2 шир.<input type="number" step="0.01" name="room_w2w_{{ $i }}" value="{{ roomField $.roomMap $i "w2w" }}"></label>
+                    <!-- Окна 2–5 — скрыты по умолчанию, JS покажет если есть данные -->
+                    <label class="extra-win" data-room="{{ $i }}" data-wnum="2" style="display:none">Окно 2 выс.<input type="number" step="0.01" name="room_w2h_{{ $i }}" value="{{ roomField $.roomMap $i "w2h" }}"></label>
+                    <label class="extra-win" data-room="{{ $i }}" data-wnum="2" style="display:none">Окно 2 шир.<input type="number" step="0.01" name="room_w2w_{{ $i }}" value="{{ roomField $.roomMap $i "w2w" }}"></label>
+                    <label class="extra-win" data-room="{{ $i }}" data-wnum="3" style="display:none">Окно 3 выс.<input type="number" step="0.01" name="room_w3h_{{ $i }}" value="{{ roomField $.roomMap $i "w3h" }}"></label>
+                    <label class="extra-win" data-room="{{ $i }}" data-wnum="3" style="display:none">Окно 3 шир.<input type="number" step="0.01" name="room_w3w_{{ $i }}" value="{{ roomField $.roomMap $i "w3w" }}"></label>
+                    <label class="extra-win" data-room="{{ $i }}" data-wnum="4" style="display:none">Окно 4 выс.<input type="number" step="0.01" name="room_w4h_{{ $i }}" value="{{ roomField $.roomMap $i "w4h" }}"></label>
+                    <label class="extra-win" data-room="{{ $i }}" data-wnum="4" style="display:none">Окно 4 шир.<input type="number" step="0.01" name="room_w4w_{{ $i }}" value="{{ roomField $.roomMap $i "w4w" }}"></label>
+                    <label class="extra-win" data-room="{{ $i }}" data-wnum="5" style="display:none">Окно 5 выс.<input type="number" step="0.01" name="room_w5h_{{ $i }}" value="{{ roomField $.roomMap $i "w5h" }}"></label>
+                    <label class="extra-win" data-room="{{ $i }}" data-wnum="5" style="display:none">Окно 5 шир.<input type="number" step="0.01" name="room_w5w_{{ $i }}" value="{{ roomField $.roomMap $i "w5w" }}"></label>
+                    <!-- Дверь -->
                     <label>Дверь выс.<input type="number" step="0.01" name="room_dh_{{ $i }}" value="{{ roomField $.roomMap $i "dh" }}"></label>
                     <label>Дверь шир.<input type="number" step="0.01" name="room_dw_{{ $i }}" value="{{ roomField $.roomMap $i "dw" }}"></label>
                 </div>
+                <button type="button" id="btn-win-{{ $i }}" class="btn btn-sm btn-secondary" style="margin-top:8px" onclick="addWindow({{ $i }})">+ Добавить окно</button>
             </details>
 
             <!-- ОКНА -->
@@ -390,6 +400,53 @@ function swapRoomData(to, from) {
 
 // Инициализация при загрузке
 updateUI();
+initWindows();
+
+// ===== Динамические окна =====
+function initWindows() {
+    for (let r = 1; r <= MAX_ROOMS; r++) {
+        // Определяем максимальный номер окна с данными
+        let maxWin = 1;
+        for (let w = 2; w <= 5; w++) {
+            const hEl = document.querySelector(`input[name="room_w${w}h_${r}"]`);
+            const wEl = document.querySelector(`input[name="room_w${w}w_${r}"]`);
+            if ((hEl && hEl.value) || (wEl && wEl.value)) {
+                maxWin = w;
+            }
+        }
+        // Показываем окна 2..maxWin
+        for (let w = 2; w <= maxWin; w++) {
+            showWindowPair(r, w);
+        }
+        updateWinBtn(r);
+    }
+}
+
+function showWindowPair(roomNum, winNum) {
+    document.querySelectorAll(`.extra-win[data-room="${roomNum}"][data-wnum="${winNum}"]`)
+        .forEach(el => el.style.display = '');
+}
+
+function addWindow(roomNum) {
+    for (let w = 2; w <= 5; w++) {
+        const pairs = document.querySelectorAll(`.extra-win[data-room="${roomNum}"][data-wnum="${w}"]`);
+        if (pairs.length > 0 && pairs[0].style.display === 'none') {
+            pairs.forEach(el => el.style.display = '');
+            updateWinBtn(roomNum);
+            return;
+        }
+    }
+}
+
+function updateWinBtn(roomNum) {
+    const btn = document.getElementById('btn-win-' + roomNum);
+    if (!btn) return;
+    // Кнопка недоступна когда окно 5 уже показано
+    const w5 = document.querySelectorAll(`.extra-win[data-room="${roomNum}"][data-wnum="5"]`);
+    const maxReached = w5.length > 0 && w5[0].style.display !== 'none';
+    btn.disabled = maxReached;
+    btn.style.opacity = maxReached ? '0.4' : '';
+}
 </script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>

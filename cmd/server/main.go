@@ -98,6 +98,30 @@ func main() {
 					if room.Window2Width != 0 {
 						return fmt.Sprintf("%g", room.Window2Width)
 					}
+				case "w3h":
+					if room.Window3Height != 0 {
+						return fmt.Sprintf("%g", room.Window3Height)
+					}
+				case "w3w":
+					if room.Window3Width != 0 {
+						return fmt.Sprintf("%g", room.Window3Width)
+					}
+				case "w4h":
+					if room.Window4Height != 0 {
+						return fmt.Sprintf("%g", room.Window4Height)
+					}
+				case "w4w":
+					if room.Window4Width != 0 {
+						return fmt.Sprintf("%g", room.Window4Width)
+					}
+				case "w5h":
+					if room.Window5Height != 0 {
+						return fmt.Sprintf("%g", room.Window5Height)
+					}
+				case "w5w":
+					if room.Window5Width != 0 {
+						return fmt.Sprintf("%g", room.Window5Width)
+					}
 				case "dh":
 					if room.DoorHeight != 0 {
 						return fmt.Sprintf("%g", room.DoorHeight)

@@ -182,11 +182,37 @@ func hasAnyMeasurements(rooms []models.InspectionRoom) bool {
 	for _, r := range rooms {
 		if r.Length > 0 || r.Width > 0 || r.Height > 0 ||
 			r.Window1Height > 0 || r.Window1Width > 0 ||
+			r.Window2Height > 0 || r.Window3Height > 0 ||
+			r.Window4Height > 0 || r.Window5Height > 0 ||
 			r.DoorHeight > 0 || r.DoorWidth > 0 {
 			return true
 		}
 	}
 	return false
+}
+
+// maxWindowsUsed returns the highest window number (1-5) that has data across all rooms.
+func maxWindowsUsed(rooms []models.InspectionRoom) int {
+	max := 1
+	for _, r := range rooms {
+		if r.Window5Height > 0 || r.Window5Width > 0 {
+			return 5
+		}
+		if r.Window4Height > 0 || r.Window4Width > 0 {
+			if 4 > max {
+				max = 4
+			}
+		} else if r.Window3Height > 0 || r.Window3Width > 0 {
+			if 3 > max {
+				max = 3
+			}
+		} else if r.Window2Height > 0 || r.Window2Width > 0 {
+			if 2 > max {
+				max = 2
+			}
+		}
+	}
+	return max
 }
 
 func roomHasAnyDefects(room *models.InspectionRoom) bool {
@@ -202,30 +228,70 @@ func drawMeasurementsTable(f *fpdf.Fpdf, rooms []models.InspectionRoom) {
 	if len(rooms) == 0 {
 		return
 	}
-	setFont(f, "B", 9)
-	headers := []string{"№", "Помещение", "Дл.", "Шир.", "Выс.", "О1 выс", "О1 шир", "О2 выс", "О2 шир", "Д выс", "Д шир"}
-	widths := []float64{8, 40, 14, 14, 14, 14, 14, 14, 14, 14, 14}
+
+	numWin := maxWindowsUsed(rooms)
+
+	// Column widths: adjust window cols and name col based on window count
+	winColW := 14.0
+	if numWin >= 4 {
+		winColW = 10.0
+	} else if numWin >= 3 {
+		winColW = 12.0
+	}
+	// fixed cols: №(8) + Дл(13) + Шир(13) + Выс(13) + Двыс(13) + Дшир(13) = 73
+	fixedW := 8.0 + 13.0*5
+	nameW := contentW - fixedW - float64(numWin)*2*winColW
+	if nameW < 22 {
+		nameW = 22
+	}
+
+	fontSize := 9.0
+	if numWin >= 4 {
+		fontSize = 8.0
+	}
+
+	setFont(f, "B", fontSize)
+	headers := []string{"№", "Помещение", "Дл.", "Шир.", "Выс."}
+	widths := []float64{8, nameW, 13, 13, 13}
+	for i := 1; i <= numWin; i++ {
+		headers = append(headers, fmt.Sprintf("О%d в", i))
+		headers = append(headers, fmt.Sprintf("О%d ш", i))
+		widths = append(widths, winColW)
+		widths = append(widths, winColW)
+	}
+	headers = append(headers, "Д выс", "Д шир")
+	widths = append(widths, 13, 13)
 
 	for i, h := range headers {
 		f.CellFormat(widths[i], 6, h, "1", 0, "C", false, 0, "")
 	}
 	f.Ln(-1)
 
-	setFont(f, "", 9)
+	windowVals := func(r models.InspectionRoom) []float64 {
+		return []float64{
+			r.Window1Height, r.Window1Width,
+			r.Window2Height, r.Window2Width,
+			r.Window3Height, r.Window3Width,
+			r.Window4Height, r.Window4Width,
+			r.Window5Height, r.Window5Width,
+		}
+	}
+
+	setFont(f, "", fontSize)
 	for _, room := range rooms {
+		wins := windowVals(room)
 		row := []string{
 			strconv.Itoa(room.RoomNumber),
 			room.RoomName,
 			fmtFloat(room.Length),
 			fmtFloat(room.Width),
 			fmtFloat(room.Height),
-			fmtFloat(room.Window1Height),
-			fmtFloat(room.Window1Width),
-			fmtFloat(room.Window2Height),
-			fmtFloat(room.Window2Width),
-			fmtFloat(room.DoorHeight),
-			fmtFloat(room.DoorWidth),
 		}
+		for i := 0; i < numWin*2; i++ {
+			row = append(row, fmtFloat(wins[i]))
+		}
+		row = append(row, fmtFloat(room.DoorHeight), fmtFloat(room.DoorWidth))
+
 		for i, cell := range row {
 			f.CellFormat(widths[i], 6, cell, "1", 0, "C", false, 0, "")
 		}

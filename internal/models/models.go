@@ -68,6 +68,18 @@ type InspectionRoom struct {
 	Window2Height float64
 	Window2Width  float64
 
+	// Откос Окно 3
+	Window3Height float64
+	Window3Width  float64
+
+	// Откос Окно 4
+	Window4Height float64
+	Window4Width  float64
+
+	// Откос Окно 5
+	Window5Height float64
+	Window5Width  float64
+
 	// Дверь/проём
 	DoorHeight float64
 	DoorWidth  float64

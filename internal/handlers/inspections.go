@@ -185,6 +185,12 @@ func PostEditInspection(c *gin.Context) {
 		w1w, _ := strconv.ParseFloat(c.PostForm("room_w1w_"+iStr), 64)
 		w2h, _ := strconv.ParseFloat(c.PostForm("room_w2h_"+iStr), 64)
 		w2w, _ := strconv.ParseFloat(c.PostForm("room_w2w_"+iStr), 64)
+		w3h, _ := strconv.ParseFloat(c.PostForm("room_w3h_"+iStr), 64)
+		w3w, _ := strconv.ParseFloat(c.PostForm("room_w3w_"+iStr), 64)
+		w4h, _ := strconv.ParseFloat(c.PostForm("room_w4h_"+iStr), 64)
+		w4w, _ := strconv.ParseFloat(c.PostForm("room_w4w_"+iStr), 64)
+		w5h, _ := strconv.ParseFloat(c.PostForm("room_w5h_"+iStr), 64)
+		w5w, _ := strconv.ParseFloat(c.PostForm("room_w5w_"+iStr), 64)
 		dh, _ := strconv.ParseFloat(c.PostForm("room_dh_"+iStr), 64)
 		dw, _ := strconv.ParseFloat(c.PostForm("room_dw_"+iStr), 64)
 
@@ -199,6 +205,12 @@ func PostEditInspection(c *gin.Context) {
 			Window1Width:  w1w,
 			Window2Height: w2h,
 			Window2Width:  w2w,
+			Window3Height: w3h,
+			Window3Width:  w3w,
+			Window4Height: w4h,
+			Window4Width:  w4w,
+			Window5Height: w5h,
+			Window5Width:  w5w,
 			DoorHeight:    dh,
 			DoorWidth:     dw,
 			WindowType:    c.PostForm("room_window_type_" + iStr),
