@@ -634,12 +634,6 @@ a:hover { color: var(--brand-dark); text-decoration: underline; }
 /* Optional label */
 .optional-label { font-size: 12px; color: var(--text-faint); font-weight: 400; }
 
-/* ===== Temperature sign toggle ===== */
-.temp-row { display: flex; gap: 8px; align-items: center; }
-.temp-row input { flex: 1; }
-.temp-sign { flex-shrink: 0; min-width: 40px; font-size: 17px; font-weight: 700; padding: 8px 10px; justify-content: center; }
-.temp-sign.active { background: var(--brand-light); border-color: var(--brand); color: var(--brand); }
-
 /* ===== Upload row ===== */
 .upload-row {
     display: flex;

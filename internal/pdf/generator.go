@@ -103,9 +103,9 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 		"Общая площадь:", fmtFloat(inspection.TotalArea)+" м²",
 	)
 	row4col(f,
-		"t наружн.=", fmtFloat(inspection.TempOutside)+"°C",
-		"t внутр.=", fmtFloat(inspection.TempInside)+"°C",
-		"RH=", fmtFloat(inspection.Humidity)+"%",
+		"t наружн.=", fmtTempOutside(inspection.TempOutside),
+		"t внутр.=", fmtTempInside(inspection.TempInside),
+		"RH=", fmtHumidity(inspection.Humidity),
 	)
 
 	// План помещений — только если загружен
@@ -295,8 +295,12 @@ func drawSimpleDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 		if d.DefectTemplate.Name != "" {
 			name = d.DefectTemplate.Name
 		}
+		val := d.Value
+		if d.DefectTemplate.Unit != "" {
+			val += d.DefectTemplate.Unit
+		}
 		f.CellFormat(contentW*0.7, 5.5, name, "LB", 0, "L", false, 0, "")
-		f.CellFormat(contentW*0.3, 5.5, d.Value, "RB", 1, "C", false, 0, "")
+		f.CellFormat(contentW*0.3, 5.5, val, "RB", 1, "C", false, 0, "")
 	}
 }
 
@@ -321,7 +325,11 @@ func drawWallDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 			entries[d.DefectTemplateID] = &wallEntry{name: d.DefectTemplate.Name}
 			order = append(order, d.DefectTemplateID)
 		}
-		entries[d.DefectTemplateID].values[d.WallNumber] = d.Value
+		val := d.Value
+		if d.DefectTemplate.Unit != "" {
+			val += d.DefectTemplate.Unit
+		}
+		entries[d.DefectTemplateID].values[d.WallNumber] = val
 	}
 
 	if len(order) == 0 {
@@ -426,6 +434,35 @@ func fmtFloat(v float64) string {
 		return ""
 	}
 	return strconv.FormatFloat(v, 'f', -1, 64)
+}
+
+func fmtTempOutside(v float64) string {
+	if v == 0 {
+		return ""
+	}
+	abs := v
+	if abs < 0 {
+		abs = -abs
+	}
+	return "-" + strconv.FormatFloat(abs, 'f', -1, 64) + "°C"
+}
+
+func fmtTempInside(v float64) string {
+	if v == 0 {
+		return ""
+	}
+	abs := v
+	if abs < 0 {
+		abs = -abs
+	}
+	return "+" + strconv.FormatFloat(abs, 'f', -1, 64) + "°C"
+}
+
+func fmtHumidity(v float64) string {
+	if v == 0 {
+		return ""
+	}
+	return strconv.FormatFloat(v, 'f', 1, 64) + "%"
 }
 
 func windowTypeName(t string) string {
