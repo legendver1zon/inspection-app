@@ -108,27 +108,39 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 		"RH=", fmtHumidity(inspection.Humidity),
 	)
 
-	// План помещений — отдельная страница на весь лист
+	// План помещений — на первой странице под шапкой, занимает всё оставшееся место
+	planOnPage1 := false
 	if inspection.PlanImage != "" {
 		imgPath := "web/static/uploads/" + filepath.Base(inspection.PlanImage)
 		if _, err := os.Stat(imgPath); err == nil {
-			f.AddPage()
+			f.Ln(3)
 			setFont(f, "B", 11)
 			f.CellFormat(contentW, 7, "ПЛАН ПОМЕЩЕНИЙ", "", 1, "C", false, 0, "")
-			imgH := pageH - marginT - marginB - 14.0
-			f.ImageOptions(imgPath, marginL, f.GetY()+2, contentW, imgH, false,
-				fpdf.ImageOptions{ImageType: "", ReadDpi: true}, 0, "")
-			f.AddPage()
+			// Заполнить оставшееся место на странице 1
+			availH := pageH - marginB - 10 - f.GetY() - 2
+			if availH > 20 {
+				f.ImageOptions(imgPath, marginL, f.GetY()+2, contentW, availH, false,
+					fpdf.ImageOptions{ImageType: "", ReadDpi: true}, 0, "")
+			}
+			planOnPage1 = true
+			f.AddPage() // Замеры и дефекты — с новой страницы
 		}
 	}
 
 	// Таблица замеров — только если хоть в одной комнате есть данные
 	if hasAnyMeasurements(inspection.Rooms) {
+		if !planOnPage1 {
+			f.Ln(5)
+		}
 		drawMeasurementsTable(f, inspection.Rooms)
 	}
 
 	// ===== Дефекты по помещениям — непрерывный поток =====
-	f.Ln(6) // отступ между шапкой и первым помещением
+	if planOnPage1 {
+		// уже на новой странице, отступ не нужен
+	} else {
+		f.Ln(6) // отступ между шапкой и первым помещением
+	}
 	firstRoom := true
 	for i := range inspection.Rooms {
 		room := &inspection.Rooms[i]

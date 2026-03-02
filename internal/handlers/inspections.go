@@ -292,7 +292,29 @@ func PostEditInspection(c *gin.Context) {
 	if status == "" {
 		status = "draft"
 	}
-	storage.DB.Model(inspection).Update("status", status)
+
+	// Обновляем поля шапки акта
+	roomsCount, _ := strconv.Atoi(c.PostForm("rooms_count"))
+	floor, _ := strconv.Atoi(c.PostForm("floor"))
+	totalArea, _ := strconv.ParseFloat(c.PostForm("total_area"), 64)
+	tempOut, _ := strconv.ParseFloat(c.PostForm("temp_outside"), 64)
+	tempIn, _ := strconv.ParseFloat(c.PostForm("temp_inside"), 64)
+	humidity, _ := strconv.ParseFloat(c.PostForm("humidity"), 64)
+
+	storage.DB.Model(inspection).Updates(map[string]interface{}{
+		"status":             status,
+		"act_number":         c.PostForm("act_number"),
+		"inspection_time":    c.PostForm("inspection_time"),
+		"address":            c.PostForm("address"),
+		"rooms_count":        roomsCount,
+		"floor":              floor,
+		"total_area":         totalArea,
+		"temp_outside":       tempOut,
+		"temp_inside":        tempIn,
+		"humidity":           humidity,
+		"owner_name":         c.PostForm("owner_name"),
+		"developer_rep_name": c.PostForm("developer_rep_name"),
+	})
 
 	c.Redirect(http.StatusFound, "/inspections/"+strconv.FormatUint(uint64(inspection.ID), 10))
 }
