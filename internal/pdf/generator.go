@@ -1,6 +1,7 @@
 package pdf
 
 import (
+	"embed"
 	"fmt"
 	"inspection-app/internal/models"
 	"os"
@@ -10,6 +11,9 @@ import (
 
 	"github.com/go-pdf/fpdf"
 )
+
+//go:embed fonts
+var fontFS embed.FS
 
 const (
 	pageW    = 210.0
@@ -60,8 +64,13 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 	f.SetAutoPageBreak(true, marginB)
 	f.AliasNbPages("{nb}")
 
-	// Подключаем шрифт с кириллицей (кросс-платформенно)
-	if fp := findFont(fontCandidates); fp != "" {
+	// Подключаем шрифт с кириллицей: сначала embedded (go:embed), потом системные пути
+	regularBytes, errR := fontFS.ReadFile("fonts/font.ttf")
+	boldBytes, errB := fontFS.ReadFile("fonts/font_bold.ttf")
+	if errR == nil && errB == nil {
+		f.AddUTF8FontFromBytes("Arial", "", regularBytes)
+		f.AddUTF8FontFromBytes("Arial", "B", boldBytes)
+	} else if fp := findFont(fontCandidates); fp != "" {
 		if fb := findFont(fontBoldCandidates); fb != "" {
 			f.AddUTF8Font("Arial", "", fp)
 			f.AddUTF8Font("Arial", "B", fb)
@@ -365,7 +374,8 @@ func drawSignatures(f *fpdf.Fpdf, inspection *models.Inspection) {
 // ===== Вспомогательные функции =====
 
 func setFont(f *fpdf.Fpdf, style string, size float64) {
-	if findFont(fontCandidates) != "" {
+	_, errR := fontFS.ReadFile("fonts/font.ttf")
+	if errR == nil || findFont(fontCandidates) != "" {
 		f.SetFont("Arial", style, size)
 	} else {
 		f.SetFont("Helvetica", style, size)

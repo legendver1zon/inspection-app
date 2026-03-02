@@ -634,6 +634,18 @@ a:hover { color: var(--brand-dark); text-decoration: underline; }
 /* Optional label */
 .optional-label { font-size: 12px; color: var(--text-faint); font-weight: 400; }
 
+/* ===== Upload row ===== */
+.upload-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.upload-input {
+    min-width: 0;
+    max-width: 100%;
+}
+
 /* ===== View: значение дефекта ===== */
 .defect-value {
     font-weight: 700;
