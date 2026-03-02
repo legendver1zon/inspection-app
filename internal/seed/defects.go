@@ -52,10 +52,10 @@ var allSections = []sectionSeed{
 			{Section: "wall", Name: "Откл. швов от верт. и горизонтали", Threshold: "1,5", Unit: "мм", OrderIndex: 5},
 			{Section: "wall", Name: "Полосы, пятна, подтеки, брызги, меление поверхности и исправления", Threshold: "", Unit: "", OrderIndex: 6},
 			{Section: "wall", Name: "Отслоение покрытия", Threshold: "", Unit: "", OrderIndex: 7},
-			{Section: "wall", Name: "Следы от инструмента <0,3 мм.", Threshold: "", Unit: "", OrderIndex: 8},
+			{Section: "wall", Name: "Следы от инструмента <0,3 мм.", Threshold: "", Unit: "мм", OrderIndex: 8},
 			{Section: "wall", Name: "Зыбкость конструкции ГКЛ", Threshold: "", Unit: "", OrderIndex: 9},
 			{Section: "wall", Name: "Неровности плоскости плитки", Threshold: "2", Unit: "мм", OrderIndex: 10},
-			{Section: "wall", Name: "Откл. ширины шва ±0,5 мм", Threshold: "", Unit: "", OrderIndex: 11},
+			{Section: "wall", Name: "Откл. ширины шва ±0,5 мм", Threshold: "", Unit: "мм", OrderIndex: 11},
 			{Section: "wall", Name: "Воздушные пузыри, заматины, пятна, загрязнения, доклейки и отсл.", Threshold: "", Unit: "", OrderIndex: 12},
 		},
 	},
@@ -92,6 +92,22 @@ var allSections = []sectionSeed{
 	},
 }
 
+// fixUnits — обновляет unit у дефектов, у которых он был пустым по ошибке
+func fixUnits() {
+	fixes := []struct {
+		name string
+		unit string
+	}{
+		{"Следы от инструмента <0,3 мм.", "мм"},
+		{"Откл. ширины шва ±0,5 мм", "мм"},
+	}
+	for _, fix := range fixes {
+		storage.DB.Model(&models.DefectTemplate{}).
+			Where("name = ? AND unit = ''", fix.name).
+			Update("unit", fix.unit)
+	}
+}
+
 // SeedDefects — заполняет справочник дефектов по секциям (пропускает уже заполненные)
 func SeedDefects() {
 	total := 0
@@ -109,4 +125,5 @@ func SeedDefects() {
 	if total > 0 {
 		log.Printf("Справочник дефектов: добавлено %d записей", total)
 	}
+	fixUnits()
 }
