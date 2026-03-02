@@ -12,16 +12,42 @@ import (
 )
 
 const (
-	fontPath    = "C:/Windows/Fonts/arial.ttf"
-	fontBoldPath = "C:/Windows/Fonts/arialbd.ttf"
-	pageW       = 210.0
-	pageH       = 297.0
-	marginL     = 15.0
-	marginR     = 15.0
-	marginT     = 15.0
-	marginB     = 15.0
-	contentW    = pageW - marginL - marginR
+	pageW    = 210.0
+	pageH    = 297.0
+	marginL  = 15.0
+	marginR  = 15.0
+	marginT  = 15.0
+	marginB  = 15.0
+	contentW = pageW - marginL - marginR
 )
+
+var fontCandidates = []string{
+	// Windows
+	"C:/Windows/Fonts/arial.ttf",
+	// Linux — Liberation Sans (apt install fonts-liberation)
+	"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+	"/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+	// Linux — DejaVu (часто предустановлен)
+	"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+	"/usr/share/fonts/dejavu/DejaVuSans.ttf",
+}
+
+var fontBoldCandidates = []string{
+	"C:/Windows/Fonts/arialbd.ttf",
+	"/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",
+	"/usr/share/fonts/liberation/LiberationSans-Bold.ttf",
+	"/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+	"/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf",
+}
+
+func findFont(candidates []string) string {
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	return ""
+}
 
 // Generate создаёт PDF для акта осмотра и возвращает путь к файлу
 func Generate(inspection *models.Inspection, outputDir string) (string, error) {
@@ -34,10 +60,12 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 	f.SetAutoPageBreak(true, marginB)
 	f.AliasNbPages("{nb}")
 
-	// Подключаем шрифт с кириллицей
-	if _, err := os.Stat(fontPath); err == nil {
-		f.AddUTF8Font("Arial", "", fontPath)
-		f.AddUTF8Font("Arial", "B", fontBoldPath)
+	// Подключаем шрифт с кириллицей (кросс-платформенно)
+	if fp := findFont(fontCandidates); fp != "" {
+		if fb := findFont(fontBoldCandidates); fb != "" {
+			f.AddUTF8Font("Arial", "", fp)
+			f.AddUTF8Font("Arial", "B", fb)
+		}
 	}
 
 	// Колонтитул с номером страницы
@@ -337,7 +365,7 @@ func drawSignatures(f *fpdf.Fpdf, inspection *models.Inspection) {
 // ===== Вспомогательные функции =====
 
 func setFont(f *fpdf.Fpdf, style string, size float64) {
-	if _, err := os.Stat(fontPath); err == nil {
+	if findFont(fontCandidates) != "" {
 		f.SetFont("Arial", style, size)
 	} else {
 		f.SetFont("Helvetica", style, size)

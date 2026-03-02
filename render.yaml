@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: inspection-app
+    runtime: go
+    buildCommand: apt-get install -y fonts-liberation && go build -o app ./cmd/server
+    startCommand: ./app
