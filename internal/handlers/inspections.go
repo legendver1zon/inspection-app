@@ -17,21 +17,39 @@ func GetInspections(c *gin.Context) {
 	userID := c.GetUint("userID")
 	role := c.GetString("userRole")
 
-	var inspections []models.Inspection
-	query := storage.DB.Preload("User").Order("created_at desc")
-	if role != "admin" {
-		query = query.Where("user_id = ?", userID)
+	tab := c.DefaultQuery("tab", "draft")
+	if tab != "draft" && tab != "completed" {
+		tab = "draft"
 	}
-	query.Find(&inspections)
+
+	// Счётчики по статусам
+	countBase := storage.DB.Model(&models.Inspection{})
+	if role != "admin" {
+		countBase = countBase.Where("user_id = ?", userID)
+	}
+	var draftCount, completedCount int64
+	countBase.Where("status = ?", "draft").Count(&draftCount)
+	countBase.Where("status = ?", "completed").Count(&completedCount)
+
+	// Список по выбранной вкладке
+	var inspections []models.Inspection
+	listQ := storage.DB.Preload("User").Where("status = ?", tab).Order("created_at desc")
+	if role != "admin" {
+		listQ = listQ.Where("user_id = ?", userID)
+	}
+	listQ.Find(&inspections)
 
 	var user models.User
 	storage.DB.First(&user, userID)
 
 	c.HTML(http.StatusOK, "list.html", gin.H{
-		"title":       "Осмотры",
-		"inspections": inspections,
-		"user":        user,
-		"isAdmin":     role == "admin",
+		"title":          "Осмотры",
+		"inspections":    inspections,
+		"user":           user,
+		"isAdmin":        role == "admin",
+		"tab":            tab,
+		"draftCount":     draftCount,
+		"completedCount": completedCount,
 	})
 }
 

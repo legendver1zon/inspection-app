@@ -634,6 +634,48 @@ a:hover { color: var(--brand-dark); text-decoration: underline; }
 /* Optional label */
 .optional-label { font-size: 12px; color: var(--text-faint); font-weight: 400; }
 
+/* ===== Tabs ===== */
+.tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 0;
+}
+.tab {
+    padding: 8px 18px;
+    border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 13px;
+    border: 1px solid transparent;
+    border-bottom: none;
+    transition: color .15s, background .15s;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+}
+.tab:hover { color: var(--brand); background: var(--brand-light); text-decoration: none; }
+.tab.active {
+    color: var(--brand);
+    border-color: var(--border) var(--border) var(--surface);
+    background: var(--surface);
+    margin-bottom: -2px;
+}
+.tab-count {
+    background: var(--brand-light);
+    color: var(--brand);
+    border-radius: 20px;
+    padding: 1px 7px;
+    font-size: 11px;
+    font-weight: 700;
+}
+.tab.active .tab-count {
+    background: var(--brand);
+    color: #fff;
+}
+
 /* ===== Upload row ===== */
 .upload-row {
     display: flex;

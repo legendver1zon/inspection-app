@@ -15,6 +15,17 @@
             <a href="/inspections/new" class="btn btn-primary">+ Новый осмотр</a>
         </div>
 
+        <div class="tabs">
+            <a href="/inspections?tab=draft"
+               class="tab{{ if eq .tab "draft" }} active{{ end }}">
+                В работе <span class="tab-count">{{ .draftCount }}</span>
+            </a>
+            <a href="/inspections?tab=completed"
+               class="tab{{ if eq .tab "completed" }} active{{ end }}">
+                Завершённые <span class="tab-count">{{ .completedCount }}</span>
+            </a>
+        </div>
+
         {{ if .inspections }}
         <div class="table-wrapper">
             <table class="table">
@@ -24,7 +35,6 @@
                         <th>Дата</th>
                         <th>Адрес</th>
                         {{ if .isAdmin }}<th>Мастер</th>{{ end }}
-                        <th>Статус</th>
                         <th>Действия</th>
                     </tr>
                 </thead>
@@ -35,13 +45,6 @@
                         <td>{{ .Date.Format "02.01.2006" }}</td>
                         <td>{{ .Address }}</td>
                         {{ if $.isAdmin }}<td>{{ .User.Initials }}</td>{{ end }}
-                        <td>
-                            {{ if eq .Status "completed" }}
-                            <span class="badge badge-success">Завершён</span>
-                            {{ else }}
-                            <span class="badge badge-draft">Черновик</span>
-                            {{ end }}
-                        </td>
                         <td class="actions">
                             <a href="/inspections/{{ .ID }}" class="btn btn-sm">Просмотр</a>
                             <a href="/inspections/{{ .ID }}/edit" class="btn btn-sm btn-secondary">Редактировать</a>
@@ -53,8 +56,12 @@
         </div>
         {{ else }}
         <div class="empty-state">
-            <p>Осмотров пока нет.</p>
-            <a href="/inspections/new" class="btn btn-primary">Создать первый осмотр</a>
+            {{ if eq .tab "completed" }}
+            <p>Завершённых осмотров пока нет.</p>
+            {{ else }}
+            <p>Осмотров в работе нет.</p>
+            <a href="/inspections/new" class="btn btn-primary">Создать осмотр</a>
+            {{ end }}
         </div>
         {{ end }}
     </main>

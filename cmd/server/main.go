@@ -235,13 +235,23 @@ func main() {
 	r.Static("/static", "./web/static")
 
 	r.GET("/", func(c *gin.Context) {
-		c.Redirect(http.StatusFound, "/inspections")
+		if tok, err := c.Cookie("token"); err == nil {
+			if _, err := auth.ParseToken(tok); err == nil {
+				c.Redirect(http.StatusFound, "/inspections")
+				return
+			}
+		}
+		c.Redirect(http.StatusFound, "/login")
 	})
 	r.GET("/login", handlers.GetLogin)
 	r.POST("/login", handlers.PostLogin)
 	r.GET("/register", handlers.GetRegister)
 	r.POST("/register", handlers.PostRegister)
 	r.POST("/logout", handlers.PostLogout)
+	r.GET("/forgot-password", handlers.GetForgotPassword)
+	r.POST("/forgot-password", handlers.PostForgotPassword)
+	r.GET("/reset-password", handlers.GetResetPassword)
+	r.POST("/reset-password", handlers.PostResetPassword)
 
 	protected := r.Group("/")
 	protected.Use(auth.RequireAuth())

@@ -13,7 +13,9 @@ import (
 // GetLogin — страница входа
 func GetLogin(c *gin.Context) {
 	c.HTML(http.StatusOK, "login.html", gin.H{
-		"title": "Вход",
+		"title":      "Вход",
+		"registered": c.Query("registered"),
+		"reset":      c.Query("reset"),
 	})
 }
 

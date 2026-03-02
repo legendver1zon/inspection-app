@@ -21,6 +21,8 @@ type User struct {
 	FullName     string `gorm:"not null"`
 	Initials     string `gorm:"not null"`
 	Role         Role   `gorm:"not null;default:'inspector'"`
+	ResetToken   string
+	ResetExpiry  *time.Time
 }
 
 // Inspection — акт осмотра объекта
