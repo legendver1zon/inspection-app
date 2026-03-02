@@ -56,6 +56,12 @@
                         <td class="actions">
                             <a href="/inspections/{{ .ID }}" class="btn btn-sm">Просмотр</a>
                             <a href="/inspections/{{ .ID }}/edit" class="btn btn-sm btn-secondary">Редактировать</a>
+                            {{ if $.isAdmin }}
+                            <form method="POST" action="/admin/inspections/{{ .ID }}/delete" style="display:inline"
+                                  onsubmit="return confirm('Удалить акт №{{ .ActNumber }}? Это действие необратимо.')">
+                                <button type="submit" class="btn btn-sm btn-danger">Удалить</button>
+                            </form>
+                            {{ end }}
                         </td>
                     </tr>
                     {{ end }}

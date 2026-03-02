@@ -12,8 +12,14 @@
     <main class="container">
         <div class="page-header">
             <h1>Акт осмотра № {{ .inspection.ActNumber }}</h1>
-            <div style="display:flex;gap:10px">
+            <div style="display:flex;gap:10px;align-items:center">
                 <a href="/inspections/{{ .inspection.ID }}/edit" class="btn btn-secondary">Редактировать</a>
+                {{ if .isAdmin }}
+                <form method="POST" action="/admin/inspections/{{ .inspection.ID }}/delete" style="display:inline"
+                      onsubmit="return confirm('Удалить акт №{{ .inspection.ActNumber }}? Это действие необратимо.')">
+                    <button type="submit" class="btn btn-danger">Удалить акт</button>
+                </form>
+                {{ end }}
                 <a href="/inspections" class="btn">← Назад</a>
             </div>
         </div>
@@ -236,7 +242,13 @@
                 {{ range .documents }}
                 <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid #eee;border-radius:6px;margin-bottom:8px">
                     <span style="font-size:13px;color:#555">{{ .Format }} — {{ .CreatedAt.Format "02.01.2006 15:04" }}</span>
-                    <a href="/documents/{{ .ID }}/download" class="btn btn-sm btn-primary">Скачать</a>
+                    <div style="display:flex;gap:8px">
+                        <a href="/documents/{{ .ID }}/download" class="btn btn-sm btn-primary">Скачать</a>
+                        <form method="POST" action="/documents/{{ .ID }}/delete" style="display:inline"
+                              onsubmit="return confirm('Удалить этот PDF?')">
+                            <button type="submit" class="btn btn-sm btn-danger">Удалить</button>
+                        </form>
+                    </div>
                 </div>
                 {{ end }}
             </div>

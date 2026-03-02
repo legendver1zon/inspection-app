@@ -285,12 +285,15 @@ func main() {
 		protected.GET("/profile", handlers.GetProfile)
 		protected.POST("/profile", handlers.PostProfile)
 
+		protected.POST("/documents/:id/delete", handlers.PostDeleteDocument)
+
 		admin := protected.Group("/admin")
 		admin.Use(auth.RequireAdmin())
 		{
 			admin.GET("/users", handlers.GetAdminUsers)
 			admin.POST("/users/:id/role", handlers.PostAdminChangeRole)
 			admin.DELETE("/users/:id", handlers.DeleteAdminUser)
+			admin.POST("/inspections/:id/delete", handlers.PostDeleteInspection)
 		}
 	}
 

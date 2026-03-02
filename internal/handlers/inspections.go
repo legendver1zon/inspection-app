@@ -4,6 +4,7 @@ import (
 	"inspection-app/internal/models"
 	"inspection-app/internal/storage"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -318,6 +319,44 @@ func PostUploadPlan(c *gin.Context) {
 
 	storage.DB.Model(inspection).Update("plan_image", "/static/uploads/"+filename)
 	c.Redirect(http.StatusFound, "/inspections/"+strconv.FormatUint(uint64(inspection.ID), 10)+"/edit")
+}
+
+// PostDeleteInspection — удаление акта осмотра (только admin)
+func PostDeleteInspection(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+		return
+	}
+
+	var inspection models.Inspection
+	if err := storage.DB.First(&inspection, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Осмотр не найден"})
+		return
+	}
+
+	// Удаляем дефекты всех помещений
+	var rooms []models.InspectionRoom
+	storage.DB.Where("inspection_id = ?", id).Find(&rooms)
+	for _, r := range rooms {
+		storage.DB.Where("room_id = ?", r.ID).Delete(&models.RoomDefect{})
+	}
+	storage.DB.Where("inspection_id = ?", id).Delete(&models.InspectionRoom{})
+
+	// Удаляем файлы документов и записи
+	var docs []models.Document
+	storage.DB.Where("inspection_id = ?", id).Find(&docs)
+	for _, doc := range docs {
+		if doc.FilePath != "" {
+			os.Remove(doc.FilePath)
+		}
+	}
+	storage.DB.Where("inspection_id = ?", id).Delete(&models.Document{})
+
+	// Удаляем сам осмотр
+	storage.DB.Delete(&inspection)
+
+	c.Redirect(http.StatusFound, "/inspections")
 }
 
 func loadInspection(c *gin.Context) (*models.Inspection, bool) {

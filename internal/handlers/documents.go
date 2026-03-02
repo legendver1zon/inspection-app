@@ -55,6 +55,31 @@ func PostGenerateDocument(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/inspections/"+c.Param("id"))
 }
 
+// PostDeleteDocument — удаление PDF документа
+func PostDeleteDocument(c *gin.Context) {
+	id := c.Param("id")
+
+	var doc models.Document
+	if err := storage.DB.Preload("Inspection").First(&doc, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Документ не найден"})
+		return
+	}
+
+	userID := c.GetUint("userID")
+	role := c.GetString("userRole")
+	if role != "admin" && doc.Inspection.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещён"})
+		return
+	}
+
+	if doc.FilePath != "" {
+		os.Remove(doc.FilePath)
+	}
+	storage.DB.Delete(&doc)
+
+	c.Redirect(http.StatusFound, fmt.Sprintf("/inspections/%d", doc.InspectionID))
+}
+
 // GetDownloadDocument — скачивание документа
 func GetDownloadDocument(c *gin.Context) {
 	id := c.Param("id")
