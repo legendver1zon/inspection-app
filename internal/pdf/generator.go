@@ -108,6 +108,14 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 		"RH=", fmtHumidity(inspection.Humidity),
 	)
 
+	// Высота таблицы замеров: заголовок(6) + строк*6 + отступ(4)
+	measTableH := 0.0
+	if hasAnyMeasurements(inspection.Rooms) {
+		measTableH = 10.0 + float64(len(inspection.Rooms))*6.0
+	}
+	// Нижняя граница первой страницы (с учётом колонтитула)
+	pg1Bottom := pageH - marginB - 10.0
+
 	// План помещений — на первой странице, пропорционально (без растяжки)
 	hasContent := false
 	if inspection.PlanImage != "" {
@@ -123,16 +131,11 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 			if info != nil {
 				iW, iH := info.Extent()
 				if iW > 0 && iH > 0 {
-					// Примерная высота таблицы замеров (чтобы оставить место)
-					measH := 0.0
-					if hasAnyMeasurements(inspection.Rooms) {
-						measH = float64(len(inspection.Rooms)+2)*7 + 12
-					}
 					// Масштабируем под ширину страницы, сохраняем пропорции
 					drawW := contentW
 					drawH := iH * (drawW / iW)
 					// Ограничиваем высоту так, чтобы ниже поместилась таблица замеров
-					maxH := pageH - marginB - f.GetY() - measH - 5
+					maxH := pg1Bottom - measTableH - f.GetY() - 5
 					if maxH < 30 {
 						maxH = 30
 					}
@@ -150,11 +153,13 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 		}
 	}
 
-	// Таблица замеров — на первой странице после плана
+	// Таблица замеров — прикреплена к низу первой страницы (как подписи)
 	if hasAnyMeasurements(inspection.Rooms) {
 		if !hasContent {
 			f.Ln(5)
 		}
+		// Опускаем позицию к низу страницы
+		f.SetY(pg1Bottom - measTableH)
 		drawMeasurementsTable(f, inspection.Rooms)
 		hasContent = true
 	}
