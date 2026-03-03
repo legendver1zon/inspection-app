@@ -406,6 +406,11 @@ func drawSimpleDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 		if name == "" {
 			continue
 		}
+		// Если до конца страницы меньше одной строки — переходим на новую,
+		// чтобы название и значение не разъехались из-за разрыва страницы
+		if f.GetY() > pageH-marginB-5.5 {
+			f.AddPage()
+		}
 		x, y := f.GetX(), f.GetY()
 		f.MultiCell(contentW*0.7, 5.5, name, "LB", "L", false)
 		endY := f.GetY()
@@ -458,6 +463,9 @@ func drawWallDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 	setFont(f, "", 8)
 	for _, tid := range order {
 		e := entries[tid]
+		if f.GetY() > pageH-marginB-5 {
+			f.AddPage()
+		}
 		x, y := f.GetX(), f.GetY()
 		f.MultiCell(colW*2, 5, e.name, "1", "L", false)
 		endY := f.GetY()
