@@ -255,22 +255,23 @@ func drawMeasurementsTable(f *fpdf.Fpdf, rooms []models.InspectionRoom) {
 
 	numWin := maxWindowsUsed(rooms)
 
-	// Column widths: adjust window cols and name col based on window count
-	winColW := 14.0
-	if numWin >= 4 {
-		winColW = 10.0
-	} else if numWin >= 3 {
-		winColW = 12.0
-	}
 	// fixed cols: №(8) + Дл(13) + Шир(13) + Выс(13) + Двыс(13) + Дшир(13) = 73
 	fixedW := 8.0 + 13.0*5
+	// Динамически вычисляем ширину колонки окна так, чтобы всё уместилось в contentW
+	minNameW := 25.0
+	winColW := (contentW - fixedW - minNameW) / float64(numWin*2)
+	if winColW > 14.0 {
+		winColW = 14.0
+	}
 	nameW := contentW - fixedW - float64(numWin)*2*winColW
-	if nameW < 22 {
-		nameW = 22
+	if nameW < minNameW {
+		nameW = minNameW
 	}
 
 	fontSize := 9.0
-	if numWin >= 4 {
+	if numWin >= 5 {
+		fontSize = 7.5
+	} else if numWin >= 4 {
 		fontSize = 8.0
 	}
 

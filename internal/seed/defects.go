@@ -30,7 +30,7 @@ var allSections = []sectionSeed{
 			{Section: "window", Name: "Зазоры между откосами, подок.", Threshold: "", Unit: "", OrderIndex: 13},
 			{Section: "window", Name: "Угол наклона слива", Threshold: ">100", Unit: "°", OrderIndex: 14},
 			{Section: "window", Name: "Смещение дист. рамок", Threshold: "3", Unit: "мм", OrderIndex: 15},
-			{Section: "window", Name: "Царапины на стеклах >10", Threshold: "", Unit: "", OrderIndex: 16},
+			{Section: "window", Name: "Царапины на стеклах >10", Threshold: ">10", Unit: "мм", OrderIndex: 16},
 		},
 	},
 	{
@@ -109,6 +109,21 @@ func fixUnits() {
 	}
 }
 
+// fixThresholds — обновляет threshold у дефектов, у которых он был пустым по ошибке
+func fixThresholds() {
+	fixes := []struct {
+		name      string
+		threshold string
+	}{
+		{"Царапины на стеклах >10", ">10"},
+	}
+	for _, fix := range fixes {
+		storage.DB.Model(&models.DefectTemplate{}).
+			Where("name = ? AND threshold = ''", fix.name).
+			Update("threshold", fix.threshold)
+	}
+}
+
 // SeedDefects — заполняет справочник дефектов по секциям (пропускает уже заполненные)
 func SeedDefects() {
 	total := 0
@@ -127,4 +142,5 @@ func SeedDefects() {
 		log.Printf("Справочник дефектов: добавлено %d записей", total)
 	}
 	fixUnits()
+	fixThresholds()
 }
