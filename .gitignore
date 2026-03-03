@@ -5,6 +5,7 @@
 *.so
 *.dylib
 inspection-app
+inspection-app-bin
 
 # Бд и загруженные файлы
 *.db
