@@ -8,6 +8,7 @@ import (
 	"inspection-app/internal/models"
 	"inspection-app/internal/seed"
 	"inspection-app/internal/storage"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -27,7 +28,26 @@ func dbPath() string {
 	return "inspection.db"
 }
 
+func setupLogger() {
+	logDir := "/var/log/inspection-app"
+	if err := os.MkdirAll(logDir, 0755); err != nil {
+		log.Printf("Не удалось создать директорию логов: %v", err)
+		return
+	}
+	logFile, err := os.OpenFile(logDir+"/app.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	if err != nil {
+		log.Printf("Не удалось открыть лог-файл: %v", err)
+		return
+	}
+	mw := io.MultiWriter(os.Stdout, logFile)
+	log.SetOutput(mw)
+	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
+	gin.DefaultWriter = mw
+	gin.DefaultErrorWriter = mw
+}
+
 func main() {
+	setupLogger()
 	storage.Connect(dbPath())
 	storage.Migrate()
 	seed.SeedDefects()
