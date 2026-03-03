@@ -100,6 +100,7 @@ func fixUnits() {
 	}{
 		{"Следы от инструмента <0,3 мм.", "мм"},
 		{"Откл. ширины шва ±0,5 мм", "мм"},
+		{"Царапины на стеклах >10", "мм"},
 	}
 	for _, fix := range fixes {
 		storage.DB.Model(&models.DefectTemplate{}).

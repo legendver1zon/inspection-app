@@ -278,8 +278,8 @@ func drawMeasurementsTable(f *fpdf.Fpdf, rooms []models.InspectionRoom) {
 	headers := []string{"№", "Помещение", "Дл.", "Шир.", "Выс."}
 	widths := []float64{8, nameW, 13, 13, 13}
 	for i := 1; i <= numWin; i++ {
-		headers = append(headers, fmt.Sprintf("О%d в", i))
-		headers = append(headers, fmt.Sprintf("О%d ш", i))
+		headers = append(headers, fmt.Sprintf("О%dв", i))
+		headers = append(headers, fmt.Sprintf("О%dш", i))
 		widths = append(widths, winColW)
 		widths = append(widths, winColW)
 	}
@@ -401,6 +401,9 @@ func drawSimpleDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 		val := d.Value
 		if d.DefectTemplate.Unit != "" {
 			val += d.DefectTemplate.Unit
+		}
+		if name == "" {
+			continue
 		}
 		x, y := f.GetX(), f.GetY()
 		f.MultiCell(contentW*0.7, 5.5, name, "LB", "L", false)
