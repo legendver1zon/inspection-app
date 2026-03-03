@@ -387,7 +387,7 @@ func drawSimpleDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 	for _, d := range defects {
 		if d.Notes != "" {
 			f.SetFillColor(255, 253, 240)
-			f.CellFormat(contentW*0.7, 5.5, "Прочее: "+d.Notes, "LRB", 1, "L", true, 0, "")
+			f.MultiCell(contentW, 5.5, "Прочее: "+d.Notes, "LRB", "L", true)
 			f.SetFillColor(255, 255, 255)
 			continue
 		}
@@ -402,8 +402,12 @@ func drawSimpleDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 		if d.DefectTemplate.Unit != "" {
 			val += d.DefectTemplate.Unit
 		}
-		f.CellFormat(contentW*0.7, 5.5, name, "LB", 0, "L", false, 0, "")
-		f.CellFormat(contentW*0.3, 5.5, val, "RB", 1, "C", false, 0, "")
+		x, y := f.GetX(), f.GetY()
+		f.MultiCell(contentW*0.7, 5.5, name, "LB", "L", false)
+		endY := f.GetY()
+		f.SetXY(x+contentW*0.7, y)
+		f.CellFormat(contentW*0.3, endY-y, val, "RB", 0, "C", false, 0, "")
+		f.SetXY(x, endY)
 	}
 }
 
@@ -418,7 +422,7 @@ func drawWallDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 	for _, d := range defects {
 		if d.Notes != "" {
 			setFont(f, "", 9)
-			f.CellFormat(contentW*0.7, 5.5, "Прочее: "+d.Notes, "LRB", 1, "L", false, 0, "")
+			f.MultiCell(contentW, 5.5, "Прочее: "+d.Notes, "LRB", "L", false)
 			continue
 		}
 		if d.Value == "" || d.WallNumber < 1 || d.WallNumber > 4 {
@@ -450,11 +454,15 @@ func drawWallDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 	setFont(f, "", 8)
 	for _, tid := range order {
 		e := entries[tid]
-		f.CellFormat(colW*2, 5, e.name, "1", 0, "L", false, 0, "")
+		x, y := f.GetX(), f.GetY()
+		f.MultiCell(colW*2, 5, e.name, "1", "L", false)
+		endY := f.GetY()
+		rowH := endY - y
+		f.SetXY(x+colW*2, y)
 		for w := 1; w <= 4; w++ {
-			f.CellFormat(colW*0.75, 5, e.values[w], "1", 0, "C", false, 0, "")
+			f.CellFormat(colW*0.75, rowH, e.values[w], "1", 0, "C", false, 0, "")
 		}
-		f.Ln(-1)
+		f.SetXY(x, endY)
 	}
 }
 
