@@ -33,6 +33,7 @@ func PostProfile(c *gin.Context) {
 
 	fullName := strings.TrimSpace(c.PostForm("full_name"))
 	initials := strings.TrimSpace(c.PostForm("initials"))
+	currentPassword := c.PostForm("current_password")
 	newPassword := c.PostForm("new_password")
 	confirmNewPassword := c.PostForm("confirm_new_password")
 
@@ -52,6 +53,15 @@ func PostProfile(c *gin.Context) {
 	}
 
 	if newPassword != "" {
+		if currentPassword == "" || !auth.CheckPassword(currentPassword, user.PasswordHash) {
+			c.HTML(http.StatusBadRequest, "profile.html", gin.H{
+				"title":   "Профиль",
+				"user":    user,
+				"error":   "Неверный текущий пароль",
+				"isAdmin": c.GetString("userRole") == "admin",
+			})
+			return
+		}
 		if len(newPassword) < 6 {
 			c.HTML(http.StatusBadRequest, "profile.html", gin.H{
 				"title":   "Профиль",

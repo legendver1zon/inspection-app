@@ -629,13 +629,15 @@ a:hover { color: var(--brand-dark); text-decoration: underline; }
     max-width: 680px;
     margin: 0 auto;
 }
-.profile-card { max-width: 100%; }
+.profile-card { max-width: 100%; width: 100%; }
 
 /* Герой-блок профиля */
 .profile-hero {
     display: flex;
     align-items: center;
     gap: 24px;
+    width: 100%;
+    box-sizing: border-box;
     background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
     border-radius: var(--radius-lg);
     padding: 28px 32px;
