@@ -623,6 +623,22 @@ a:hover { color: var(--brand-dark); text-decoration: underline; }
 }
 .password-toggle:hover { color: var(--brand); }
 .password-toggle .eye-closed { display: none; }
+.pwd-section { margin-top: 4px; }
+.btn-change-pwd {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--brand);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 0;
+    transition: color .15s;
+}
+.btn-change-pwd:hover { color: var(--brand-dark); }
 
 /* ===== Profile ===== */
 .profile-wrapper {
@@ -643,7 +659,6 @@ a:hover { color: var(--brand-dark); text-decoration: underline; }
     padding: 28px 32px;
     margin-bottom: 24px;
     box-shadow: var(--shadow-lg);
-    max-width: 540px;
     border: 1px solid rgba(99,102,241,.15);
 }
 .profile-avatar-wrap {
