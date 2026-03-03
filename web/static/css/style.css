@@ -599,8 +599,37 @@ a:hover { color: var(--brand-dark); text-decoration: underline; }
 }
 .info-value { font-size: 15px; font-weight: 700; color: var(--text); }
 
+/* ===== Password input with toggle ===== */
+.password-input-wrap {
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+.password-input-wrap input {
+    padding-right: 44px;
+    width: 100%;
+}
+.password-toggle {
+    position: absolute;
+    right: 10px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    color: var(--text-muted);
+    display: flex;
+    align-items: center;
+    transition: color .15s;
+}
+.password-toggle:hover { color: var(--brand); }
+.password-toggle .eye-closed { display: none; }
+
 /* ===== Profile ===== */
-.profile-card { max-width: 540px; }
+.profile-wrapper {
+    max-width: 680px;
+    margin: 0 auto;
+}
+.profile-card { max-width: 100%; }
 
 /* Герой-блок профиля */
 .profile-hero {

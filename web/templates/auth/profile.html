@@ -14,6 +14,7 @@
             <h1>Профиль</h1>
         </div>
 
+        <div class="profile-wrapper">
         <!-- Аватар-секция -->
         <div class="profile-hero">
             <div class="profile-avatar-wrap" id="avatarWrap">
@@ -67,13 +68,31 @@
                 <hr style="margin: 20px 0; border: none; border-top: 1px solid var(--border-light)">
                 <div class="form-group">
                     <label>Новый пароль <span style="color:var(--text-faint);font-weight:400;text-transform:none">(оставьте пустым чтобы не менять)</span></label>
-                    <input type="password" name="new_password" placeholder="Минимум 6 символов">
+                    <div class="password-input-wrap">
+                        <input type="password" id="new_password" name="new_password" placeholder="Минимум 6 символов">
+                        <button type="button" class="password-toggle" tabindex="-1" aria-label="Показать пароль" onclick="togglePwd('new_password',this)">
+                            <svg class="eye-open" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            <svg class="eye-closed" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Подтверждение нового пароля</label>
+                    <div class="password-input-wrap">
+                        <input type="password" id="confirm_new_password" name="confirm_new_password" placeholder="Повторите новый пароль">
+                        <button type="button" class="password-toggle" tabindex="-1" aria-label="Показать пароль" onclick="togglePwd('confirm_new_password',this)">
+                            <svg class="eye-open" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                            <svg class="eye-closed" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                        </button>
+                    </div>
+                    <span class="form-hint" id="confirm-hint" style="color:#ef4444;margin-top:4px;display:block"></span>
                 </div>
                 <div class="form-actions">
                     <button type="submit" class="btn btn-primary">Сохранить изменения</button>
                 </div>
             </form>
         </div>
+        </div><!-- /.profile-wrapper -->
     </main>
 
 <script>
@@ -86,7 +105,31 @@
     input.addEventListener('change', function() {
         if (this.files.length) form.submit();
     });
+
+    // Password match validation
+    const pwd = document.getElementById('new_password');
+    const confirm = document.getElementById('confirm_new_password');
+    const hint = document.getElementById('confirm-hint');
+    function checkMatch() {
+        if (confirm.value && pwd.value !== confirm.value) {
+            hint.textContent = 'Пароли не совпадают';
+            confirm.setCustomValidity('Пароли не совпадают');
+        } else {
+            hint.textContent = '';
+            confirm.setCustomValidity('');
+        }
+    }
+    pwd.addEventListener('input', checkMatch);
+    confirm.addEventListener('input', checkMatch);
 })();
+
+function togglePwd(id, btn) {
+    const input = document.getElementById(id);
+    const show = input.type === 'password';
+    input.type = show ? 'text' : 'password';
+    btn.querySelector('.eye-open').style.display = show ? 'none' : '';
+    btn.querySelector('.eye-closed').style.display = show ? '' : 'none';
+}
 </script>
 </body>
 </html>

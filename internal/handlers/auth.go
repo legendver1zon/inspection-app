@@ -82,6 +82,7 @@ func buildInitials(fullName string) string {
 func PostRegister(c *gin.Context) {
 	email := strings.TrimSpace(c.PostForm("email"))
 	password := c.PostForm("password")
+	confirmPassword := c.PostForm("confirm_password")
 	fullName := strings.TrimSpace(c.PostForm("full_name"))
 	initials := buildInitials(fullName)
 
@@ -97,6 +98,14 @@ func PostRegister(c *gin.Context) {
 		c.HTML(http.StatusBadRequest, "register.html", gin.H{
 			"title": "Регистрация",
 			"error": "Пароль должен содержать минимум 6 символов",
+		})
+		return
+	}
+
+	if password != confirmPassword {
+		c.HTML(http.StatusBadRequest, "register.html", gin.H{
+			"title": "Регистрация",
+			"error": "Пароли не совпадают",
 		})
 		return
 	}
