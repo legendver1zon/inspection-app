@@ -6,6 +6,92 @@
     <title>{{ .title }} — Акты осмотра</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <style>
+        .defect-photo-btn {
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            border: 1px dashed #c7d0f0;
+            color: #4361ee;
+            font-size: 14px;
+            opacity: 0.7;
+            flex-shrink: 0;
+            transition: opacity 0.2s, border-color 0.2s;
+        }
+        .defect-photo-btn:hover { opacity: 1; border-color: #4361ee; }
+        .defect-photo-btn.uploading { opacity: 0.4; pointer-events: none; }
+        .defect-photos-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            padding: 6px 12px 10px 12px;
+        }
+        .defect-photo-thumb {
+            width: 80px;
+            height: 64px;
+            object-fit: cover;
+            border-radius: 5px;
+            border: 1px solid #e2e8f0;
+            cursor: pointer;
+            transition: transform 0.15s, box-shadow 0.15s;
+            display: block;
+        }
+        .defect-photo-thumb:hover { transform: scale(1.05); box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+        .photo-wrap {
+            position: relative;
+            display: inline-flex;
+            align-items: center;
+        }
+        .photo-delete-btn {
+            position: absolute;
+            top: -6px;
+            right: -6px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #e53e3e;
+            color: #fff;
+            border: none;
+            font-size: 12px;
+            line-height: 1;
+            cursor: pointer;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 0;
+            z-index: 1;
+        }
+        .photo-wrap:hover .photo-delete-btn { display: flex; }
+        .photo-filename-label {
+            font-size: 12px;
+            color: #999;
+            padding: 4px 8px;
+            border: 1px dashed #ddd;
+            border-radius: 4px;
+            align-self: center;
+        }
+        .photo-cloud-link {
+            font-size: 12px;
+            color: #4361ee;
+            padding: 4px 8px;
+            border: 1px solid #c7d0f0;
+            border-radius: 4px;
+            text-decoration: none;
+            align-self: center;
+            white-space: nowrap;
+            max-width: 120px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: inline-block;
+        }
+        .photo-cloud-link:hover { background: #f0f3ff; }
+        .qr-card { text-align: center; padding: 24px; }
+        .qr-card img { border-radius: 8px; border: 1px solid #e2e8f0; }
+    </style>
 </head>
 <body>
     {{ template "navbar" . }}
@@ -102,6 +188,21 @@
         </div>
         {{ end }}
 
+        <!-- QR-код фотоматериалов -->
+        {{ if .inspection.PhotoFolderURL }}
+        <div class="form-card qr-card">
+            <h2>Фотоматериалы осмотра</h2>
+            <p style="font-size:13px;color:#666;margin-bottom:16px">Отсканируйте QR-код для просмотра всех фотографий</p>
+            <img src="https://api.qrserver.com/v1/create-qr-code/?size=180x180&data={{ .inspection.PhotoFolderURL }}"
+                 alt="QR-код фотоматериалов" width="180" height="180">
+            <div style="margin-top:14px">
+                <a href="{{ .inspection.PhotoFolderURL }}" target="_blank" class="btn btn-primary btn-sm">
+                    Открыть папку на Яндекс Диске
+                </a>
+            </div>
+        </div>
+        {{ end }}
+
         <!-- Помещения с дефектами -->
         {{ range .inspection.Rooms }}
         {{ $room := . }}
@@ -129,7 +230,31 @@
                 <div class="defect-row">
                     <span class="defect-name">{{ .DefectTemplate.Name }}</span>
                     <span class="defect-value">{{ .Value }}</span>
+                    <label class="defect-photo-btn" title="Добавить фото">
+                        📷<input type="file" accept="image/jpeg,image/png,image/webp" style="display:none"
+                               onchange="uploadDefectPhoto(this, {{ .ID }})">
+                    </label>
                 </div>
+                {{ if .Photos }}
+                <div class="defect-photos-row" data-defect="{{ .ID }}">
+                    {{ range .Photos }}
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                        {{ if .FilePath }}
+                        <a href="{{ .FileURL }}" target="_blank">
+                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        </a>
+                        {{ else if .FileURL }}
+                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
+                        {{ else }}
+                        <span class="photo-filename-label">📎 {{ .FileName }}</span>
+                        {{ end }}
+                        <button class="photo-delete-btn" onclick="deletePhoto({{ .ID }}, this)" title="Удалить фото">×</button>
+                    </div>
+                    {{ end }}
+                </div>
+                {{ else }}
+                <div class="defect-photos-row" data-defect="{{ .ID }}" style="display:none"></div>
+                {{ end }}
                 {{ end }}
                 {{ with sectionNotes $room "window" }}
                 <div class="notes-display">Прочее: {{ . }}</div>
@@ -145,7 +270,31 @@
                 <div class="defect-row">
                     <span class="defect-name">{{ .DefectTemplate.Name }}</span>
                     <span class="defect-value">{{ .Value }}</span>
+                    <label class="defect-photo-btn" title="Добавить фото">
+                        📷<input type="file" accept="image/jpeg,image/png,image/webp" style="display:none"
+                               onchange="uploadDefectPhoto(this, {{ .ID }})">
+                    </label>
                 </div>
+                {{ if .Photos }}
+                <div class="defect-photos-row" data-defect="{{ .ID }}">
+                    {{ range .Photos }}
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                        {{ if .FilePath }}
+                        <a href="{{ .FileURL }}" target="_blank">
+                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        </a>
+                        {{ else if .FileURL }}
+                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
+                        {{ else }}
+                        <span class="photo-filename-label">📎 {{ .FileName }}</span>
+                        {{ end }}
+                        <button class="photo-delete-btn" onclick="deletePhoto({{ .ID }}, this)" title="Удалить фото">×</button>
+                    </div>
+                    {{ end }}
+                </div>
+                {{ else }}
+                <div class="defect-photos-row" data-defect="{{ .ID }}" style="display:none"></div>
+                {{ end }}
                 {{ end }}
                 {{ with sectionNotes $room "ceiling" }}
                 <div class="notes-display">Прочее: {{ . }}</div>
@@ -162,20 +311,37 @@
                     <span class="badge badge-inspector">{{ wallTypeName .WallType }}</span>
                     {{ end }}
                 </div>
-                {{ $rows := wallRows $room }}
-                {{ if $rows }}
-                <div class="wall-headers">
-                    <span>Дефект</span>
-                    <span>Ст 1</span><span>Ст 2</span><span>Ст 3</span><span>Ст 4</span>
+                <!-- Дефекты стен -->
+                {{ range sectionDefects $room "wall" }}
+                <div class="defect-row">
+                    <span class="defect-name">
+                        {{ if .WallNumber }}Ст {{ .WallNumber }}: {{ end }}{{ .DefectTemplate.Name }}
+                    </span>
+                    <span class="defect-value">{{ .Value }}</span>
+                    <label class="defect-photo-btn" title="Добавить фото">
+                        📷<input type="file" accept="image/jpeg,image/png,image/webp" style="display:none"
+                               onchange="uploadDefectPhoto(this, {{ .ID }})">
+                    </label>
                 </div>
-                {{ range $rows }}
-                <div class="wall-row wall-row-view">
-                    <span class="defect-name">{{ .Name }}</span>
-                    <span class="wall-cell">{{ .W1 }}</span>
-                    <span class="wall-cell">{{ .W2 }}</span>
-                    <span class="wall-cell">{{ .W3 }}</span>
-                    <span class="wall-cell">{{ .W4 }}</span>
+                {{ if .Photos }}
+                <div class="defect-photos-row" data-defect="{{ .ID }}">
+                    {{ range .Photos }}
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                        {{ if .FilePath }}
+                        <a href="{{ .FileURL }}" target="_blank">
+                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        </a>
+                        {{ else if .FileURL }}
+                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
+                        {{ else }}
+                        <span class="photo-filename-label">📎 {{ .FileName }}</span>
+                        {{ end }}
+                        <button class="photo-delete-btn" onclick="deletePhoto({{ .ID }}, this)" title="Удалить фото">×</button>
+                    </div>
+                    {{ end }}
                 </div>
+                {{ else }}
+                <div class="defect-photos-row" data-defect="{{ .ID }}" style="display:none"></div>
                 {{ end }}
                 {{ end }}
                 {{ with sectionNotes $room "wall" }}
@@ -192,7 +358,31 @@
                 <div class="defect-row">
                     <span class="defect-name">{{ .DefectTemplate.Name }}</span>
                     <span class="defect-value">{{ .Value }}</span>
+                    <label class="defect-photo-btn" title="Добавить фото">
+                        📷<input type="file" accept="image/jpeg,image/png,image/webp" style="display:none"
+                               onchange="uploadDefectPhoto(this, {{ .ID }})">
+                    </label>
                 </div>
+                {{ if .Photos }}
+                <div class="defect-photos-row" data-defect="{{ .ID }}">
+                    {{ range .Photos }}
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                        {{ if .FilePath }}
+                        <a href="{{ .FileURL }}" target="_blank">
+                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        </a>
+                        {{ else if .FileURL }}
+                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
+                        {{ else }}
+                        <span class="photo-filename-label">📎 {{ .FileName }}</span>
+                        {{ end }}
+                        <button class="photo-delete-btn" onclick="deletePhoto({{ .ID }}, this)" title="Удалить фото">×</button>
+                    </div>
+                    {{ end }}
+                </div>
+                {{ else }}
+                <div class="defect-photos-row" data-defect="{{ .ID }}" style="display:none"></div>
+                {{ end }}
                 {{ end }}
                 {{ with sectionNotes $room "floor" }}
                 <div class="notes-display">Прочее: {{ . }}</div>
@@ -208,7 +398,31 @@
                 <div class="defect-row">
                     <span class="defect-name">{{ .DefectTemplate.Name }}</span>
                     <span class="defect-value">{{ .Value }}</span>
+                    <label class="defect-photo-btn" title="Добавить фото">
+                        📷<input type="file" accept="image/jpeg,image/png,image/webp" style="display:none"
+                               onchange="uploadDefectPhoto(this, {{ .ID }})">
+                    </label>
                 </div>
+                {{ if .Photos }}
+                <div class="defect-photos-row" data-defect="{{ .ID }}">
+                    {{ range .Photos }}
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                        {{ if .FilePath }}
+                        <a href="{{ .FileURL }}" target="_blank">
+                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        </a>
+                        {{ else if .FileURL }}
+                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
+                        {{ else }}
+                        <span class="photo-filename-label">📎 {{ .FileName }}</span>
+                        {{ end }}
+                        <button class="photo-delete-btn" onclick="deletePhoto({{ .ID }}, this)" title="Удалить фото">×</button>
+                    </div>
+                    {{ end }}
+                </div>
+                {{ else }}
+                <div class="defect-photos-row" data-defect="{{ .ID }}" style="display:none"></div>
+                {{ end }}
                 {{ end }}
                 {{ with sectionNotes $room "door" }}
                 <div class="notes-display">Прочее: {{ . }}</div>
@@ -224,7 +438,31 @@
                 <div class="defect-row">
                     <span class="defect-name">{{ .DefectTemplate.Name }}</span>
                     <span class="defect-value">{{ .Value }}</span>
+                    <label class="defect-photo-btn" title="Добавить фото">
+                        📷<input type="file" accept="image/jpeg,image/png,image/webp" style="display:none"
+                               onchange="uploadDefectPhoto(this, {{ .ID }})">
+                    </label>
                 </div>
+                {{ if .Photos }}
+                <div class="defect-photos-row" data-defect="{{ .ID }}">
+                    {{ range .Photos }}
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                        {{ if .FilePath }}
+                        <a href="{{ .FileURL }}" target="_blank">
+                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        </a>
+                        {{ else if .FileURL }}
+                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
+                        {{ else }}
+                        <span class="photo-filename-label">📎 {{ .FileName }}</span>
+                        {{ end }}
+                        <button class="photo-delete-btn" onclick="deletePhoto({{ .ID }}, this)" title="Удалить фото">×</button>
+                    </div>
+                    {{ end }}
+                </div>
+                {{ else }}
+                <div class="defect-photos-row" data-defect="{{ .ID }}" style="display:none"></div>
+                {{ end }}
                 {{ end }}
                 {{ with sectionNotes $room "plumbing" }}
                 <div class="notes-display">Прочее: {{ . }}</div>
@@ -265,5 +503,107 @@
             </form>
         </div>
     </main>
+
+    <script>
+    async function uploadDefectPhoto(input, defectId) {
+        if (!input.files || !input.files[0]) return;
+
+        const label = input.closest('label');
+        label.classList.add('uploading');
+        label.textContent = '⏳';
+
+        const form = new FormData();
+        form.append('photo', input.files[0]);
+
+        try {
+            const resp = await fetch('/defects/' + defectId + '/photos', {
+                method: 'POST',
+                body: form
+            });
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                alert('Ошибка: ' + (data.error || resp.status));
+                return;
+            }
+
+            // Найти или показать контейнер с фото для этого дефекта
+            const row = label.closest('.defect-row');
+            let photosDiv = row.nextElementSibling;
+            if (!photosDiv || !photosDiv.classList.contains('defect-photos-row')) {
+                photosDiv = document.createElement('div');
+                photosDiv.className = 'defect-photos-row';
+                photosDiv.dataset.defect = defectId;
+                row.after(photosDiv);
+            }
+            photosDiv.style.display = 'flex';
+
+            const wrap = document.createElement('div');
+            wrap.className = 'photo-wrap';
+            wrap.dataset.photoId = data.id;
+
+            if (data.url) {
+                const a = document.createElement('a');
+                a.href = data.url;
+                a.target = '_blank';
+                const img = document.createElement('img');
+                img.src = data.url;
+                img.alt = data.filename;
+                img.className = 'defect-photo-thumb';
+                a.appendChild(img);
+                wrap.appendChild(a);
+            } else {
+                const span = document.createElement('span');
+                span.className = 'photo-filename-label';
+                span.textContent = '📎 ' + (data.filename || 'фото загружено');
+                wrap.appendChild(span);
+            }
+
+            const delBtn = document.createElement('button');
+            delBtn.className = 'photo-delete-btn';
+            delBtn.title = 'Удалить фото';
+            delBtn.textContent = '×';
+            delBtn.onclick = () => deletePhoto(data.id, delBtn);
+            wrap.appendChild(delBtn);
+            photosDiv.appendChild(wrap);
+
+        } catch (e) {
+            alert('Ошибка сети: ' + e.message);
+        } finally {
+            label.classList.remove('uploading');
+            label.innerHTML = '📷<input type="file" accept="image/jpeg,image/png,image/webp" style="display:none" onchange="uploadDefectPhoto(this, ' + defectId + ')">';
+            input.value = '';
+        }
+    }
+
+    async function deletePhoto(photoId, btn) {
+        if (!confirm('Удалить это фото?')) return;
+
+        btn.disabled = true;
+
+        try {
+            const resp = await fetch('/photos/' + photoId + '/delete', { method: 'POST' });
+            const data = await resp.json();
+
+            if (!resp.ok) {
+                alert('Ошибка: ' + (data.error || resp.status));
+                btn.disabled = false;
+                return;
+            }
+
+            const wrap = btn.closest('.photo-wrap');
+            const photosDiv = wrap.parentElement;
+            wrap.remove();
+
+            // Скрыть строку фото если пустая
+            if (photosDiv && photosDiv.children.length === 0) {
+                photosDiv.style.display = 'none';
+            }
+        } catch (e) {
+            alert('Ошибка сети: ' + e.message);
+            btn.disabled = false;
+        }
+    }
+    </script>
 </body>
 </html>

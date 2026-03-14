@@ -31,6 +31,10 @@ func PostGenerateDocument(c *gin.Context) {
 	var genErr error
 
 	if format == "pdf" {
+		SyncInspectionPhotos(inspection.ID)
+		// Перечитываем осмотр, чтобы получить актуальный PhotoFolderURL после синхронизации
+		storage.DB.Preload("User").Preload("Rooms.Defects.DefectTemplate").Preload("Rooms.Defects.Photos").
+			First(&inspection, inspection.ID)
 		filePath, genErr = pdf.Generate(inspection, outputDir)
 	} else {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Формат не поддерживается: " + format})
@@ -44,10 +48,16 @@ func PostGenerateDocument(c *gin.Context) {
 		return
 	}
 
+	// Сохраняем абсолютный путь, чтобы скачивание работало независимо от CWD
+	absFilePath, err := filepath.Abs(filePath)
+	if err != nil {
+		absFilePath = filePath
+	}
+
 	doc := models.Document{
 		InspectionID: inspection.ID,
 		Format:       format,
-		FilePath:     filePath,
+		FilePath:     absFilePath,
 		GeneratedBy:  userID,
 	}
 	storage.DB.Create(&doc)
@@ -104,7 +114,9 @@ func GetDownloadDocument(c *gin.Context) {
 
 	absPath, _ := filepath.Abs(doc.FilePath)
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Файл не найден на диске"})
+		// Файл потерян — удаляем устаревшую запись и редиректим обратно
+		storage.DB.Delete(&doc)
+		c.Redirect(http.StatusFound, fmt.Sprintf("/inspections/%d", doc.InspectionID))
 		return
 	}
 

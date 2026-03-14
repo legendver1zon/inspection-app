@@ -45,8 +45,18 @@ type Inspection struct {
 	OwnerName        string
 	DeveloperRepName string
 	Status           string `gorm:"not null;default:'draft'"`
+	PhotoFolderURL   string // публичная ссылка на папку с фото в облаке
 
 	Rooms []InspectionRoom `gorm:"foreignKey:InspectionID"`
+}
+
+// Photo — фотография дефекта
+type Photo struct {
+	gorm.Model
+	DefectID uint   `gorm:"not null;index"`
+	FileURL  string // публичная ссылка на файл (после синхронизации с облаком)
+	FilePath string // локальный путь до файла (до синхронизации)
+	FileName string
 }
 
 // InspectionRoom — помещение (основная единица, содержит замеры и дефекты)
@@ -103,6 +113,7 @@ type RoomDefect struct {
 	Value            string
 	WallNumber       int    // 0 = не стена, 1-4 = ст1-ст4
 	Notes            string // текст поля "Прочее"
+	Photos           []Photo `gorm:"foreignKey:DefectID"`
 }
 
 // DefectTemplate — справочник дефектов

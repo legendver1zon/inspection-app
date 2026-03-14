@@ -6,6 +6,57 @@
     <title>{{ .title }} — Акты осмотра</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <style>
+        .search-filters {
+            background: var(--bg-card, #fff);
+            border: 1px solid var(--border, #e2e8f0);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 20px;
+        }
+        .filter-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: flex-end;
+        }
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            flex: 1;
+            min-width: 160px;
+        }
+        .filter-group label {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--text-muted, #64748b);
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+        }
+        .filter-group input {
+            padding: 7px 10px;
+            border: 1px solid var(--border, #e2e8f0);
+            border-radius: 6px;
+            font-size: 0.9rem;
+            background: var(--bg, #f8fafc);
+            color: inherit;
+            width: 100%;
+            box-sizing: border-box;
+        }
+        .filter-group input:focus {
+            outline: none;
+            border-color: var(--primary, #4f46e5);
+            box-shadow: 0 0 0 2px rgba(79,70,229,0.15);
+        }
+        .filter-actions {
+            display: flex;
+            gap: 8px;
+            align-items: flex-end;
+            flex-shrink: 0;
+        }
+        .filter-date { max-width: 150px; }
+    </style>
 </head>
 <body>
     {{ template "navbar" . }}
@@ -16,13 +67,48 @@
             <a href="/inspections/new" class="btn btn-primary">+ Новый осмотр</a>
         </div>
 
+        <!-- Форма поиска -->
+        <form method="GET" action="/inspections" id="search-form" class="search-filters">
+            <input type="hidden" name="tab" id="tab-input" value="{{ .tab }}">
+            <div class="filter-row">
+                <div class="filter-group">
+                    <label>Фамилия собственника</label>
+                    <input type="text" name="owner" value="{{ .filterOwner }}" placeholder="Введите фамилию...">
+                </div>
+                {{ if .isAdmin }}
+                <div class="filter-group">
+                    <label>Фамилия инспектора</label>
+                    <input type="text" name="inspector" value="{{ .filterInspector }}" placeholder="Введите фамилию...">
+                </div>
+                {{ end }}
+                <div class="filter-group">
+                    <label>Адрес</label>
+                    <input type="text" name="address" value="{{ .filterAddress }}" placeholder="Введите адрес...">
+                </div>
+                <div class="filter-group filter-date">
+                    <label>Дата с</label>
+                    <input type="date" name="date_from" value="{{ .filterDateFrom }}">
+                </div>
+                <div class="filter-group filter-date">
+                    <label>Дата по</label>
+                    <input type="date" name="date_to" value="{{ .filterDateTo }}">
+                </div>
+                <div class="filter-actions">
+                    <button type="submit" class="btn btn-primary">Найти</button>
+                    {{ if .hasFilters }}
+                    <a href="/inspections?tab={{ .tab }}" class="btn btn-secondary">Сбросить</a>
+                    {{ end }}
+                </div>
+            </div>
+        </form>
+
         <div class="tabs">
-            <a href="/inspections?tab=draft"
-               class="tab{{ if eq .tab "draft" }} active{{ end }}">
+            <a href="#" class="tab{{ if eq .tab "draft" }} active{{ end }}"
+               onclick="switchTab('draft'); return false;">
                 В работе <span class="tab-count">{{ .draftCount }}</span>
             </a>
-            <a href="/inspections?tab=completed"
-               class="tab{{ if eq .tab "completed" }} active{{ end }}">
+            <a href="#" class="tab{{ if eq .tab "completed" }} active{{ end }}"
+               onclick="switchTab('completed'); return false;">
                 Завершённые <span class="tab-count">{{ .completedCount }}</span>
             </a>
         </div>
@@ -35,6 +121,7 @@
                         <th>Акт №</th>
                         <th>Дата</th>
                         <th>Адрес</th>
+                        <th>Собственник</th>
                         {{ if .isAdmin }}<th>Мастер</th>{{ end }}
                         <th>Статус</th>
                         <th>Действия</th>
@@ -46,6 +133,7 @@
                         <td><strong>{{ .ActNumber }}</strong></td>
                         <td>{{ .Date.Format "02.01.2006" }}</td>
                         <td>{{ .Address }}</td>
+                        <td>{{ .OwnerName }}</td>
                         {{ if $.isAdmin }}<td>{{ .User.Initials }}</td>{{ end }}
                         <td>
                             {{ if eq .Status "completed" }}
@@ -71,7 +159,10 @@
         </div>
         {{ else }}
         <div class="empty-state">
-            {{ if eq .tab "completed" }}
+            {{ if .hasFilters }}
+            <p>По вашему запросу ничего не найдено.</p>
+            <a href="/inspections?tab={{ .tab }}" class="btn btn-secondary">Сбросить фильтры</a>
+            {{ else if eq .tab "completed" }}
             <p>Завершённых осмотров пока нет.</p>
             {{ else }}
             <p>Осмотров в работе нет.</p>
@@ -80,5 +171,12 @@
         </div>
         {{ end }}
     </main>
+
+    <script>
+    function switchTab(tab) {
+        document.getElementById('tab-input').value = tab;
+        document.getElementById('search-form').submit();
+    }
+    </script>
 </body>
 </html>

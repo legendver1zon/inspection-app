@@ -23,36 +23,91 @@ func GetInspections(c *gin.Context) {
 		tab = "draft"
 	}
 
-	// Счётчики по статусам — отдельные запросы во избежание мутации query
+	// Параметры поиска
+	ownerFilter := strings.TrimSpace(c.Query("owner"))
+	inspectorFilter := strings.TrimSpace(c.Query("inspector"))
+	addressFilter := strings.TrimSpace(c.Query("address"))
+	dateFrom := strings.TrimSpace(c.Query("date_from"))
+	dateTo := strings.TrimSpace(c.Query("date_to"))
+
+	// Счётчики по статусам
 	var draftCount, completedCount int64
 	draftQ := storage.DB.Model(&models.Inspection{}).Where("status = ?", "draft")
 	completedQ := storage.DB.Model(&models.Inspection{}).Where("status = ?", "completed")
+	listQ := storage.DB.Preload("User").Where("status = ?", tab).Order("created_at desc")
+
 	if role != "admin" {
 		draftQ = draftQ.Where("user_id = ?", userID)
 		completedQ = completedQ.Where("user_id = ?", userID)
+		listQ = listQ.Where("user_id = ?", userID)
 	}
+
+	// Фильтр по фамилии собственника
+	if ownerFilter != "" {
+		like := "%" + ownerFilter + "%"
+		draftQ = draftQ.Where("owner_name LIKE ?", like)
+		completedQ = completedQ.Where("owner_name LIKE ?", like)
+		listQ = listQ.Where("owner_name LIKE ?", like)
+	}
+
+	// Фильтр по фамилии инспектора (подзапрос по таблице users)
+	if inspectorFilter != "" {
+		sub := storage.DB.Table("users").Select("id").Where("full_name LIKE ?", "%"+inspectorFilter+"%")
+		draftQ = draftQ.Where("user_id IN (?)", sub)
+		completedQ = completedQ.Where("user_id IN (?)", sub)
+		listQ = listQ.Where("user_id IN (?)", sub)
+	}
+
+	// Фильтр по адресу
+	if addressFilter != "" {
+		like := "%" + addressFilter + "%"
+		draftQ = draftQ.Where("address LIKE ?", like)
+		completedQ = completedQ.Where("address LIKE ?", like)
+		listQ = listQ.Where("address LIKE ?", like)
+	}
+
+	// Фильтр по дате
+	if dateFrom != "" {
+		if t, err := time.Parse("2006-01-02", dateFrom); err == nil {
+			draftQ = draftQ.Where("date >= ?", t)
+			completedQ = completedQ.Where("date >= ?", t)
+			listQ = listQ.Where("date >= ?", t)
+		}
+	}
+	if dateTo != "" {
+		if t, err := time.Parse("2006-01-02", dateTo); err == nil {
+			end := t.Add(24*time.Hour - time.Nanosecond)
+			draftQ = draftQ.Where("date <= ?", end)
+			completedQ = completedQ.Where("date <= ?", end)
+			listQ = listQ.Where("date <= ?", end)
+		}
+	}
+
 	draftQ.Count(&draftCount)
 	completedQ.Count(&completedCount)
 
-	// Список по выбранной вкладке
 	var inspections []models.Inspection
-	listQ := storage.DB.Preload("User").Where("status = ?", tab).Order("created_at desc")
-	if role != "admin" {
-		listQ = listQ.Where("user_id = ?", userID)
-	}
 	listQ.Find(&inspections)
 
 	var user models.User
 	storage.DB.First(&user, userID)
 
+	hasFilters := ownerFilter != "" || inspectorFilter != "" || addressFilter != "" || dateFrom != "" || dateTo != ""
+
 	c.HTML(http.StatusOK, "list.html", gin.H{
-		"title":          "Осмотры",
-		"inspections":    inspections,
-		"user":           user,
-		"isAdmin":        role == "admin",
-		"tab":            tab,
-		"draftCount":     draftCount,
-		"completedCount": completedCount,
+		"title":           "Осмотры",
+		"inspections":     inspections,
+		"user":            user,
+		"isAdmin":         role == "admin",
+		"tab":             tab,
+		"draftCount":      draftCount,
+		"completedCount":  completedCount,
+		"filterOwner":     ownerFilter,
+		"filterInspector": inspectorFilter,
+		"filterAddress":   addressFilter,
+		"filterDateFrom":  dateFrom,
+		"filterDateTo":    dateTo,
+		"hasFilters":      hasFilters,
 	})
 }
 
@@ -369,7 +424,7 @@ func loadInspection(c *gin.Context) (*models.Inspection, bool) {
 	}
 
 	var inspection models.Inspection
-	if err := storage.DB.Preload("User").Preload("Rooms.Defects.DefectTemplate").
+	if err := storage.DB.Preload("User").Preload("Rooms.Defects.DefectTemplate").Preload("Rooms.Defects.Photos").
 		First(&inspection, id).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Осмотр не найден"})
 		return nil, false

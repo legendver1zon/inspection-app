@@ -31,6 +31,7 @@ func Migrate() {
 		&models.RoomDefect{},
 		&models.DefectTemplate{},
 		&models.Document{},
+		&models.Photo{},
 	)
 	if err != nil {
 		log.Fatalf("Ошибка миграции: %v", err)

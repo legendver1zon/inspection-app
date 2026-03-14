@@ -1,6 +1,7 @@
 package pdf
 
 import (
+	"bytes"
 	"embed"
 	"fmt"
 	"inspection-app/internal/models"
@@ -10,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/go-pdf/fpdf"
+	"github.com/skip2/go-qrcode"
 )
 
 //go:embed fonts
@@ -185,6 +187,15 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 		}
 		drawRoomDefects(f, room)
 		firstRoom = false
+	}
+
+	// ===== QR-код с ссылкой на фотоматериалы =====
+	if inspection.PhotoFolderURL != "" {
+		const qrH = 33.0 // высота блока с QR (подпись + изображение + отступ)
+		if f.GetY()+qrH > pageH-marginB-10 {
+			f.AddPage()
+		}
+		addQRCode(f, inspection.PhotoFolderURL)
 	}
 
 	// ===== Подписи сторон — внизу последней страницы =====
@@ -388,22 +399,121 @@ func drawRoomDefects(f *fpdf.Fpdf, room *models.InspectionRoom) {
 	}
 }
 
+// splitByCommas разбивает строку по запятым — каждая часть на отдельной строке.
+func splitByCommas(s string) []string {
+	if s == "" {
+		return []string{""}
+	}
+	parts := strings.Split(s, ",")
+	var lines []string
+	for i, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if i < len(parts)-1 {
+			p += ","
+		}
+		lines = append(lines, p)
+	}
+	if len(lines) == 0 {
+		return []string{s}
+	}
+	return lines
+}
+
+// splitByWords разбивает строку по пробелам — каждое слово на отдельной строке.
+func splitByWords(s string) []string {
+	if s == "" {
+		return []string{""}
+	}
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return []string{""}
+	}
+	return words
+}
+
+// wrapText разбивает текст на строки, каждая из которых помещается в ширину w.
+// Использует GetStringWidth для точного измерения с учётом кириллицы.
+// Вычитает 2 мм на внутренние отступы ячейки (cellMargin).
+func wrapText(f *fpdf.Fpdf, text string, w float64) []string {
+	// 2 мм запас на cellMargin (по 1 мм с каждой стороны)
+	availW := w - 2
+	if availW < 8 {
+		availW = w
+	}
+	if text == "" {
+		return []string{""}
+	}
+	var lines []string
+	for _, para := range strings.Split(text, "\n") {
+		words := strings.Fields(para)
+		if len(words) == 0 {
+			lines = append(lines, "")
+			continue
+		}
+		current := ""
+		for _, word := range words {
+			candidate := word
+			if current != "" {
+				candidate = current + " " + word
+			}
+			if f.GetStringWidth(candidate) <= availW {
+				current = candidate
+			} else {
+				if current != "" {
+					lines = append(lines, current)
+					current = ""
+				}
+				// Если одно слово шире колонки — разбиваем по символам
+				if f.GetStringWidth(word) > availW {
+					runes := []rune(word)
+					partial := ""
+					for _, r := range runes {
+						test := partial + string(r)
+						if f.GetStringWidth(test) <= availW {
+							partial = test
+						} else {
+							if partial != "" {
+								lines = append(lines, partial)
+							}
+							partial = string(r)
+						}
+					}
+					current = partial
+				} else {
+					current = word
+				}
+			}
+		}
+		if current != "" {
+			lines = append(lines, current)
+		}
+	}
+	if len(lines) == 0 {
+		return []string{""}
+	}
+	return lines
+}
+
 func drawSimpleDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
+	const lineH = 5.5
+	const nameW = contentW * 0.70
+	const valW = contentW * 0.30
+
 	setFont(f, "", 9)
 	for _, d := range defects {
 		if d.Notes != "" {
 			f.SetFillColor(255, 253, 240)
-			f.MultiCell(contentW, 5.5, "Прочее: "+d.Notes, "LRB", "L", true)
+			f.MultiCell(contentW, lineH, "Прочее: "+d.Notes, "LRB", "L", true)
 			f.SetFillColor(255, 255, 255)
 			continue
 		}
 		if d.Value == "" {
 			continue
 		}
-		name := ""
-		if d.DefectTemplate.Name != "" {
-			name = d.DefectTemplate.Name
-		}
+		name := d.DefectTemplate.Name
 		val := d.Value
 		if d.DefectTemplate.Unit != "" {
 			val += d.DefectTemplate.Unit
@@ -411,17 +521,44 @@ func drawSimpleDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 		if name == "" {
 			continue
 		}
-		// Если до конца страницы меньше одной строки — переходим на новую,
-		// чтобы название и значение не разъехались из-за разрыва страницы
-		if f.GetY() > pageH-marginB-5.5 {
+
+		// Оцениваем высоту строки
+		nameLines := wrapText(f, name, nameW)
+		valParts := splitByCommas(val)
+		maxLines := len(nameLines)
+		if len(valParts) > maxLines {
+			maxLines = len(valParts)
+		}
+		rowH := float64(maxLines) * lineH
+
+		if f.GetY()+rowH > pageH-marginB {
 			f.AddPage()
 		}
-		x, y := f.GetX(), f.GetY()
-		f.MultiCell(contentW*0.7, 5.5, name, "LB", "L", false)
-		endY := f.GetY()
-		f.SetXY(x+contentW*0.7, y)
-		f.CellFormat(contentW*0.3, endY-y, val, "RB", 0, "C", false, 0, "")
-		f.SetXY(x, endY)
+		startY := f.GetY()
+		f.SetAutoPageBreak(false, 0)
+
+		// Колонка названия: MultiCell с lMargin = marginL
+		f.SetLeftMargin(marginL)
+		f.SetXY(marginL, startY)
+		f.MultiCell(nameW, lineH, name, "", "L", false)
+
+		// Колонка значения: MultiCell с lMargin = marginL+nameW
+		// \n между частями — fpdf трактует как обязательный перенос строки
+		f.SetLeftMargin(marginL + nameW)
+		f.SetXY(marginL+nameW, startY)
+		f.MultiCell(valW, lineH, strings.Join(valParts, "\n"), "", "C", false)
+
+		f.SetLeftMargin(marginL)
+		endY := startY + rowH
+
+		f.Line(marginL, startY, marginL+contentW, startY)
+		f.Line(marginL, endY, marginL+contentW, endY)
+		f.Line(marginL, startY, marginL, endY)
+		f.Line(marginL+nameW, startY, marginL+nameW, endY)
+		f.Line(marginL+contentW, startY, marginL+contentW, endY)
+
+		f.SetXY(marginL, endY)
+		f.SetAutoPageBreak(true, marginB)
 	}
 }
 
@@ -457,29 +594,69 @@ func drawWallDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 		return
 	}
 
-	setFont(f, "B", 8)
+	const lineH = 5.0
 	colW := contentW / 5
-	f.CellFormat(colW*2, 5, "Дефект", "1", 0, "C", false, 0, "")
+	nameW := colW * 2
+	wallW := colW * 0.75
+
+	setFont(f, "B", 8)
+	f.CellFormat(nameW, lineH, "Дефект", "1", 0, "C", false, 0, "")
 	for _, w := range []string{"Ст 1", "Ст 2", "Ст 3", "Ст 4"} {
-		f.CellFormat(colW*0.75, 5, w, "1", 0, "C", false, 0, "")
+		f.CellFormat(wallW, lineH, w, "1", 0, "C", false, 0, "")
 	}
 	f.Ln(-1)
 
 	setFont(f, "", 8)
 	for _, tid := range order {
 		e := entries[tid]
-		if f.GetY() > pageH-marginB-5 {
+
+		// Оцениваем высоту строки
+		nameLines := wrapText(f, e.name, nameW)
+		maxLines := len(nameLines)
+		wallTexts := [5]string{}
+		for w := 1; w <= 4; w++ {
+			parts := splitByCommas(e.values[w])
+			wallTexts[w] = strings.Join(parts, "\n")
+			if len(parts) > maxLines {
+				maxLines = len(parts)
+			}
+		}
+		rowH := float64(maxLines) * lineH
+
+		if f.GetY()+rowH > pageH-marginB {
 			f.AddPage()
 		}
-		x, y := f.GetX(), f.GetY()
-		f.MultiCell(colW*2, 5, e.name, "1", "L", false)
-		endY := f.GetY()
-		rowH := endY - y
-		f.SetXY(x+colW*2, y)
+		startY := f.GetY()
+		f.SetAutoPageBreak(false, 0)
+
+		// Колонка названия
+		f.SetLeftMargin(marginL)
+		f.SetXY(marginL, startY)
+		f.MultiCell(nameW, lineH, e.name, "", "L", false)
+
+		// Колонки стен: каждая со своим lMargin
 		for w := 1; w <= 4; w++ {
-			f.CellFormat(colW*0.75, rowH, e.values[w], "1", 0, "C", false, 0, "")
+			colX := marginL + nameW + float64(w-1)*wallW
+			f.SetLeftMargin(colX)
+			f.SetXY(colX, startY)
+			f.MultiCell(wallW, lineH, wallTexts[w], "", "C", false)
 		}
-		f.SetXY(x, endY)
+		f.SetLeftMargin(marginL)
+
+		endY := startY + rowH
+		totalW := nameW + 4*wallW
+		f.Line(marginL, startY, marginL+totalW, startY)
+		f.Line(marginL, endY, marginL+totalW, endY)
+		f.Line(marginL, startY, marginL, endY)
+		f.Line(marginL+totalW, startY, marginL+totalW, endY)
+		f.Line(marginL+nameW, startY, marginL+nameW, endY)
+		for w := 1; w <= 3; w++ {
+			sepX := marginL + nameW + float64(w)*wallW
+			f.Line(sepX, startY, sepX, endY)
+		}
+
+		f.SetXY(marginL, endY)
+		f.SetAutoPageBreak(true, marginB)
 	}
 }
 
@@ -622,4 +799,21 @@ func wallTypeName(t string) string {
 		return "—"
 	}
 	return strings.Join(names, "/")
+}
+
+// addQRCode вставляет QR-код со ссылкой на фотоматериалы осмотра.
+func addQRCode(f *fpdf.Fpdf, url string) {
+	png, err := qrcode.Encode(url, qrcode.Medium, 256)
+	if err != nil {
+		return
+	}
+
+	setFont(f, "", 8)
+	f.CellFormat(contentW, 5, "Фотоматериалы осмотра:", "", 1, "C", false, 0, "")
+
+	const qrSize = 25.0
+	f.RegisterImageReader("qr_photos", "PNG", bytes.NewReader(png))
+	x := marginL + (contentW-qrSize)/2
+	f.Image("qr_photos", x, f.GetY(), qrSize, qrSize, false, "PNG", 0, "")
+	f.SetY(f.GetY() + qrSize + 3)
 }

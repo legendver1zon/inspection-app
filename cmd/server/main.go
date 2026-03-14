@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"inspection-app/internal/auth"
+	"inspection-app/internal/cloudstorage"
 	"inspection-app/internal/handlers"
 	"inspection-app/internal/models"
 	"inspection-app/internal/seed"
@@ -51,6 +52,15 @@ func main() {
 	storage.Connect(dbPath())
 	storage.Migrate()
 	seed.SeedDefects()
+
+	// Инициализация облачного хранилища (Яндекс Диск)
+	if token := os.Getenv("YADISK_TOKEN"); token != "" {
+		rootDir := os.Getenv("YADISK_ROOT")
+		handlers.SetCloudStorage(cloudstorage.NewYandexDisk(token, rootDir))
+		log.Println("Облачное хранилище: Яндекс Диск")
+	} else {
+		log.Println("YADISK_TOKEN не задан — загрузка фото в облако отключена")
+	}
 
 	r := gin.Default()
 
@@ -348,6 +358,8 @@ func main() {
 		protected.POST("/profile/avatar", handlers.PostUploadAvatar)
 
 		protected.POST("/documents/:id/delete", handlers.PostDeleteDocument)
+		protected.POST("/defects/:id/photos", handlers.PostUploadPhoto)
+		protected.POST("/photos/:id/delete", handlers.DeletePhoto)
 
 		admin := protected.Group("/admin")
 		admin.Use(auth.RequireAdmin())
