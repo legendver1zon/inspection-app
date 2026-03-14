@@ -16,17 +16,11 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/joho/godotenv"
 )
 
 type wallRow struct {
 	Name, W1, W2, W3, W4 string
-}
-
-func dbPath() string {
-	if p := os.Getenv("DB_PATH"); p != "" {
-		return p
-	}
-	return "inspection.db"
 }
 
 func setupLogger() {
@@ -48,8 +42,9 @@ func setupLogger() {
 }
 
 func main() {
+	_ = godotenv.Load() // загружает .env если есть (игнорирует ошибку если файл отсутствует)
 	setupLogger()
-	storage.Connect(dbPath())
+	storage.ConnectFromEnv()
 	storage.Migrate()
 	seed.SeedDefects()
 

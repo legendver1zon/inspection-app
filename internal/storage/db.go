@@ -3,24 +3,34 @@ package storage
 import (
 	"inspection-app/internal/models"
 	"log"
+	"os"
 
-	"gorm.io/driver/sqlite"
+	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
 
 var DB *gorm.DB
 
+// Connect открывает соединение с PostgreSQL по DSN.
 func Connect(dsn string) {
 	var err error
-	DB, err = gorm.Open(sqlite.Open(dsn), &gorm.Config{
+	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Warn),
 	})
 	if err != nil {
 		log.Fatalf("Ошибка подключения к БД: %v", err)
 	}
-
 	log.Println("БД подключена:", dsn)
+}
+
+// ConnectFromEnv читает DATABASE_URL из переменных окружения и подключается к БД.
+func ConnectFromEnv() {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		log.Fatal("DATABASE_URL не задан")
+	}
+	Connect(dsn)
 }
 
 func Migrate() {

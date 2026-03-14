@@ -22,9 +22,9 @@
 
 | Слой | Стек |
 |---|---|
-| Язык | Go 1.26 |
+| Язык | Go 1.25 |
 | Web-фреймворк | [Gin](https://github.com/gin-gonic/gin) |
-| БД | SQLite через [GORM](https://gorm.io) |
+| БД | PostgreSQL через [GORM](https://gorm.io) |
 | Аутентификация | JWT + сессии (gin-contrib/sessions) |
 | PDF | [go-pdf/fpdf](https://github.com/go-pdf/fpdf) |
 | QR-код | [skip2/go-qrcode](https://github.com/skip2/go-qrcode) |
@@ -58,54 +58,106 @@ inspection-app/
         └── partials/   # navbar, base
 ```
 
-## Запуск локально
+## Переменные окружения
+
+| Переменная | Обязательность | Описание |
+|---|---|---|
+| `DATABASE_URL` | **да** | DSN для подключения к PostgreSQL |
+| `YADISK_TOKEN` | нет | OAuth-токен Яндекс Диска. Без него фото хранятся только локально |
+| `YADISK_ROOT` | нет | Корневая папка на диске (по умолчанию `disk:/inspection-app`) |
+
+Пример `.env`:
+```
+DATABASE_URL=postgres://inspection:secret@localhost:5432/inspection_db?sslmode=disable
+YADISK_TOKEN=your_token_here
+```
+
+## Запуск локально (через Docker)
 
 ```bash
 git clone https://github.com/legendver1zon/inspection-app.git
 cd inspection-app
 
-# Сборка
+# Скопировать конфиг
+cp .env.example .env
+# Отредактировать .env — вставить YADISK_TOKEN при необходимости
+
+# Поднять PostgreSQL + приложение
+docker compose up -d
+
+# → http://localhost:8080
+```
+
+## Запуск локально (без Docker)
+
+1. Установить и запустить PostgreSQL
+2. Создать базу данных:
+```sql
+CREATE USER inspection WITH PASSWORD 'secret';
+CREATE DATABASE inspection_db OWNER inspection;
+```
+3. Настроить `.env`:
+```bash
+cp .env.example .env
+# Указать свой DATABASE_URL
+```
+4. Собрать и запустить:
+```bash
 go build -o app ./cmd/server
-
-# Запуск (без Яндекс Диска)
 ./app
-
-# Запуск с Яндекс Диском
-YADISK_TOKEN=your_token_here ./app
 # → http://localhost:8080
 ```
 
 > **Windows:** шрифты подхватываются автоматически из `C:/Windows/Fonts/arial.ttf`
 > **Linux:** нужен пакет `fonts-liberation` (`apt-get install -y fonts-liberation`)
 
-## Переменные окружения
-
-| Переменная | Обязательность | Описание |
-|---|---|---|
-| `YADISK_TOKEN` | нет | OAuth-токен Яндекс Диска. Без него фото хранятся только локально |
-| `YADISK_ROOT` | нет | Корневая папка на диске (по умолчанию `disk:/inspection-app`) |
-
 ## Деплой на Timeweb Cloud
 
-1. Создать VPS/контейнер на [timeweb.cloud](https://timeweb.cloud) (Ubuntu 22.04)
-2. Установить Go 1.21+ и `fonts-liberation`:
+1. Создать VPS на [timeweb.cloud](https://timeweb.cloud) (Ubuntu 22.04)
+2. Установить зависимости:
 ```bash
-apt-get install -y golang fonts-liberation
+apt-get install -y golang fonts-liberation postgresql
 ```
-3. Клонировать репозиторий и собрать:
+3. Создать пользователя и базу PostgreSQL:
 ```bash
-git clone https://github.com/legendver1zon/inspection-app.git
-cd inspection-app
-go build -o app ./cmd/server
+sudo -u postgres psql -c "CREATE USER inspection WITH PASSWORD 'yourpassword';"
+sudo -u postgres psql -c "CREATE DATABASE inspection_db OWNER inspection;"
 ```
-4. Настроить systemd-сервис или запустить через screen/tmux:
+4. Клонировать репозиторий и собрать:
 ```bash
-YADISK_TOKEN=xxx ./app
+git clone https://github.com/legendver1zon/inspection-app.git /opt/inspection-app
+cd /opt/inspection-app
+go build -o inspection-app-bin ./cmd/server
+```
+5. Добавить переменные окружения в systemd-сервис `/etc/systemd/system/inspection-app.service`:
+```ini
+[Service]
+Environment=DATABASE_URL=postgres://inspection:yourpassword@localhost:5432/inspection_db?sslmode=disable
+Environment=YADISK_TOKEN=your_token
+ExecStart=/opt/inspection-app/inspection-app-bin
+```
+6. Перезапустить сервис:
+```bash
+systemctl daemon-reload
+systemctl restart inspection-app
 ```
 
 ## Тесты
 
-Проект покрыт интеграционными тестами на базе in-memory SQLite.
+Проект покрыт интеграционными тестами на базе PostgreSQL.
+Тесты требуют переменную окружения `TEST_DATABASE_URL`.
+
+```bash
+# Поднять тестовую БД (достаточно только postgres)
+docker compose up postgres -d
+
+# Запустить тесты
+TEST_DATABASE_URL=postgres://inspection:secret@localhost:5432/inspection_db?sslmode=disable \
+  go test ./internal/handlers/... -v
+```
+
+Каждый тест полностью сбрасывает и пересоздаёт схему — тесты изолированы друг от друга.
+Без `TEST_DATABASE_URL` тесты пропускаются (`t.Skip`).
 
 ```bash
 go test ./internal/handlers/... -v

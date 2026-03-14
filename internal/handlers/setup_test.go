@@ -7,6 +7,7 @@ import (
 	"inspection-app/internal/models"
 	"inspection-app/internal/storage"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -19,11 +20,19 @@ type wallRow struct {
 	Name, W1, W2, W3, W4 string
 }
 
-// setupTestDB подключает in-memory SQLite и применяет миграции.
-// Каждый вызов открывает новую пустую базу.
+// setupTestDB подключается к тестовой PostgreSQL и сбрасывает схему.
+// Требует переменную окружения TEST_DATABASE_URL.
+// Если не задана — тест пропускается.
 func setupTestDB(t *testing.T) {
 	t.Helper()
-	storage.Connect(":memory:")
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL не задан; запустите: docker compose up postgres -d && export TEST_DATABASE_URL=postgres://inspection:secret@localhost:5432/inspection_db?sslmode=disable")
+	}
+	storage.Connect(dsn)
+	// Сбрасываем все таблицы и накатываем миграции заново — полная изоляция
+	storage.DB.Exec("DROP SCHEMA public CASCADE")
+	storage.DB.Exec("CREATE SCHEMA public")
 	storage.Migrate()
 }
 
