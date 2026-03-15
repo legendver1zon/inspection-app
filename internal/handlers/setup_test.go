@@ -27,7 +27,7 @@ func setupTestDB(t *testing.T) {
 	t.Helper()
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL не задан; запустите: docker compose up postgres -d && export TEST_DATABASE_URL=postgres://inspection:secret@localhost:5432/inspection_db?sslmode=disable")
+		t.Skip("TEST_DATABASE_URL не задан; запустите: docker compose up postgres -d && export TEST_DATABASE_URL=postgres://inspection:secret@localhost:5432/inspection_test?sslmode=disable")
 	}
 	storage.Connect(dsn)
 	// Сбрасываем все таблицы и накатываем миграции заново — полная изоляция

@@ -152,7 +152,7 @@ systemctl restart inspection-app
 docker compose up postgres -d
 
 # Запустить тесты
-TEST_DATABASE_URL=postgres://inspection:secret@localhost:5432/inspection_db?sslmode=disable \
+TEST_DATABASE_URL=postgres://inspection:secret@localhost:5432/inspection_test?sslmode=disable \
   go test ./internal/handlers/... -v
 ```
 
