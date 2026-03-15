@@ -1,0 +1,19 @@
+# Бинарники и БД
+*.exe
+*.db
+
+# Секреты
+.env
+!.env.example
+
+# Git
+.git
+.gitignore
+
+# Загружаемые файлы (монтируются как volume)
+web/static/uploads/
+web/static/documents/
+
+# Временные и отладочные утилиты
+cmd/debug/
+internal/handlers/web/

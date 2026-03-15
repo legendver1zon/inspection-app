@@ -28,6 +28,7 @@ services:
       - .env
     environment:
       DATABASE_URL: postgres://inspection:secret@postgres:5432/inspection_db?sslmode=disable
+      GIN_MODE: release
     ports:
       - "8080:8080"
     volumes:
