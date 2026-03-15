@@ -111,9 +111,15 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 	)
 
 	// Высота таблицы замеров: заголовок(6) + строк*6 + отступ(4)
+	// При 4+ окнах — две таблицы
 	measTableH := 0.0
 	if hasAnyMeasurements(inspection.Rooms) {
-		measTableH = 10.0 + float64(len(inspection.Rooms))*6.0
+		oneTableH := 10.0 + float64(len(inspection.Rooms))*6.0
+		if maxWindowsUsed(inspection.Rooms) >= 4 {
+			measTableH = oneTableH*2 + 8
+		} else {
+			measTableH = oneTableH
+		}
 	}
 	// Нижняя граница первой страницы (с учётом колонтитула)
 	pg1Bottom := pageH - marginB - 10.0
@@ -270,43 +276,7 @@ func drawMeasurementsTable(f *fpdf.Fpdf, rooms []models.InspectionRoom) {
 	}
 
 	numWin := maxWindowsUsed(rooms)
-
-	// fixed cols: №(8) + Дл(13) + Шир(13) + Выс(13) + Двыс(13) + Дшир(13) = 73
-	fixedW := 8.0 + 13.0*5
-	// Динамически вычисляем ширину колонки окна так, чтобы всё уместилось в contentW
-	minNameW := 25.0
-	winColW := (contentW - fixedW - minNameW) / float64(numWin*2)
-	if winColW > 14.0 {
-		winColW = 14.0
-	}
-	nameW := contentW - fixedW - float64(numWin)*2*winColW
-	if nameW < minNameW {
-		nameW = minNameW
-	}
-
-	fontSize := 9.0
-	if numWin >= 5 {
-		fontSize = 7.5
-	} else if numWin >= 4 {
-		fontSize = 8.0
-	}
-
-	setFont(f, "B", fontSize)
-	headers := []string{"№", "Помещение", "Дл.", "Шир.", "Выс."}
-	widths := []float64{8, nameW, 13, 13, 13}
-	for i := 1; i <= numWin; i++ {
-		headers = append(headers, fmt.Sprintf("О%dв", i))
-		headers = append(headers, fmt.Sprintf("О%dш", i))
-		widths = append(widths, winColW)
-		widths = append(widths, winColW)
-	}
-	headers = append(headers, "Д выс", "Д шир")
-	widths = append(widths, 13, 13)
-
-	for i, h := range headers {
-		f.CellFormat(widths[i], 6, h, "1", 0, "C", false, 0, "")
-	}
-	f.Ln(-1)
+	const rowH = 6.0
 
 	windowVals := func(r models.InspectionRoom) []float64 {
 		return []float64{
@@ -318,27 +288,184 @@ func drawMeasurementsTable(f *fpdf.Fpdf, rooms []models.InspectionRoom) {
 		}
 	}
 
-	setFont(f, "", fontSize)
-	for _, room := range rooms {
-		wins := windowVals(room)
-		row := []string{
-			strconv.Itoa(room.RoomNumber),
-			room.RoomName,
-			fmtFloat(room.Length),
-			fmtFloat(room.Width),
-			fmtFloat(room.Height),
+	// drawTwoLineHeader рисует заголовок: если в названии есть пробел — две строки,
+	// иначе — одна строка, центрированная по вертикали.
+	drawTwoLineHeader := func(hdrs []string, wids []float64, hdrH float64, fs float64) {
+		startY := f.GetY()
+		// Проход 1: рамки
+		xCur := marginL
+		for i := range hdrs {
+			f.SetXY(xCur, startY)
+			f.CellFormat(wids[i], hdrH, "", "1", 0, "C", false, 0, "")
+			xCur += wids[i]
 		}
-		for i := 0; i < numWin*2; i++ {
-			row = append(row, fmtFloat(wins[i]))
+		// Проход 2: текст
+		setFont(f, "B", fs)
+		xCur = marginL
+		for i, h := range hdrs {
+			if idx := strings.Index(h, " "); idx >= 0 {
+				// Два слова — разбиваем на две строки
+				f.SetXY(xCur, startY)
+				f.CellFormat(wids[i], hdrH/2, h[:idx], "", 0, "C", false, 0, "")
+				f.SetXY(xCur, startY+hdrH/2)
+				f.CellFormat(wids[i], hdrH/2, h[idx+1:], "", 0, "C", false, 0, "")
+			} else {
+				// Одно слово — по центру вертикально
+				f.SetXY(xCur, startY+(hdrH-rowH)/2)
+				f.CellFormat(wids[i], rowH, h, "", 0, "C", false, 0, "")
+			}
+			xCur += wids[i]
 		}
-		row = append(row, fmtFloat(room.DoorHeight), fmtFloat(room.DoorWidth))
+		f.SetXY(marginL, startY+hdrH)
+	}
 
-		for i, cell := range row {
-			f.CellFormat(widths[i], 6, cell, "1", 0, "C", false, 0, "")
+	if numWin >= 4 {
+		// === Таблица 1: основные размеры (без окон) ===
+		// №(8) + Помещение(35 фикс.) + 5 колонок данных (остаток поровну)
+		const mainNameW = 35.0
+		mainDataColW := (contentW - 8.0 - mainNameW) / 5.0
+		// Заголовки: слова с пробелом → двухстрочные
+		mainHeaders := []string{"№", "Помещение", "Длина", "Ширина", "Высота", "Дверь высота", "Дверь ширина"}
+		mainWidths := []float64{8, mainNameW, mainDataColW, mainDataColW, mainDataColW, mainDataColW, mainDataColW}
+
+		drawTwoLineHeader(mainHeaders, mainWidths, 12.0, 9)
+
+		setFont(f, "", 9)
+		for _, room := range rooms {
+			// Перенос строки в названии помещения если не влезает
+			nameLines := wrapText(f, room.RoomName, mainNameW)
+			nRows := len(nameLines)
+			if nRows < 1 {
+				nRows = 1
+			}
+			rH := float64(nRows) * rowH
+			startY := f.GetY()
+			xCur := marginL
+			// Рамки строки
+			allCols := append([]float64{}, mainWidths...)
+			for _, w := range allCols {
+				f.SetXY(xCur, startY)
+				f.CellFormat(w, rH, "", "1", 0, "C", false, 0, "")
+				xCur += w
+			}
+			// Текст: № и данные
+			vals := []string{
+				strconv.Itoa(room.RoomNumber), "",
+				fmtFloat(room.Length), fmtFloat(room.Width), fmtFloat(room.Height),
+				fmtFloat(room.DoorHeight), fmtFloat(room.DoorWidth),
+			}
+			xCur = marginL
+			for i, v := range vals {
+				if i == 1 {
+					// Название помещения — с переносом строк
+					for li, line := range nameLines {
+						f.SetXY(xCur, startY+float64(li)*rowH)
+						f.CellFormat(mainWidths[i], rowH, line, "", 0, "C", false, 0, "")
+					}
+				} else {
+					f.SetXY(xCur, startY+(rH-rowH)/2)
+					f.CellFormat(mainWidths[i], rowH, v, "", 0, "C", false, 0, "")
+				}
+				xCur += mainWidths[i]
+			}
+			f.SetXY(marginL, startY+rH)
+		}
+		f.Ln(5)
+
+		// === Таблица 2: размеры окон ===
+		// №(8) + Помещение(35 фикс.) + numWin*2 колонок (остаток поровну)
+		const winNameW = 35.0
+		winColW := (contentW - 8.0 - winNameW) / float64(numWin*2)
+		winFs := 9.0
+		if numWin >= 5 {
+			winFs = 7.5
+		} else {
+			winFs = 8.0
+		}
+
+		winHeaders := []string{"№", "Помещение"}
+		winWidths := []float64{8, winNameW}
+		for i := 1; i <= numWin; i++ {
+			winHeaders = append(winHeaders, fmt.Sprintf("Ок-%d выс", i))
+			winHeaders = append(winHeaders, fmt.Sprintf("Ок-%d шир", i))
+			winWidths = append(winWidths, winColW)
+			winWidths = append(winWidths, winColW)
+		}
+		drawTwoLineHeader(winHeaders, winWidths, 12.0, winFs)
+
+		setFont(f, "", winFs)
+		for _, room := range rooms {
+			wins := windowVals(room)
+			// Пропускаем помещения без размеров окон
+			hasWin := false
+			for _, v := range wins {
+				if v > 0 {
+					hasWin = true
+					break
+				}
+			}
+			if !hasWin {
+				continue
+			}
+			row := []string{strconv.Itoa(room.RoomNumber), room.RoomName}
+			for i := 0; i < numWin*2; i++ {
+				row = append(row, fmtFloat(wins[i]))
+			}
+			for i, cell := range row {
+				f.CellFormat(winWidths[i], rowH, cell, "1", 0, "C", false, 0, "")
+			}
+			f.Ln(-1)
+		}
+		f.Ln(4)
+
+	} else {
+		// === Одна таблица (numWin < 4) ===
+		// №(8) + Помещение(45 фикс.) + window cols + Д выс(13) + Д шир(13)
+		const singleNameW = 45.0
+		// Оставшееся место делим между окнами и дверями
+		winColW := (contentW - 8.0 - singleNameW - 26.0) / float64(numWin*2)
+		if winColW > 16.0 {
+			winColW = 16.0
+		}
+
+		headers := []string{"№", "Помещение", "Дл.", "Шир.", "Выс."}
+		widths := []float64{8, singleNameW, 13, 13, 13}
+		for i := 1; i <= numWin; i++ {
+			headers = append(headers, fmt.Sprintf("Ок-%d выс", i))
+			headers = append(headers, fmt.Sprintf("Ок-%d шир", i))
+			widths = append(widths, winColW)
+			widths = append(widths, winColW)
+		}
+		headers = append(headers, "Д выс", "Д шир")
+		widths = append(widths, 13, 13)
+
+		setFont(f, "B", 9)
+		for i, h := range headers {
+			f.CellFormat(widths[i], rowH, h, "1", 0, "C", false, 0, "")
 		}
 		f.Ln(-1)
+
+		setFont(f, "", 9)
+		for _, room := range rooms {
+			wins := windowVals(room)
+			row := []string{
+				strconv.Itoa(room.RoomNumber),
+				room.RoomName,
+				fmtFloat(room.Length),
+				fmtFloat(room.Width),
+				fmtFloat(room.Height),
+			}
+			for i := 0; i < numWin*2; i++ {
+				row = append(row, fmtFloat(wins[i]))
+			}
+			row = append(row, fmtFloat(room.DoorHeight), fmtFloat(room.DoorWidth))
+			for i, cell := range row {
+				f.CellFormat(widths[i], rowH, cell, "1", 0, "C", false, 0, "")
+			}
+			f.Ln(-1)
+		}
+		f.Ln(4)
 	}
-	f.Ln(4)
 }
 
 func drawRoomDefects(f *fpdf.Fpdf, room *models.InspectionRoom) {
