@@ -259,6 +259,15 @@ func newUser(t *testing.T, email, password, fullName string, role models.Role) m
 	return user
 }
 
+func newDefectTemplate(t *testing.T, section, name string) models.DefectTemplate {
+	t.Helper()
+	tmpl := models.DefectTemplate{Section: section, Name: name}
+	if err := storage.DB.Create(&tmpl).Error; err != nil {
+		t.Fatalf("newDefectTemplate: %v", err)
+	}
+	return tmpl
+}
+
 func newInspection(t *testing.T, userID uint, address, ownerName, status string, date time.Time) models.Inspection {
 	t.Helper()
 	insp := models.Inspection{

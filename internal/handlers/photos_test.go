@@ -464,7 +464,8 @@ func TestSyncInspectionPhotos_NoLocalPhotos(t *testing.T) {
 	// Фото без FilePath (уже синхронизированы)
 	room := models.InspectionRoom{InspectionID: insp.ID, RoomNumber: 1}
 	storage.DB.Create(&room)
-	defect := models.RoomDefect{RoomID: room.ID, Section: "floor", Value: "да"}
+	tmpl := newDefectTemplate(t, "floor", "Тест")
+	defect := models.RoomDefect{RoomID: room.ID, DefectTemplateID: tmpl.ID, Section: "floor", Value: "да"}
 	storage.DB.Create(&defect)
 	photo := models.Photo{DefectID: defect.ID, FilePath: "", FileURL: "https://disk.yandex.ru/i/abc"}
 	storage.DB.Create(&photo)
