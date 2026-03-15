@@ -20,7 +20,6 @@ services:
 
   app:
     image: ghcr.io/legendver1zon/inspection-app:latest
-    build: .
     restart: unless-stopped
     depends_on:
       postgres:

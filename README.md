@@ -133,21 +133,6 @@ echo "YADISK_TOKEN=your_token" > .env
 docker compose up -d --build
 ```
 
-### Миграция данных из SQLite (при переходе со старой версии)
-
-```bash
-# Установить зависимости для сборки migrate
-apt-get install -y gcc libsqlite3-dev
-
-# Собрать инструмент миграции
-CGO_ENABLED=1 go build -o migrate-tool ./cmd/migrate
-
-# Запустить миграцию
-SQLITE_PATH=/path/to/inspection.db \
-DATABASE_URL=postgres://inspection:secret@localhost:5432/inspection_db?sslmode=disable \
-./migrate-tool
-```
-
 ## Тесты
 
 Проект покрыт интеграционными тестами на базе PostgreSQL.

@@ -400,26 +400,40 @@ func drawRoomDefects(f *fpdf.Fpdf, room *models.InspectionRoom) {
 }
 
 // splitByCommas разбивает строку по запятым — каждая часть на отдельной строке.
+// Запятые между цифрами (десятичный разделитель, напр. "0,6") не разбиваются.
 func splitByCommas(s string) []string {
 	if s == "" {
 		return []string{""}
 	}
-	parts := strings.Split(s, ",")
-	var lines []string
-	for i, p := range parts {
-		p = strings.TrimSpace(p)
-		if p == "" {
-			continue
+	runes := []rune(s)
+	var parts []string
+	current := ""
+	for i, r := range runes {
+		if r == ',' {
+			// Не разбиваем, если запятая стоит между цифрами (десятичный разделитель)
+			prevIsDigit := i > 0 && runes[i-1] >= '0' && runes[i-1] <= '9'
+			nextIsDigit := i+1 < len(runes) && runes[i+1] >= '0' && runes[i+1] <= '9'
+			if prevIsDigit && nextIsDigit {
+				current += string(r)
+				continue
+			}
+			current += ","
+			p := strings.TrimSpace(current)
+			if p != "" && p != "," {
+				parts = append(parts, p)
+			}
+			current = ""
+		} else {
+			current += string(r)
 		}
-		if i < len(parts)-1 {
-			p += ","
-		}
-		lines = append(lines, p)
 	}
-	if len(lines) == 0 {
+	if p := strings.TrimSpace(current); p != "" {
+		parts = append(parts, p)
+	}
+	if len(parts) == 0 {
 		return []string{s}
 	}
-	return lines
+	return parts
 }
 
 // splitByWords разбивает строку по пробелам — каждое слово на отдельной строке.
@@ -524,10 +538,7 @@ func drawSimpleDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 
 		// Вычисляем строки для каждой колонки явно, без MultiCell
 		nameLines := wrapText(f, name, nameW)
-		var valLines []string
-		for _, part := range splitByCommas(val) {
-			valLines = append(valLines, wrapText(f, part, valW)...)
-		}
+		valLines := wrapText(f, val, valW)
 		if len(valLines) == 0 {
 			valLines = []string{""}
 		}
@@ -617,10 +628,7 @@ func drawWallDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 		maxLines := len(nameLines)
 		wallAllLines := [5][]string{}
 		for w := 1; w <= 4; w++ {
-			var lines []string
-			for _, part := range splitByCommas(e.values[w]) {
-				lines = append(lines, wrapText(f, part, wallW)...)
-			}
+			lines := wrapText(f, e.values[w], wallW)
 			if len(lines) == 0 {
 				lines = []string{""}
 			}

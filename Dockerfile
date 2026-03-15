@@ -9,7 +9,7 @@ RUN go mod download
 
 COPY . .
 
-# Только сервер; sqlite не нужен — CGO отключаем для статической линковки
+# CGO отключаем для статической линковки
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o inspection-app ./cmd/server
 
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────

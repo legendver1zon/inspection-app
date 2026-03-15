@@ -6,6 +6,7 @@
     <title>{{ .title }} — Акты осмотра</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <script>(function(){var t=localStorage.getItem("theme");if(t)document.documentElement.setAttribute("data-theme",t);})()</script>
 </head>
 <body>
     {{ template "navbar" . }}
@@ -16,7 +17,7 @@
             <a href="/admin/users" class="btn btn-secondary">← Назад</a>
         </div>
 
-        <div class="form-card" style="max-width:520px">
+        <div class="form-card" style="max-width:520px;margin:0 auto">
             {{ if .error }}
             <div class="alert alert-error">{{ .error }}</div>
             {{ end }}

@@ -6,6 +6,7 @@
     <title>{{ .title }} — Акты осмотра</title>
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <script>(function(){var t=localStorage.getItem("theme");if(t)document.documentElement.setAttribute("data-theme",t);})()</script>
     <style>
         .defect-photo-btn {
             cursor: pointer;
@@ -15,14 +16,14 @@
             width: 28px;
             height: 28px;
             border-radius: 6px;
-            border: 1px dashed #c7d0f0;
-            color: #4361ee;
+            border: 1px dashed var(--border);
+            color: var(--primary, #4361ee);
             font-size: 14px;
             opacity: 0.7;
             flex-shrink: 0;
             transition: opacity 0.2s, border-color 0.2s;
         }
-        .defect-photo-btn:hover { opacity: 1; border-color: #4361ee; }
+        .defect-photo-btn:hover { opacity: 1; border-color: var(--primary, #4361ee); }
         .defect-photo-btn.uploading { opacity: 0.4; pointer-events: none; }
         .defect-photos-row {
             display: flex;
@@ -35,12 +36,12 @@
             height: 64px;
             object-fit: cover;
             border-radius: 5px;
-            border: 1px solid #e2e8f0;
+            border: 1px solid var(--border);
             cursor: pointer;
             transition: transform 0.15s, box-shadow 0.15s;
             display: block;
         }
-        .defect-photo-thumb:hover { transform: scale(1.05); box-shadow: 0 2px 8px rgba(0,0,0,.15); }
+        .defect-photo-thumb:hover { transform: scale(1.05); box-shadow: 0 2px 8px rgba(0,0,0,.25); }
         .photo-wrap {
             position: relative;
             display: inline-flex;
@@ -68,17 +69,17 @@
         .photo-wrap:hover .photo-delete-btn { display: flex; }
         .photo-filename-label {
             font-size: 12px;
-            color: #999;
+            color: var(--text-muted, #64748b);
             padding: 4px 8px;
-            border: 1px dashed #ddd;
+            border: 1px dashed var(--border);
             border-radius: 4px;
             align-self: center;
         }
         .photo-cloud-link {
             font-size: 12px;
-            color: #4361ee;
+            color: var(--primary, #4361ee);
             padding: 4px 8px;
-            border: 1px solid #c7d0f0;
+            border: 1px solid var(--border);
             border-radius: 4px;
             text-decoration: none;
             align-self: center;
@@ -88,9 +89,9 @@
             text-overflow: ellipsis;
             display: inline-block;
         }
-        .photo-cloud-link:hover { background: #f0f3ff; }
+        .photo-cloud-link:hover { background: var(--surface); }
         .qr-card { text-align: center; padding: 24px; }
-        .qr-card img { border-radius: 8px; border: 1px solid #e2e8f0; }
+        .qr-card img { border-radius: 8px; border: 1px solid var(--border); }
     </style>
 </head>
 <body>
@@ -184,7 +185,7 @@
         {{ if .inspection.PlanImage }}
         <div class="form-card">
             <h2>План помещений</h2>
-            <img src="{{ .inspection.PlanImage }}" style="max-width:100%;max-height:400px;border-radius:6px;border:1px solid #eee">
+            <img src="{{ .inspection.PlanImage }}" style="max-width:100%;max-height:400px;border-radius:6px;border:1px solid var(--border)">
         </div>
         {{ end }}
 
@@ -479,8 +480,8 @@
             {{ if .documents }}
             <div style="margin-bottom:16px">
                 {{ range .documents }}
-                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid #eee;border-radius:6px;margin-bottom:8px">
-                    <span style="font-size:13px;color:#555">{{ .Format }} — {{ .CreatedAt.Format "02.01.2006 15:04" }}</span>
+                <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border:1px solid var(--border);border-radius:6px;margin-bottom:8px">
+                    <span style="font-size:13px;color:var(--text-muted,#64748b)">{{ .Format }} — {{ .CreatedAt.Format "02.01.2006 15:04" }}</span>
                     <div style="display:flex;gap:8px">
                         <a href="/documents/{{ .ID }}/download" class="btn btn-sm btn-primary">Скачать</a>
                         <form method="POST" action="/documents/{{ .ID }}/delete" style="display:inline"
@@ -495,7 +496,7 @@
 
             <form method="POST" action="/inspections/{{ .inspection.ID }}/generate">
                 <div style="display:flex;align-items:center;gap:12px">
-                    <select name="format" style="padding:8px 12px;border:1px solid #dde2f0;border-radius:6px;font-size:14px">
+                    <select name="format" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--bg);color:var(--text)">
                         <option value="pdf">PDF</option>
                     </select>
                     <button type="submit" class="btn btn-primary">Сгенерировать документ</button>
