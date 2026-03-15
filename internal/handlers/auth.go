@@ -84,12 +84,29 @@ func PostRegister(c *gin.Context) {
 	password := c.PostForm("password")
 	confirmPassword := c.PostForm("confirm_password")
 	fullName := strings.TrimSpace(c.PostForm("full_name"))
+	noPatronymic := c.PostForm("no_patronymic") == "1"
 	initials := buildInitials(fullName)
 
 	if email == "" || password == "" || fullName == "" {
 		c.HTML(http.StatusBadRequest, "register.html", gin.H{
 			"title": "Регистрация",
 			"error": "Заполните все поля",
+		})
+		return
+	}
+
+	minWords := 3
+	if noPatronymic {
+		minWords = 2
+	}
+	if len(strings.Fields(fullName)) < minWords {
+		errMsg := "Введите полное ФИО (Фамилия, Имя и Отчество)"
+		if noPatronymic {
+			errMsg = "Введите Фамилию и Имя"
+		}
+		c.HTML(http.StatusBadRequest, "register.html", gin.H{
+			"title": "Регистрация",
+			"error": errMsg,
 		})
 		return
 	}

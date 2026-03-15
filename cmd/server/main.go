@@ -361,7 +361,10 @@ func main() {
 		admin.Use(auth.RequireAdmin())
 		{
 			admin.GET("/users", handlers.GetAdminUsers)
+			admin.GET("/users/:id/edit", handlers.GetAdminEditUser)
+			admin.POST("/users/:id/edit", handlers.PostAdminEditUser)
 			admin.POST("/users/:id/role", handlers.PostAdminChangeRole)
+			admin.POST("/users/:id/delete", handlers.DeleteAdminUser)
 			admin.DELETE("/users/:id", handlers.DeleteAdminUser)
 			admin.POST("/inspections/:id/delete", handlers.PostDeleteInspection)
 		}

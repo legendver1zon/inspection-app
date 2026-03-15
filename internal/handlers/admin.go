@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"inspection-app/internal/auth"
 	"inspection-app/internal/models"
 	"inspection-app/internal/storage"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -38,6 +40,92 @@ func PostAdminChangeRole(c *gin.Context) {
 	}
 
 	storage.DB.Model(&models.User{}).Where("id = ?", id).Update("role", role)
+	c.Redirect(http.StatusFound, "/admin/users")
+}
+
+// GetAdminEditUser — страница редактирования пользователя
+func GetAdminEditUser(c *gin.Context) {
+	id := c.Param("id")
+	var user models.User
+	if err := storage.DB.First(&user, id).Error; err != nil {
+		c.Redirect(http.StatusFound, "/admin/users")
+		return
+	}
+	currentUserID := c.GetUint("userID")
+	var currentUser models.User
+	storage.DB.First(&currentUser, currentUserID)
+	c.HTML(http.StatusOK, "edit_user.html", gin.H{
+		"title":       "Редактирование пользователя",
+		"editUser":    user,
+		"user":        currentUser,
+		"isAdmin":     true,
+		"currentUser": currentUser,
+	})
+}
+
+// PostAdminEditUser — сохранение изменений пользователя
+func PostAdminEditUser(c *gin.Context) {
+	id := c.Param("id")
+	var user models.User
+	if err := storage.DB.First(&user, id).Error; err != nil {
+		c.Redirect(http.StatusFound, "/admin/users")
+		return
+	}
+
+	currentUserID := c.GetUint("userID")
+	var currentUser models.User
+	storage.DB.First(&currentUser, currentUserID)
+
+	fullName := strings.TrimSpace(c.PostForm("full_name"))
+	email := strings.TrimSpace(c.PostForm("email"))
+	role := c.PostForm("role")
+	newPassword := c.PostForm("new_password")
+
+	renderErr := func(errMsg string) {
+		c.HTML(http.StatusBadRequest, "edit_user.html", gin.H{
+			"title":       "Редактирование пользователя",
+			"editUser":    user,
+			"user":        currentUser,
+			"isAdmin":     true,
+			"currentUser": currentUser,
+			"error":       errMsg,
+		})
+	}
+
+	if fullName == "" || email == "" {
+		renderErr("ФИО и email обязательны")
+		return
+	}
+	if len(strings.Fields(fullName)) < 2 {
+		renderErr("Введите полное ФИО (минимум Фамилия и Имя)")
+		return
+	}
+	if role != "admin" && role != "inspector" {
+		renderErr("Неверная роль")
+		return
+	}
+
+	updates := map[string]interface{}{
+		"full_name": fullName,
+		"initials":  buildInitials(fullName),
+		"email":     email,
+		"role":      role,
+	}
+
+	if newPassword != "" {
+		if len(newPassword) < 6 {
+			renderErr("Пароль минимум 6 символов")
+			return
+		}
+		hash, err := auth.HashPassword(newPassword)
+		if err != nil {
+			renderErr("Ошибка сервера")
+			return
+		}
+		updates["password_hash"] = hash
+	}
+
+	storage.DB.Model(&user).Updates(updates)
 	c.Redirect(http.StatusFound, "/admin/users")
 }
 

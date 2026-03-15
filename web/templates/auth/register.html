@@ -22,6 +22,10 @@
                 <input type="text" id="full_name" name="full_name" required
                        placeholder="Иванов Иван Иванович" autocomplete="name">
                 <span class="form-hint" id="initials-preview" style="color:var(--text-muted)"></span>
+                <label style="display:flex;align-items:center;gap:6px;margin-top:6px;font-size:13px;color:var(--text-muted);cursor:pointer">
+                    <input type="checkbox" id="no_patronymic" name="no_patronymic" value="1">
+                    Нет отчества
+                </label>
             </div>
             <div class="form-group">
                 <label for="email">Email</label>
@@ -70,9 +74,13 @@
     }
     const inp = document.getElementById('full_name');
     const hint = document.getElementById('initials-preview');
+    const noPatr = document.getElementById('no_patronymic');
     inp.addEventListener('input', function() {
         const v = toInitials(this.value);
         hint.textContent = v ? 'В подписи: ' + v : '';
+    });
+    noPatr.addEventListener('change', function() {
+        inp.placeholder = this.checked ? 'Иванов Иван' : 'Иванов Иван Иванович';
     });
 
     // Password match validation

@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .title }} — Акты осмотра</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+</head>
+<body>
+    {{ template "navbar" . }}
+
+    <main class="container">
+        <div class="page-header">
+            <h1>Редактирование пользователя</h1>
+            <a href="/admin/users" class="btn btn-secondary">← Назад</a>
+        </div>
+
+        <div class="form-card" style="max-width:520px">
+            {{ if .error }}
+            <div class="alert alert-error">{{ .error }}</div>
+            {{ end }}
+
+            <form method="POST" action="/admin/users/{{ .editUser.ID }}/edit">
+                <div class="form-group">
+                    <label>ФИО</label>
+                    <input type="text" name="full_name" value="{{ .editUser.FullName }}" class="form-control" required placeholder="Фамилия Имя Отчество">
+                </div>
+                <div class="form-group">
+                    <label>Email</label>
+                    <input type="email" name="email" value="{{ .editUser.Email }}" class="form-control" required>
+                </div>
+                <div class="form-group">
+                    <label>Роль</label>
+                    <select name="role" class="form-control">
+                        <option value="inspector" {{ if eq (string .editUser.Role) "inspector" }}selected{{ end }}>Инспектор</option>
+                        <option value="admin" {{ if eq (string .editUser.Role) "admin" }}selected{{ end }}>Администратор</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Новый пароль <span style="color:#999;font-size:12px">(оставьте пустым чтобы не менять)</span></label>
+                    <input type="password" name="new_password" class="form-control" placeholder="Минимум 6 символов">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width:100%">Сохранить</button>
+            </form>
+        </div>
+    </main>
+</body>
+</html>

@@ -16,7 +16,8 @@
 - **Скачивание документов** — все сформированные PDF доступны для скачивания
 - **Профиль пользователя** — ФИО и инициалы подставляются в документ автоматически
 - **Роли** — `admin` (управление пользователями) и `inspector` (работа с осмотрами)
-- **Управление пользователями** — смена роли, удаление аккаунтов (только для администратора)
+- **Управление пользователями** — редактирование данных (ФИО, email, пароль, роль), удаление аккаунтов (только для администратора)
+- **Валидация ФИО** — при регистрации обязательно полное ФИО (Фамилия Имя Отчество); при отсутствии отчества доступен чекбокс «Нет отчества»
 
 ## Технологии
 
@@ -54,7 +55,7 @@ inspection-app/
     └── templates/
         ├── auth/       # login.html, register.html, profile.html
         ├── inspections/# list, new, edit, view
-        ├── admin/      # users.html
+        ├── admin/      # users.html, edit_user.html
         └── partials/   # navbar, base
 ```
 
@@ -111,35 +112,40 @@ go build -o app ./cmd/server
 > **Windows:** шрифты подхватываются автоматически из `C:/Windows/Fonts/arial.ttf`
 > **Linux:** нужен пакет `fonts-liberation` (`apt-get install -y fonts-liberation`)
 
-## Деплой на Timeweb Cloud
+## Деплой на Timeweb Cloud (Docker)
 
-1. Создать VPS на [timeweb.cloud](https://timeweb.cloud) (Ubuntu 22.04)
-2. Установить зависимости:
+1. Создать VPS на [timeweb.cloud](https://timeweb.cloud) (Ubuntu 22.04+)
+2. Установить Docker:
 ```bash
-apt-get install -y golang fonts-liberation postgresql
+curl -fsSL https://get.docker.com | sh
 ```
-3. Создать пользователя и базу PostgreSQL:
-```bash
-sudo -u postgres psql -c "CREATE USER inspection WITH PASSWORD 'yourpassword';"
-sudo -u postgres psql -c "CREATE DATABASE inspection_db OWNER inspection;"
-```
-4. Клонировать репозиторий и собрать:
+3. Клонировать репозиторий:
 ```bash
 git clone https://github.com/legendver1zon/inspection-app.git /opt/inspection-app
 cd /opt/inspection-app
-go build -o inspection-app-bin ./cmd/server
 ```
-5. Добавить переменные окружения в systemd-сервис `/etc/systemd/system/inspection-app.service`:
-```ini
-[Service]
-Environment=DATABASE_URL=postgres://inspection:yourpassword@localhost:5432/inspection_db?sslmode=disable
-Environment=YADISK_TOKEN=your_token
-ExecStart=/opt/inspection-app/inspection-app-bin
-```
-6. Перезапустить сервис:
+4. Создать `.env`:
 ```bash
-systemctl daemon-reload
-systemctl restart inspection-app
+echo "YADISK_TOKEN=your_token" > .env
+```
+5. Поднять PostgreSQL и приложение:
+```bash
+docker compose up -d --build
+```
+
+### Миграция данных из SQLite (при переходе со старой версии)
+
+```bash
+# Установить зависимости для сборки migrate
+apt-get install -y gcc libsqlite3-dev
+
+# Собрать инструмент миграции
+CGO_ENABLED=1 go build -o migrate-tool ./cmd/migrate
+
+# Запустить миграцию
+SQLITE_PATH=/path/to/inspection.db \
+DATABASE_URL=postgres://inspection:secret@localhost:5432/inspection_db?sslmode=disable \
+./migrate-tool
 ```
 
 ## Тесты
@@ -176,7 +182,7 @@ go test ./internal/handlers/... -v
 | Роль | Возможности |
 |---|---|
 | `inspector` | Создание и редактирование своих актов, генерация PDF, загрузка фото |
-| `admin` | Всё то же + просмотр всех актов + управление пользователями + фильтр по инспектору |
+| `admin` | Всё то же + просмотр всех актов + управление пользователями (редактирование, удаление) + фильтр по инспектору |
 
 Первый зарегистрированный пользователь получает роль `admin`, остальные — `inspector`.
 

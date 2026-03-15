@@ -40,15 +40,10 @@
                             {{ end }}
                         </td>
                         <td class="actions">
+                            <a href="/admin/users/{{ .ID }}/edit" class="btn btn-sm">Изменить</a>
                             {{ if ne .ID $.currentUser.ID }}
-                            <form method="POST" action="/admin/users/{{ .ID }}/role" style="display:inline">
-                                {{ if eq (string .Role) "inspector" }}
-                                <input type="hidden" name="role" value="admin">
-                                <button type="submit" class="btn btn-sm">→ Админ</button>
-                                {{ else }}
-                                <input type="hidden" name="role" value="inspector">
-                                <button type="submit" class="btn btn-sm">→ Инспектор</button>
-                                {{ end }}
+                            <form method="POST" action="/admin/users/{{ .ID }}/delete" style="display:inline" onsubmit="return confirm('Удалить пользователя {{ .FullName }}?')">
+                                <button type="submit" class="btn btn-sm btn-danger">Удалить</button>
                             </form>
                             {{ else }}
                             <span style="color:#999;font-size:12px">(вы)</span>
