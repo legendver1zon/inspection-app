@@ -85,7 +85,7 @@ func main() {
 		"defectVal": func(roomMap map[int]*models.InspectionRoom, roomNum int, templateID uint, wallNum int) string {
 			if room, ok := roomMap[roomNum]; ok && room != nil {
 				for _, d := range room.Defects {
-					if d.DefectTemplateID == templateID && d.WallNumber == wallNum {
+					if d.DefectTemplateID != nil && *d.DefectTemplateID == templateID && d.WallNumber == wallNum {
 						return d.Value
 					}
 				}
@@ -96,7 +96,7 @@ func main() {
 		"notesVal": func(roomMap map[int]*models.InspectionRoom, roomNum int, section string) string {
 			if room, ok := roomMap[roomNum]; ok && room != nil {
 				for _, d := range room.Defects {
-					if d.DefectTemplateID == 0 && d.Section == section {
+					if d.DefectTemplateID == nil && d.Section == section {
 						return d.Notes
 					}
 				}
@@ -235,14 +235,15 @@ func main() {
 			entries := make(map[uint]*entry)
 			order := []uint{}
 			for _, d := range room.Defects {
-				if d.Section != "wall" || d.Notes != "" || d.WallNumber < 1 || d.WallNumber > 4 {
+				if d.Section != "wall" || d.Notes != "" || d.DefectTemplateID == nil || d.WallNumber < 1 || d.WallNumber > 4 {
 					continue
 				}
-				if _, ok := entries[d.DefectTemplateID]; !ok {
-					entries[d.DefectTemplateID] = &entry{name: d.DefectTemplate.Name}
-					order = append(order, d.DefectTemplateID)
+				tid := *d.DefectTemplateID
+				if _, ok := entries[tid]; !ok {
+					entries[tid] = &entry{name: d.DefectTemplate.Name}
+					order = append(order, tid)
 				}
-				entries[d.DefectTemplateID].values[d.WallNumber] = d.Value
+				entries[tid].values[d.WallNumber] = d.Value
 			}
 			rows := make([]wallRow, 0, len(order))
 			for _, id := range order {

@@ -9,7 +9,11 @@ import (
 	"inspection-app/internal/models"
 	"log"
 	"os"
+	"reflect"
+	"strings"
+	"unicode/utf8"
 
+	"golang.org/x/text/encoding/charmap"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -55,6 +59,10 @@ func main() {
 		log.Fatalf("AutoMigrate: %v", err)
 	}
 
+	// Очищаем PostgreSQL перед вставкой (на случай повторного запуска)
+	log.Println("Очищаем таблицы PostgreSQL...")
+	dst.Exec("TRUNCATE photos, room_defects, inspection_rooms, documents, inspections, defect_templates, users RESTART IDENTITY CASCADE")
+
 	// Отключаем FK-триггеры на время вставки данных.
 	// Нужно, т.к. DefectTemplateID может быть 0 (запись "Прочее"),
 	// а GORM создаёт FK-ограничение на эту колонку.
@@ -86,6 +94,52 @@ func main() {
 	log.Println("Миграция завершена успешно!")
 }
 
+// sanitizeUTF8 проверяет строку на валидность UTF-8.
+// Если невалидна — пробует декодировать из CP1251 (Windows Cyrillic).
+// Если и это не помогает — заменяет кривые байты на "?".
+func sanitizeUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	decoded, err := charmap.Windows1251.NewDecoder().String(s)
+	if err == nil && utf8.ValidString(decoded) {
+		log.Printf("Конвертирована строка из CP1251: %q -> %q", s, decoded)
+		return decoded
+	}
+	return strings.ToValidUTF8(s, "?")
+}
+
+// sanitizeRecord обходит все строковые поля структуры через reflect
+// и применяет sanitizeUTF8 к каждому.
+func sanitizeRecord(v interface{}) {
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Ptr {
+		return
+	}
+	rv = rv.Elem()
+	if rv.Kind() == reflect.Slice {
+		for i := 0; i < rv.Len(); i++ {
+			sanitizeRecord(rv.Index(i).Addr().Interface())
+		}
+		return
+	}
+	if rv.Kind() != reflect.Struct {
+		return
+	}
+	rt := rv.Type()
+	for i := 0; i < rv.NumField(); i++ {
+		f := rv.Field(i)
+		ft := rt.Field(i)
+		if ft.Anonymous {
+			sanitizeRecord(f.Addr().Interface())
+			continue
+		}
+		if f.Kind() == reflect.String && f.CanSet() {
+			f.SetString(sanitizeUTF8(f.String()))
+		}
+	}
+}
+
 func migrateUsers(src, dst *gorm.DB) {
 	var records []models.User
 	if err := src.Unscoped().Find(&records).Error; err != nil {
@@ -95,6 +149,7 @@ func migrateUsers(src, dst *gorm.DB) {
 		log.Println("users: пусто, пропускаем")
 		return
 	}
+	sanitizeRecord(&records)
 	if err := dst.Unscoped().CreateInBatches(&records, 100).Error; err != nil {
 		log.Fatalf("Запись users: %v", err)
 	}
@@ -110,6 +165,7 @@ func migrateDefectTemplates(src, dst *gorm.DB) {
 		log.Println("defect_templates: пусто, пропускаем")
 		return
 	}
+	sanitizeRecord(&records)
 	if err := dst.Unscoped().CreateInBatches(&records, 100).Error; err != nil {
 		log.Fatalf("Запись defect_templates: %v", err)
 	}
@@ -125,11 +181,11 @@ func migrateInspections(src, dst *gorm.DB) {
 		log.Println("inspections: пусто, пропускаем")
 		return
 	}
-	// Обнуляем вложенные ассоциации — они переносятся отдельно
 	for i := range records {
 		records[i].User = models.User{}
 		records[i].Rooms = nil
 	}
+	sanitizeRecord(&records)
 	if err := dst.Unscoped().Omit("User", "Rooms").CreateInBatches(&records, 100).Error; err != nil {
 		log.Fatalf("Запись inspections: %v", err)
 	}
@@ -148,6 +204,7 @@ func migrateDocuments(src, dst *gorm.DB) {
 	for i := range records {
 		records[i].Inspection = models.Inspection{}
 	}
+	sanitizeRecord(&records)
 	if err := dst.Unscoped().Omit("Inspection").CreateInBatches(&records, 100).Error; err != nil {
 		log.Fatalf("Запись documents: %v", err)
 	}
@@ -166,6 +223,7 @@ func migrateInspectionRooms(src, dst *gorm.DB) {
 	for i := range records {
 		records[i].Defects = nil
 	}
+	sanitizeRecord(&records)
 	if err := dst.Unscoped().Omit("Defects").CreateInBatches(&records, 100).Error; err != nil {
 		log.Fatalf("Запись inspection_rooms: %v", err)
 	}
@@ -185,6 +243,7 @@ func migrateRoomDefects(src, dst *gorm.DB) {
 		records[i].DefectTemplate = models.DefectTemplate{}
 		records[i].Photos = nil
 	}
+	sanitizeRecord(&records)
 	if err := dst.Unscoped().Omit("DefectTemplate", "Photos").CreateInBatches(&records, 100).Error; err != nil {
 		log.Fatalf("Запись room_defects: %v", err)
 	}
@@ -200,6 +259,7 @@ func migratePhotos(src, dst *gorm.DB) {
 		log.Println("photos: пусто, пропускаем")
 		return
 	}
+	sanitizeRecord(&records)
 	if err := dst.Unscoped().CreateInBatches(&records, 100).Error; err != nil {
 		log.Fatalf("Запись photos: %v", err)
 	}

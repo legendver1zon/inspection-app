@@ -119,7 +119,7 @@ func testFuncMap() template.FuncMap {
 		"defectVal": func(roomMap map[int]*models.InspectionRoom, roomNum int, templateID uint, wallNum int) string {
 			if room, ok := roomMap[roomNum]; ok && room != nil {
 				for _, d := range room.Defects {
-					if d.DefectTemplateID == templateID && d.WallNumber == wallNum {
+					if d.DefectTemplateID != nil && *d.DefectTemplateID == templateID && d.WallNumber == wallNum {
 						return d.Value
 					}
 				}
@@ -129,7 +129,7 @@ func testFuncMap() template.FuncMap {
 		"notesVal": func(roomMap map[int]*models.InspectionRoom, roomNum int, section string) string {
 			if room, ok := roomMap[roomNum]; ok && room != nil {
 				for _, d := range room.Defects {
-					if d.DefectTemplateID == 0 && d.Section == section {
+					if d.DefectTemplateID == nil && d.Section == section {
 						return d.Notes
 					}
 				}

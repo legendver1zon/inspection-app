@@ -522,12 +522,18 @@ func drawSimpleDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 			continue
 		}
 
-		// Оцениваем высоту строки
+		// Вычисляем строки для каждой колонки явно, без MultiCell
 		nameLines := wrapText(f, name, nameW)
-		valParts := splitByCommas(val)
+		var valLines []string
+		for _, part := range splitByCommas(val) {
+			valLines = append(valLines, wrapText(f, part, valW)...)
+		}
+		if len(valLines) == 0 {
+			valLines = []string{""}
+		}
 		maxLines := len(nameLines)
-		if len(valParts) > maxLines {
-			maxLines = len(valParts)
+		if len(valLines) > maxLines {
+			maxLines = len(valLines)
 		}
 		rowH := float64(maxLines) * lineH
 
@@ -535,22 +541,18 @@ func drawSimpleDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 			f.AddPage()
 		}
 		startY := f.GetY()
-		f.SetAutoPageBreak(false, 0)
 
-		// Колонка названия: MultiCell с lMargin = marginL
-		f.SetLeftMargin(marginL)
-		f.SetXY(marginL, startY)
-		f.MultiCell(nameW, lineH, name, "", "L", false)
+		// Рисуем каждую строку явно — гарантированное совпадение с rowH
+		for i, line := range nameLines {
+			f.SetXY(marginL, startY+float64(i)*lineH)
+			f.CellFormat(nameW, lineH, line, "", 0, "L", false, 0, "")
+		}
+		for i, line := range valLines {
+			f.SetXY(marginL+nameW, startY+float64(i)*lineH)
+			f.CellFormat(valW, lineH, line, "", 0, "C", false, 0, "")
+		}
 
-		// Колонка значения: MultiCell с lMargin = marginL+nameW
-		// \n между частями — fpdf трактует как обязательный перенос строки
-		f.SetLeftMargin(marginL + nameW)
-		f.SetXY(marginL+nameW, startY)
-		f.MultiCell(valW, lineH, strings.Join(valParts, "\n"), "", "C", false)
-
-		f.SetLeftMargin(marginL)
 		endY := startY + rowH
-
 		f.Line(marginL, startY, marginL+contentW, startY)
 		f.Line(marginL, endY, marginL+contentW, endY)
 		f.Line(marginL, startY, marginL, endY)
@@ -558,7 +560,6 @@ func drawSimpleDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 		f.Line(marginL+contentW, startY, marginL+contentW, endY)
 
 		f.SetXY(marginL, endY)
-		f.SetAutoPageBreak(true, marginB)
 	}
 }
 
@@ -576,18 +577,19 @@ func drawWallDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 			f.MultiCell(contentW, 5.5, "Прочее: "+d.Notes, "LRB", "L", false)
 			continue
 		}
-		if d.Value == "" || d.WallNumber < 1 || d.WallNumber > 4 {
+		if d.Value == "" || d.DefectTemplateID == nil || d.WallNumber < 1 || d.WallNumber > 4 {
 			continue
 		}
-		if _, ok := entries[d.DefectTemplateID]; !ok {
-			entries[d.DefectTemplateID] = &wallEntry{name: d.DefectTemplate.Name}
-			order = append(order, d.DefectTemplateID)
+		tid := *d.DefectTemplateID
+		if _, ok := entries[tid]; !ok {
+			entries[tid] = &wallEntry{name: d.DefectTemplate.Name}
+			order = append(order, tid)
 		}
 		val := d.Value
 		if d.DefectTemplate.Unit != "" {
 			val += d.DefectTemplate.Unit
 		}
-		entries[d.DefectTemplateID].values[d.WallNumber] = val
+		entries[tid].values[d.WallNumber] = val
 	}
 
 	if len(order) == 0 {
@@ -610,15 +612,21 @@ func drawWallDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 	for _, tid := range order {
 		e := entries[tid]
 
-		// Оцениваем высоту строки
+		// Вычисляем строки для каждой колонки явно
 		nameLines := wrapText(f, e.name, nameW)
 		maxLines := len(nameLines)
-		wallTexts := [5]string{}
+		wallAllLines := [5][]string{}
 		for w := 1; w <= 4; w++ {
-			parts := splitByCommas(e.values[w])
-			wallTexts[w] = strings.Join(parts, "\n")
-			if len(parts) > maxLines {
-				maxLines = len(parts)
+			var lines []string
+			for _, part := range splitByCommas(e.values[w]) {
+				lines = append(lines, wrapText(f, part, wallW)...)
+			}
+			if len(lines) == 0 {
+				lines = []string{""}
+			}
+			wallAllLines[w] = lines
+			if len(lines) > maxLines {
+				maxLines = len(lines)
 			}
 		}
 		rowH := float64(maxLines) * lineH
@@ -627,21 +635,19 @@ func drawWallDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 			f.AddPage()
 		}
 		startY := f.GetY()
-		f.SetAutoPageBreak(false, 0)
 
-		// Колонка названия
-		f.SetLeftMargin(marginL)
-		f.SetXY(marginL, startY)
-		f.MultiCell(nameW, lineH, e.name, "", "L", false)
-
-		// Колонки стен: каждая со своим lMargin
+		// Рисуем каждую строку явно
+		for i, line := range nameLines {
+			f.SetXY(marginL, startY+float64(i)*lineH)
+			f.CellFormat(nameW, lineH, line, "", 0, "L", false, 0, "")
+		}
 		for w := 1; w <= 4; w++ {
 			colX := marginL + nameW + float64(w-1)*wallW
-			f.SetLeftMargin(colX)
-			f.SetXY(colX, startY)
-			f.MultiCell(wallW, lineH, wallTexts[w], "", "C", false)
+			for i, line := range wallAllLines[w] {
+				f.SetXY(colX, startY+float64(i)*lineH)
+				f.CellFormat(wallW, lineH, line, "", 0, "C", false, 0, "")
+			}
 		}
-		f.SetLeftMargin(marginL)
 
 		endY := startY + rowH
 		totalW := nameW + 4*wallW
@@ -656,7 +662,6 @@ func drawWallDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 		}
 
 		f.SetXY(marginL, endY)
-		f.SetAutoPageBreak(true, marginB)
 	}
 }
 

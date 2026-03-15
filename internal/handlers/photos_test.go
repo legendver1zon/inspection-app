@@ -113,7 +113,7 @@ func newDefectWithInspection(t *testing.T, ownerID uint) (models.Inspection, mod
 
 	defect := models.RoomDefect{
 		RoomID:           room.ID,
-		DefectTemplateID: tmpl.ID,
+		DefectTemplateID: &tmpl.ID,
 		DefectTemplate:   tmpl,
 		Section:          "ceiling",
 		Value:            "2 мм",
@@ -465,7 +465,7 @@ func TestSyncInspectionPhotos_NoLocalPhotos(t *testing.T) {
 	room := models.InspectionRoom{InspectionID: insp.ID, RoomNumber: 1}
 	storage.DB.Create(&room)
 	tmpl := newDefectTemplate(t, "floor", "Тест")
-	defect := models.RoomDefect{RoomID: room.ID, DefectTemplateID: tmpl.ID, Section: "floor", Value: "да"}
+	defect := models.RoomDefect{RoomID: room.ID, DefectTemplateID: &tmpl.ID, Section: "floor", Value: "да"}
 	storage.DB.Create(&defect)
 	photo := models.Photo{DefectID: defect.ID, FilePath: "", FileURL: "https://disk.yandex.ru/i/abc"}
 	storage.DB.Create(&photo)
@@ -497,7 +497,7 @@ func TestSyncInspectionPhotos_UploadAndCleanup(t *testing.T) {
 	tmpl := models.DefectTemplate{Section: "ceiling", Name: "Трещина", OrderIndex: 1}
 	storage.DB.Create(&tmpl)
 
-	defect := models.RoomDefect{RoomID: room.ID, DefectTemplateID: tmpl.ID, DefectTemplate: tmpl, Section: "ceiling", Value: "3 мм"}
+	defect := models.RoomDefect{RoomID: room.ID, DefectTemplateID: &tmpl.ID, DefectTemplate: tmpl, Section: "ceiling", Value: "3 мм"}
 	storage.DB.Create(&defect)
 
 	// Создаём реальный временный файл
@@ -571,7 +571,7 @@ func TestSyncInspectionPhotos_WallDefectPath(t *testing.T) {
 	tmpl := models.DefectTemplate{Section: "wall", Name: "Отклонение", OrderIndex: 1}
 	storage.DB.Create(&tmpl)
 
-	defect := models.RoomDefect{RoomID: room.ID, DefectTemplateID: tmpl.ID, DefectTemplate: tmpl, Section: "wall", WallNumber: 2, Value: "5 мм"}
+	defect := models.RoomDefect{RoomID: room.ID, DefectTemplateID: &tmpl.ID, DefectTemplate: tmpl, Section: "wall", WallNumber: 2, Value: "5 мм"}
 	storage.DB.Create(&defect)
 
 	tmp, _ := os.CreateTemp("", "wall_photo_*.jpg")

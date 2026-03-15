@@ -34,6 +34,10 @@ func ConnectFromEnv() {
 }
 
 func Migrate() {
+	// Конвертируем legacy DefectTemplateID=0 в NULL до применения FK-ограничения.
+	// Если таблица ещё не существует — ошибка игнорируется.
+	DB.Exec("UPDATE room_defects SET defect_template_id = NULL WHERE defect_template_id = 0")
+
 	err := DB.AutoMigrate(
 		&models.User{},
 		&models.Inspection{},

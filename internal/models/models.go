@@ -107,7 +107,7 @@ type InspectionRoom struct {
 type RoomDefect struct {
 	gorm.Model
 	RoomID           uint           `gorm:"not null;index"`
-	DefectTemplateID uint           // 0 = запись "Прочее"
+	DefectTemplateID *uint          // nil = запись "Прочее"
 	DefectTemplate   DefectTemplate `gorm:"foreignKey:DefectTemplateID"`
 	Section          string         // window | ceiling | wall | floor | door | plumbing
 	Value            string

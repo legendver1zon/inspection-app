@@ -224,7 +224,7 @@ func SyncInspectionPhotos(inspectionID uint) {
 	for _, d := range defects {
 		r := roomMap[d.RoomID]
 		name := d.DefectTemplate.Name
-		if d.DefectTemplateID == 0 || name == "" {
+		if d.DefectTemplateID == nil || name == "" {
 			name = "Прочее"
 		}
 		infoMap[d.ID] = defectInfo{

@@ -283,9 +283,10 @@ func PostEditInspection(c *gin.Context) {
 			}
 			key := "defect_" + strconv.FormatUint(uint64(tmpl.ID), 10) + "_" + iStr
 			if val := c.PostForm(key); val != "" {
+				tid := tmpl.ID
 				storage.DB.Create(&models.RoomDefect{
 					RoomID:           room.ID,
-					DefectTemplateID: tmpl.ID,
+					DefectTemplateID: &tid,
 					Section:          tmpl.Section,
 					Value:            val,
 				})
@@ -300,9 +301,10 @@ func PostEditInspection(c *gin.Context) {
 			for w := 1; w <= 4; w++ {
 				key := "defect_" + strconv.FormatUint(uint64(tmpl.ID), 10) + "_" + iStr + "_wall" + strconv.Itoa(w)
 				if val := c.PostForm(key); val != "" {
+					tid := tmpl.ID
 					storage.DB.Create(&models.RoomDefect{
 						RoomID:           room.ID,
-						DefectTemplateID: tmpl.ID,
+						DefectTemplateID: &tid,
 						Section:          "wall",
 						Value:            val,
 						WallNumber:       w,
