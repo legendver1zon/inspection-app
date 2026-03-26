@@ -47,6 +47,7 @@ func main() {
 	storage.ConnectFromEnv()
 	storage.Migrate()
 	seed.SeedDefects()
+	seed.SeedTestUser()
 
 	// Инициализация облачного хранилища (Яндекс Диск)
 	if token := os.Getenv("YADISK_TOKEN"); token != "" {

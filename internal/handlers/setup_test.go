@@ -71,14 +71,31 @@ func setupRouter(t *testing.T) *gin.Engine {
 		protected.GET("/inspections/:id", GetInspection)
 		protected.GET("/inspections/:id/edit", GetEditInspection)
 		protected.POST("/inspections/:id/edit", PostEditInspection)
+		protected.POST("/inspections/:id/generate", PostGenerateDocument)
+
+		protected.POST("/documents/:id/delete", PostDeleteDocument)
+		protected.GET("/documents/:id/download", GetDownloadDocument)
+
+		protected.GET("/profile", GetProfile)
+		protected.POST("/profile", PostProfile)
 
 		admin := protected.Group("/admin")
 		admin.Use(auth.RequireAdmin())
 		{
 			admin.GET("/users", GetAdminUsers)
+			admin.GET("/users/:id/edit", GetAdminEditUser)
+			admin.POST("/users/:id/edit", PostAdminEditUser)
+			admin.POST("/users/:id/role", PostAdminChangeRole)
+			admin.POST("/users/:id/delete", DeleteAdminUser)
 			admin.POST("/inspections/:id/delete", PostDeleteInspection)
 		}
 	}
+
+	// Публичные маршруты для reset/forgot (без RequireAuth)
+	r.GET("/forgot-password", GetForgotPassword)
+	r.POST("/forgot-password", PostForgotPassword)
+	r.GET("/reset-password", GetResetPassword)
+	r.POST("/reset-password", PostResetPassword)
 
 	return r
 }

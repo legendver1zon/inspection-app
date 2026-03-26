@@ -264,6 +264,77 @@ func TestPostLogout_ClearsCookieAndRedirects(t *testing.T) {
 	}
 }
 
+// --- Email case-insensitivity ---
+
+// Регистрация с заглавным email → сохраняется в lowercase
+func TestPostRegister_EmailStoredLowercase(t *testing.T) {
+	setupTestDB(t)
+	r := setupRouter(t)
+
+	form := url.Values{
+		"email":            {"User@TEST.com"},
+		"password":         {"pass123"},
+		"confirm_password": {"pass123"},
+		"full_name":        {"Тестов Тест Тестович"},
+	}
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/register", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("POST /register uppercase email: got %d, want 302", w.Code)
+	}
+	var user models.User
+	if err := storage.DB.Where("email = ?", "user@test.com").First(&user).Error; err != nil {
+		t.Error("email should be stored in lowercase")
+	}
+}
+
+// Повторная регистрация с другим регистром → ошибка "уже существует"
+func TestPostRegister_DuplicateEmailCaseInsensitive(t *testing.T) {
+	setupTestDB(t)
+	r := setupRouter(t)
+
+	newUser(t, "taken@test.com", "pass123", "Иванов Иван Иванович", models.RoleInspector)
+
+	form := url.Values{
+		"email":            {"TAKEN@TEST.COM"},
+		"password":         {"pass123"},
+		"confirm_password": {"pass123"},
+		"full_name":        {"Другой Человек Иванович"},
+	}
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/register", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("POST /register duplicate email (uppercase): got %d, want 400", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "уже существует") {
+		t.Error("expected error about duplicate email")
+	}
+}
+
+// Вход с заглавным email → успех
+func TestPostLogin_EmailCaseInsensitive(t *testing.T) {
+	setupTestDB(t)
+	r := setupRouter(t)
+
+	newUser(t, "user@test.com", "pass123", "Иванов Иван Иванович", models.RoleInspector)
+
+	form := url.Values{"email": {"USER@TEST.COM"}, "password": {"pass123"}}
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/login", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusFound {
+		t.Errorf("POST /login uppercase email: got %d, want 302", w.Code)
+	}
+}
+
 // --- buildInitials (внутренняя функция) ---
 
 func TestBuildInitials(t *testing.T) {

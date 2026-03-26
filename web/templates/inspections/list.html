@@ -57,6 +57,29 @@
             flex-shrink: 0;
         }
         .filter-date { max-width: 150px; }
+        .list-meta {
+            font-size: 0.85rem;
+            color: var(--text-muted, #64748b);
+            margin-bottom: 10px;
+        }
+        .pagination {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 20px;
+            justify-content: center;
+        }
+        .pagination-info {
+            font-size: 0.9rem;
+            color: var(--text-muted, #64748b);
+            min-width: 60px;
+            text-align: center;
+        }
+        .btn.disabled {
+            opacity: 0.4;
+            pointer-events: none;
+            cursor: default;
+        }
     </style>
 </head>
 <body>
@@ -114,6 +137,13 @@
             </a>
         </div>
 
+        {{ if gt .totalCount 0 }}
+        <div class="list-meta">
+            Показано {{ len .inspections }} из {{ .totalCount }}
+            {{ if gt .totalPages 1 }}· Страница {{ .page }} из {{ .totalPages }}{{ end }}
+        </div>
+        {{ end }}
+
         {{ if .inspections }}
         <div class="table-wrapper">
             <table class="table">
@@ -158,6 +188,25 @@
                 </tbody>
             </table>
         </div>
+
+        {{ if gt .totalPages 1 }}
+        <div class="pagination">
+            {{ if gt .page 1 }}
+            <a href="{{ .pageBase }}&page={{ .prevPage }}" class="btn btn-secondary btn-sm">← Назад</a>
+            {{ else }}
+            <span class="btn btn-secondary btn-sm disabled">← Назад</span>
+            {{ end }}
+
+            <span class="pagination-info">{{ .page }} / {{ .totalPages }}</span>
+
+            {{ if lt .page .totalPages }}
+            <a href="{{ .pageBase }}&page={{ .nextPage }}" class="btn btn-secondary btn-sm">Вперёд →</a>
+            {{ else }}
+            <span class="btn btn-secondary btn-sm disabled">Вперёд →</span>
+            {{ end }}
+        </div>
+        {{ end }}
+
         {{ else }}
         <div class="empty-state">
             {{ if .hasFilters }}

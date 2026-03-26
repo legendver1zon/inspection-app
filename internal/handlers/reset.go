@@ -8,6 +8,7 @@ import (
 	"inspection-app/internal/storage"
 	"math/rand"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -23,7 +24,7 @@ func GetForgotPassword(c *gin.Context) {
 
 // PostForgotPassword — генерирует код и отправляет письмо
 func PostForgotPassword(c *gin.Context) {
-	email := c.PostForm("email")
+	email := strings.ToLower(strings.TrimSpace(c.PostForm("email")))
 
 	// Всегда показываем одинаковый ответ — чтобы не раскрывать, есть ли email в базе
 	showSent := func() {
@@ -68,7 +69,7 @@ func GetResetPassword(c *gin.Context) {
 
 // PostResetPassword — проверяет код, обновляет пароль
 func PostResetPassword(c *gin.Context) {
-	email := c.PostForm("email")
+	email := strings.ToLower(strings.TrimSpace(c.PostForm("email")))
 	code := c.PostForm("code")
 	password := c.PostForm("password")
 	confirm := c.PostForm("confirm")

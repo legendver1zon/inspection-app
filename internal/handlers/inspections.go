@@ -4,6 +4,7 @@ import (
 	"inspection-app/internal/models"
 	"inspection-app/internal/storage"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -11,7 +12,10 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
+
+const pageSize = 20
 
 // GetInspections — список осмотров
 func GetInspections(c *gin.Context) {
@@ -34,7 +38,7 @@ func GetInspections(c *gin.Context) {
 	var draftCount, completedCount int64
 	draftQ := storage.DB.Model(&models.Inspection{}).Where("status = ?", "draft")
 	completedQ := storage.DB.Model(&models.Inspection{}).Where("status = ?", "completed")
-	listQ := storage.DB.Preload("User").Where("status = ?", tab).Order("created_at desc")
+	listQ := storage.DB.Model(&models.Inspection{}).Preload("User").Where("status = ?", tab).Order("created_at desc")
 
 	if role != "admin" {
 		draftQ = draftQ.Where("user_id = ?", userID)
@@ -86,13 +90,46 @@ func GetInspections(c *gin.Context) {
 	draftQ.Count(&draftCount)
 	completedQ.Count(&completedCount)
 
+	// Пагинация — клонируем запрос чтобы Count не затронул Preload в listQ
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	if page < 1 {
+		page = 1
+	}
+	var totalCount int64
+	listQ.Session(&gorm.Session{}).Count(&totalCount)
+	totalPages := int((totalCount + int64(pageSize) - 1) / int64(pageSize))
+	if page > totalPages && totalPages > 0 {
+		page = totalPages
+	}
+	offset := (page - 1) * pageSize
+
 	var inspections []models.Inspection
-	listQ.Find(&inspections)
+	listQ.Limit(pageSize).Offset(offset).Find(&inspections)
 
 	var user models.User
 	storage.DB.First(&user, userID)
 
 	hasFilters := ownerFilter != "" || inspectorFilter != "" || addressFilter != "" || dateFrom != "" || dateTo != ""
+
+	// Базовый URL для ссылок пагинации (все текущие фильтры без page)
+	qp := url.Values{}
+	qp.Set("tab", tab)
+	if ownerFilter != "" {
+		qp.Set("owner", ownerFilter)
+	}
+	if inspectorFilter != "" {
+		qp.Set("inspector", inspectorFilter)
+	}
+	if addressFilter != "" {
+		qp.Set("address", addressFilter)
+	}
+	if dateFrom != "" {
+		qp.Set("date_from", dateFrom)
+	}
+	if dateTo != "" {
+		qp.Set("date_to", dateTo)
+	}
+	pageBase := "/inspections?" + qp.Encode()
 
 	c.HTML(http.StatusOK, "list.html", gin.H{
 		"title":           "Осмотры",
@@ -108,6 +145,12 @@ func GetInspections(c *gin.Context) {
 		"filterDateFrom":  dateFrom,
 		"filterDateTo":    dateTo,
 		"hasFilters":      hasFilters,
+		"page":            page,
+		"totalPages":      totalPages,
+		"totalCount":      totalCount,
+		"pageBase":        pageBase,
+		"prevPage":        page - 1,
+		"nextPage":        page + 1,
 	})
 }
 

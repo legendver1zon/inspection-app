@@ -77,7 +77,7 @@ func PostAdminEditUser(c *gin.Context) {
 	storage.DB.First(&currentUser, currentUserID)
 
 	fullName := strings.TrimSpace(c.PostForm("full_name"))
-	email := strings.TrimSpace(c.PostForm("email"))
+	email := strings.ToLower(strings.TrimSpace(c.PostForm("email")))
 	role := c.PostForm("role")
 	newPassword := c.PostForm("new_password")
 

@@ -21,7 +21,7 @@ func GetLogin(c *gin.Context) {
 
 // PostLogin — обработка формы входа
 func PostLogin(c *gin.Context) {
-	email := strings.TrimSpace(c.PostForm("email"))
+	email := strings.ToLower(strings.TrimSpace(c.PostForm("email")))
 	password := c.PostForm("password")
 
 	if email == "" || password == "" {
@@ -80,7 +80,7 @@ func buildInitials(fullName string) string {
 
 // PostRegister — обработка формы регистрации
 func PostRegister(c *gin.Context) {
-	email := strings.TrimSpace(c.PostForm("email"))
+	email := strings.ToLower(strings.TrimSpace(c.PostForm("email")))
 	password := c.PostForm("password")
 	confirmPassword := c.PostForm("confirm_password")
 	fullName := strings.TrimSpace(c.PostForm("full_name"))
