@@ -105,8 +105,8 @@ func TestPostRegister_Success(t *testing.T) {
 
 	form := url.Values{
 		"email":            {"new@test.com"},
-		"password":         {"pass123"},
-		"confirm_password": {"pass123"},
+		"password":         {"Pass123!"},
+		"confirm_password": {"Pass123!"},
 		"full_name":        {"Петров Пётр Петрович"},
 	}
 	w := httptest.NewRecorder()
@@ -128,8 +128,8 @@ func TestPostRegister_FirstUserBecomesAdmin(t *testing.T) {
 
 	form := url.Values{
 		"email":            {"admin@test.com"},
-		"password":         {"pass123"},
-		"confirm_password": {"pass123"},
+		"password":         {"Pass123!"},
+		"confirm_password": {"Pass123!"},
 		"full_name":        {"Иванов Иван Иванович"},
 	}
 	w := httptest.NewRecorder()
@@ -204,8 +204,8 @@ func TestPostRegister_DuplicateEmail(t *testing.T) {
 
 	form := url.Values{
 		"email":            {"taken@test.com"},
-		"password":         {"pass123"},
-		"confirm_password": {"pass123"},
+		"password":         {"Pass123!"},
+		"confirm_password": {"Pass123!"},
 		"full_name":        {"Другой Человек Иванович"},
 	}
 	w := httptest.NewRecorder()
@@ -273,8 +273,8 @@ func TestPostRegister_EmailStoredLowercase(t *testing.T) {
 
 	form := url.Values{
 		"email":            {"User@TEST.com"},
-		"password":         {"pass123"},
-		"confirm_password": {"pass123"},
+		"password":         {"Pass123!"},
+		"confirm_password": {"Pass123!"},
 		"full_name":        {"Тестов Тест Тестович"},
 	}
 	w := httptest.NewRecorder()
@@ -300,8 +300,8 @@ func TestPostRegister_DuplicateEmailCaseInsensitive(t *testing.T) {
 
 	form := url.Values{
 		"email":            {"TAKEN@TEST.COM"},
-		"password":         {"pass123"},
-		"confirm_password": {"pass123"},
+		"password":         {"Pass123!"},
+		"confirm_password": {"Pass123!"},
 		"full_name":        {"Другой Человек Иванович"},
 	}
 	w := httptest.NewRecorder()

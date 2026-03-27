@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"inspection-app/internal/models"
+	"inspection-app/internal/security"
 	"inspection-app/internal/storage"
 	"net/http"
 	"net/url"
@@ -157,6 +158,13 @@ func GetInspections(c *gin.Context) {
 // GetNewInspection — сразу создаёт пустой осмотр и редиректит на редактирование
 func GetNewInspection(c *gin.Context) {
 	userID := c.GetUint("userID")
+	role := c.GetString("userRole")
+
+	if allowed, msg := security.CheckInspectionLimit(userID, role); !allowed {
+		security.Log(security.EventInspectionBlocked, c.ClientIP(), "userID="+strconv.Itoa(int(userID)))
+		c.JSON(http.StatusTooManyRequests, gin.H{"error": msg})
+		return
+	}
 
 	var count int64
 	storage.DB.Model(&models.Inspection{}).Count(&count)
@@ -412,6 +420,12 @@ func PostUploadPlan(c *gin.Context) {
 		return
 	}
 
+	if err := security.ValidateImage(file, security.MaxPlanSize); err != nil {
+		security.Log(security.EventFileRejected, c.ClientIP(), "plan: "+err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": "План: " + err.Error()})
+		return
+	}
+
 	ext := filepath.Ext(file.Filename)
 	filename := "plan_" + strconv.FormatUint(uint64(inspection.ID), 10) + ext
 	if err := c.SaveUploadedFile(file, "web/static/uploads/"+filename); err != nil {
@@ -421,6 +435,58 @@ func PostUploadPlan(c *gin.Context) {
 
 	storage.DB.Model(inspection).Update("plan_image", "/static/uploads/"+filename)
 	c.Redirect(http.StatusFound, "/inspections/"+strconv.FormatUint(uint64(inspection.ID), 10)+"/edit")
+}
+
+// GetUploadStatus — GET /inspections/:id/upload-status
+// Возвращает JSON со статусом загрузки фото в облако.
+func GetUploadStatus(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+		return
+	}
+
+	var inspection models.Inspection
+	if err := storage.DB.First(&inspection, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Осмотр не найден"})
+		return
+	}
+
+	userID := c.GetUint("userID")
+	role := c.GetString("userRole")
+	if role != "admin" && inspection.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещён"})
+		return
+	}
+
+	type statusCount struct {
+		Status string
+		Count  int64
+	}
+	var rows []statusCount
+	storage.DB.Model(&models.Photo{}).
+		Select("photos.upload_status as status, COUNT(*) as count").
+		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
+		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+		Where("inspection_rooms.inspection_id = ?", id).
+		Group("photos.upload_status").
+		Scan(&rows)
+
+	counts := map[string]int64{"pending": 0, "uploading": 0, "done": 0, "failed": 0}
+	var total int64
+	for _, r := range rows {
+		counts[r.Status] = r.Count
+		total += r.Count
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"total":     total,
+		"pending":   counts["pending"],
+		"uploading": counts["uploading"],
+		"done":      counts["done"],
+		"failed":    counts["failed"],
+		"all_done":  counts["pending"] == 0 && counts["uploading"] == 0 && counts["failed"] == 0,
+	})
 }
 
 // PostDeleteInspection — удаление акта осмотра (только admin)

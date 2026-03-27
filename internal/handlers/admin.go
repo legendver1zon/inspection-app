@@ -3,6 +3,7 @@ package handlers
 import (
 	"inspection-app/internal/auth"
 	"inspection-app/internal/models"
+	"inspection-app/internal/security"
 	"inspection-app/internal/storage"
 	"net/http"
 	"strconv"
@@ -113,8 +114,8 @@ func PostAdminEditUser(c *gin.Context) {
 	}
 
 	if newPassword != "" {
-		if len(newPassword) < 6 {
-			renderErr("Пароль минимум 6 символов")
+		if err := security.ValidatePassword(newPassword); err != nil {
+			renderErr(err.Error())
 			return
 		}
 		hash, err := auth.HashPassword(newPassword)

@@ -109,8 +109,8 @@ func TestPostProfile_ChangePassword_Success(t *testing.T) {
 		"full_name":            {"Иванов Иван Иванович"},
 		"initials":             {"Иванов И. И."},
 		"current_password":     {"oldpass123"},
-		"new_password":         {"newpass456"},
-		"confirm_new_password": {"newpass456"},
+		"new_password":         {"NewPass1!"},
+		"confirm_new_password": {"NewPass1!"},
 	}
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/profile", strings.NewReader(form.Encode()))
@@ -125,7 +125,7 @@ func TestPostProfile_ChangePassword_Success(t *testing.T) {
 	// Проверяем что новый пароль работает
 	var updated models.User
 	storage.DB.First(&updated, user.ID)
-	if !auth.CheckPassword("newpass456", updated.PasswordHash) {
+	if !auth.CheckPassword("NewPass1!", updated.PasswordHash) {
 		t.Error("new password was not saved correctly")
 	}
 }

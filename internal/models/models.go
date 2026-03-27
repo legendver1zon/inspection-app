@@ -53,10 +53,11 @@ type Inspection struct {
 // Photo — фотография дефекта
 type Photo struct {
 	gorm.Model
-	DefectID uint   `gorm:"not null;index"`
-	FileURL  string // публичная ссылка на файл (после синхронизации с облаком)
-	FilePath string // локальный путь до файла (до синхронизации)
-	FileName string
+	DefectID     uint   `gorm:"not null;index"`
+	FileURL      string // публичная ссылка на файл (после синхронизации с облаком)
+	FilePath     string // локальный путь до файла (до синхронизации)
+	FileName     string
+	UploadStatus string `gorm:"not null;default:'done'"` // pending | uploading | done | failed
 }
 
 // InspectionRoom — помещение (основная единица, содержит замеры и дефекты)

@@ -1,19 +1,26 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"html/template"
 	"inspection-app/internal/auth"
 	"inspection-app/internal/cloudstorage"
 	"inspection-app/internal/handlers"
 	"inspection-app/internal/models"
+	"inspection-app/internal/queue"
+	"inspection-app/internal/security"
 	"inspection-app/internal/seed"
 	"inspection-app/internal/storage"
+	"inspection-app/internal/worker"
 	"io"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
@@ -44,6 +51,7 @@ func setupLogger() {
 func main() {
 	_ = godotenv.Load() // загружает .env если есть (игнорирует ошибку если файл отсутствует)
 	setupLogger()
+	security.Init()
 	storage.ConnectFromEnv()
 	storage.Migrate()
 	seed.SeedDefects()
@@ -56,6 +64,23 @@ func main() {
 		log.Println("Облачное хранилище: Яндекс Диск")
 	} else {
 		log.Println("YADISK_TOKEN не задан — загрузка фото в облако отключена")
+	}
+
+	// Инициализация Redis-очереди и фонового воркера загрузки фото
+	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer cancel()
+
+	q, err := queue.NewFromEnv()
+	if err != nil {
+		log.Printf("Redis недоступен, асинхронная загрузка фото отключена: %v", err)
+	} else if q != nil {
+		handlers.SetUploadQueue(q)
+		uploader := worker.New(q)
+		uploader.Start(ctx, 5)
+		defer uploader.Stop()
+		log.Println("Redis подключён, фоновый воркер запущен (5 горутин)")
+	} else {
+		log.Println("REDIS_URL не задан — загрузка фото выполняется синхронно")
 	}
 
 	r := gin.Default()
@@ -316,12 +341,12 @@ func main() {
 		c.Redirect(http.StatusFound, "/login")
 	})
 	r.GET("/login", handlers.GetLogin)
-	r.POST("/login", handlers.PostLogin)
+	r.POST("/login", security.RateLimitLogin(), handlers.PostLogin)
 	r.GET("/register", handlers.GetRegister)
-	r.POST("/register", handlers.PostRegister)
+	r.POST("/register", security.RateLimitRegister(), handlers.PostRegister)
 	r.POST("/logout", handlers.PostLogout)
 	r.GET("/forgot-password", handlers.GetForgotPassword)
-	r.POST("/forgot-password", handlers.PostForgotPassword)
+	r.POST("/forgot-password", security.RateLimitForgotPassword(), handlers.PostForgotPassword)
 	r.GET("/reset-password", handlers.GetResetPassword)
 	r.POST("/reset-password", handlers.PostResetPassword)
 
@@ -344,6 +369,7 @@ func main() {
 		protected.GET("/inspections/:id", handlers.GetInspection)
 		protected.GET("/inspections/:id/edit", handlers.GetEditInspection)
 		protected.POST("/inspections/:id/edit", handlers.PostEditInspection)
+		protected.GET("/inspections/:id/upload-status", handlers.GetUploadStatus)
 
 		protected.POST("/inspections/:id/generate", handlers.PostGenerateDocument)
 		protected.GET("/documents/:id/download", handlers.GetDownloadDocument)
@@ -371,8 +397,27 @@ func main() {
 		}
 	}
 
-	log.Println("Сервер запущен: http://localhost:8080")
-	if err := r.Run(":8080"); err != nil {
-		log.Fatalf("Ошибка запуска сервера: %v", err)
+	srv := &http.Server{
+		Addr:         ":8080",
+		Handler:      r,
+		ReadTimeout:  2 * time.Minute,
+		WriteTimeout: 5 * time.Minute,
+		IdleTimeout:  2 * time.Minute,
+	}
+
+	go func() {
+		log.Println("Сервер запущен: http://localhost:8080")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Ошибка запуска сервера: %v", err)
+		}
+	}()
+
+	// Ждём сигнала остановки
+	<-ctx.Done()
+	log.Println("Завершение работы сервера...")
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Printf("Ошибка graceful shutdown: %v", err)
 	}
 }

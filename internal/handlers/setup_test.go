@@ -5,15 +5,19 @@ import (
 	"html/template"
 	"inspection-app/internal/auth"
 	"inspection-app/internal/models"
+	"inspection-app/internal/security"
 	"inspection-app/internal/storage"
 	"net/http"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
+
+var testDBOnce sync.Once
 
 // wallRow используется в funcMap для шаблонов (аналогично main.go)
 type wallRow struct {
@@ -29,7 +33,12 @@ func setupTestDB(t *testing.T) {
 	if dsn == "" {
 		t.Skip("TEST_DATABASE_URL не задан; запустите: docker compose up postgres -d && export TEST_DATABASE_URL=postgres://inspection:secret@localhost:5432/inspection_test?sslmode=disable")
 	}
-	storage.Connect(dsn)
+	// Подключаемся к БД только один раз для всего тестового прогона,
+	// чтобы не исчерпать лимит соединений PostgreSQL при большом числе тестов.
+	testDBOnce.Do(func() {
+		storage.Connect(dsn)
+		security.Init()
+	})
 	// Сбрасываем все таблицы и накатываем миграции заново — полная изоляция
 	storage.DB.Exec("DROP SCHEMA public CASCADE")
 	storage.DB.Exec("CREATE SCHEMA public")

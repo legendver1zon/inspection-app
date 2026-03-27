@@ -3,6 +3,7 @@ package handlers
 import (
 	"inspection-app/internal/auth"
 	"inspection-app/internal/models"
+	"inspection-app/internal/security"
 	"inspection-app/internal/storage"
 	"net/http"
 	"path/filepath"
@@ -62,15 +63,6 @@ func PostProfile(c *gin.Context) {
 			})
 			return
 		}
-		if len(newPassword) < 6 {
-			c.HTML(http.StatusBadRequest, "profile.html", gin.H{
-				"title":   "Профиль",
-				"user":    user,
-				"error":   "Пароль минимум 6 символов",
-				"isAdmin": c.GetString("userRole") == "admin",
-			})
-			return
-		}
 		if newPassword != confirmNewPassword {
 			c.HTML(http.StatusBadRequest, "profile.html", gin.H{
 				"title":   "Профиль",
@@ -80,9 +72,19 @@ func PostProfile(c *gin.Context) {
 			})
 			return
 		}
+		if err := security.ValidatePassword(newPassword); err != nil {
+			c.HTML(http.StatusBadRequest, "profile.html", gin.H{
+				"title":   "Профиль",
+				"user":    user,
+				"error":   err.Error(),
+				"isAdmin": c.GetString("userRole") == "admin",
+			})
+			return
+		}
 		hash, err := auth.HashPassword(newPassword)
 		if err == nil {
 			updates["password_hash"] = hash
+			security.Log(security.EventPasswordChange, c.ClientIP(), "userID="+strconv.Itoa(int(userID)))
 		}
 	}
 
@@ -105,6 +107,17 @@ func PostUploadAvatar(c *gin.Context) {
 	file, err := c.FormFile("avatar")
 	if err != nil {
 		c.Redirect(http.StatusFound, "/profile")
+		return
+	}
+
+	if err := security.ValidateImage(file, security.MaxAvatarSize); err != nil {
+		security.Log(security.EventFileRejected, c.ClientIP(), "avatar: "+err.Error())
+		c.HTML(http.StatusBadRequest, "profile.html", gin.H{
+			"title":   "Профиль",
+			"user":    user,
+			"error":   "Аватар: " + err.Error(),
+			"isAdmin": c.GetString("userRole") == "admin",
+		})
 		return
 	}
 

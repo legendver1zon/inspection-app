@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 // --- Mock CloudStorage ---
 
 type mockCloudStore struct {
+	mu             sync.Mutex
 	ensurePathErr  error
 	uploadFileErr  error
 	publishFileURL string
@@ -34,11 +36,15 @@ type mockCloudStore struct {
 }
 
 func (m *mockCloudStore) EnsurePath(p string) error {
+	m.mu.Lock()
 	m.ensuredPaths = append(m.ensuredPaths, p)
+	m.mu.Unlock()
 	return m.ensurePathErr
 }
 func (m *mockCloudStore) UploadFile(p string, _ io.Reader) error {
+	m.mu.Lock()
 	m.uploadedPaths = append(m.uploadedPaths, p)
+	m.mu.Unlock()
 	return m.uploadFileErr
 }
 func (m *mockCloudStore) PublishFile(_ string) (string, error) {

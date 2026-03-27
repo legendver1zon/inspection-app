@@ -1,16 +1,28 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"inspection-app/internal/models"
 	"inspection-app/internal/pdf"
+	"inspection-app/internal/queue"
 	"inspection-app/internal/storage"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
 
 	"github.com/gin-gonic/gin"
 )
+
+// uploadQueue — глобальная очередь задач загрузки фото.
+// Устанавливается из main.go; nil означает синхронный fallback.
+var uploadQueue *queue.RedisQueue
+
+// SetUploadQueue регистрирует Redis-очередь для асинхронной загрузки фото.
+func SetUploadQueue(q *queue.RedisQueue) {
+	uploadQueue = q
+}
 
 // PostGenerateDocument — генерация PDF документа
 func PostGenerateDocument(c *gin.Context) {
@@ -31,8 +43,22 @@ func PostGenerateDocument(c *gin.Context) {
 	var genErr error
 
 	if format == "pdf" {
-		SyncInspectionPhotos(inspection.ID)
-		// Перечитываем осмотр, чтобы получить актуальный PhotoFolderURL после синхронизации
+		if uploadQueue != nil {
+			// Асинхронный путь: синхронно создаём папку (для QR-кода),
+			// фото загружаются в фоне через воркер.
+			if _, err := EnsureInspectionFolder(inspection.ID); err != nil {
+				log.Printf("PostGenerateDocument EnsureFolder: %v", err)
+			}
+			if err := uploadQueue.Push(context.Background(), inspection.ID); err != nil {
+				// Redis недоступен — fallback на синхронную загрузку
+				log.Printf("PostGenerateDocument: Redis недоступен, загружаем синхронно: %v", err)
+				SyncInspectionPhotos(inspection.ID)
+			}
+		} else {
+			// Синхронный fallback (Redis не настроен)
+			SyncInspectionPhotos(inspection.ID)
+		}
+		// Перечитываем осмотр, чтобы получить актуальный PhotoFolderURL
 		storage.DB.Preload("User").Preload("Rooms.Defects.DefectTemplate").Preload("Rooms.Defects.Photos").
 			First(&inspection, inspection.ID)
 		filePath, genErr = pdf.Generate(inspection, outputDir)

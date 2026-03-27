@@ -201,6 +201,17 @@
                     Открыть папку на Яндекс Диске
                 </a>
             </div>
+            <!-- Прогресс загрузки фото в облако -->
+            <div id="upload-status" style="margin-top:16px;display:none">
+                <div style="font-size:13px;color:var(--text-muted,#64748b);margin-bottom:6px" id="upload-status-text">
+                    Загрузка фото в облако...
+                </div>
+                <div style="height:6px;background:var(--border,#e2e8f0);border-radius:3px;overflow:hidden">
+                    <div id="upload-progress-bar" style="height:100%;background:var(--primary,#4361ee);border-radius:3px;transition:width 0.4s;width:0%"></div>
+                </div>
+                <button id="retry-upload-btn" style="display:none;margin-top:8px" class="btn btn-sm btn-secondary"
+                        onclick="retryUpload()">Повторить загрузку</button>
+            </div>
         </div>
         {{ end }}
 
@@ -605,6 +616,69 @@
             btn.disabled = false;
         }
     }
+    // --- Прогресс загрузки фото в облако ---
+    (function() {
+        const inspectionId = {{ .inspection.ID }};
+        const statusEl = document.getElementById('upload-status');
+        if (!statusEl) return; // нет QR-блока — облако не настроено
+
+        let pollTimer = null;
+
+        function stopPoll() {
+            if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+        }
+
+        async function pollUploadStatus() {
+            try {
+                const resp = await fetch('/inspections/' + inspectionId + '/upload-status');
+                if (!resp.ok) { stopPoll(); return; }
+                const d = await resp.json();
+
+                if (d.total === 0) { stopPoll(); return; }
+
+                statusEl.style.display = 'block';
+                const done = d.done || 0;
+                const total = d.total || 0;
+                const pct = total > 0 ? Math.round(done / total * 100) : 0;
+                document.getElementById('upload-progress-bar').style.width = pct + '%';
+
+                const retryBtn = document.getElementById('retry-upload-btn');
+                const textEl = document.getElementById('upload-status-text');
+
+                if (d.all_done) {
+                    textEl.textContent = '✓ Все фото загружены в облако (' + total + ' шт.)';
+                    document.getElementById('upload-progress-bar').style.background = '#22c55e';
+                    retryBtn.style.display = 'none';
+                    stopPoll();
+                } else if (d.failed > 0 && d.pending === 0 && d.uploading === 0) {
+                    textEl.textContent = 'Ошибка загрузки ' + d.failed + ' из ' + total + ' фото';
+                    document.getElementById('upload-progress-bar').style.background = '#ef4444';
+                    retryBtn.style.display = 'inline-block';
+                    stopPoll();
+                } else {
+                    textEl.textContent = 'Загрузка фото: ' + done + ' из ' + total;
+                    retryBtn.style.display = 'none';
+                }
+            } catch (e) { /* сеть недоступна, попробуем позже */ }
+        }
+
+        async function retryUpload() {
+            document.getElementById('retry-upload-btn').style.display = 'none';
+            document.getElementById('upload-status-text').textContent = 'Повторная загрузка...';
+            document.getElementById('upload-progress-bar').style.background = 'var(--primary,#4361ee)';
+            // Повтор — просто перезапускаем опрос; воркер сам обработает failed
+            startPoll();
+        }
+        window.retryUpload = retryUpload;
+
+        function startPoll() {
+            stopPoll();
+            pollUploadStatus();
+            pollTimer = setInterval(pollUploadStatus, 3000);
+        }
+
+        startPoll();
+    })();
     </script>
 </body>
 </html>

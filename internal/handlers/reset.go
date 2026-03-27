@@ -1,12 +1,14 @@
 package handlers
 
 import (
+	"crypto/rand"
 	"fmt"
 	"inspection-app/internal/auth"
 	"inspection-app/internal/mailer"
 	"inspection-app/internal/models"
+	"inspection-app/internal/security"
 	"inspection-app/internal/storage"
-	"math/rand"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -26,6 +28,10 @@ func GetForgotPassword(c *gin.Context) {
 func PostForgotPassword(c *gin.Context) {
 	email := strings.ToLower(strings.TrimSpace(c.PostForm("email")))
 
+	// Инкрементируем на каждый запрос (не только при найденном email),
+	// чтобы не давать злоумышленнику 3 "бесплатных" проверки несуществующих адресов.
+	security.ForgotPasswordLimiter.Increment(c.ClientIP())
+
 	// Всегда показываем одинаковый ответ — чтобы не раскрывать, есть ли email в базе
 	showSent := func() {
 		c.HTML(http.StatusOK, "forgot_password.html", gin.H{
@@ -41,8 +47,13 @@ func PostForgotPassword(c *gin.Context) {
 		return
 	}
 
-	// 6-значный код
-	code := fmt.Sprintf("%06d", rand.Intn(1000000))
+	// 6-значный код на crypto/rand (криптографически безопасный)
+	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
+	if err != nil {
+		showSent()
+		return
+	}
+	code := fmt.Sprintf("%06d", n.Int64())
 	expiry := time.Now().Add(15 * time.Minute)
 
 	storage.DB.Model(&user).Updates(map[string]interface{}{
@@ -56,6 +67,7 @@ func PostForgotPassword(c *gin.Context) {
 	)
 	mailer.Send(email, "Сброс пароля — Акты осмотра", body)
 
+	security.Log(security.EventForgotPassword, c.ClientIP(), "email="+email)
 	showSent()
 }
 
@@ -86,8 +98,8 @@ func PostResetPassword(c *gin.Context) {
 		renderErr("Пароли не совпадают")
 		return
 	}
-	if len(password) < 6 {
-		renderErr("Пароль должен содержать минимум 6 символов")
+	if err := security.ValidatePassword(password); err != nil {
+		renderErr(err.Error())
 		return
 	}
 
@@ -118,5 +130,6 @@ func PostResetPassword(c *gin.Context) {
 		"reset_expiry":  nil,
 	})
 
+	security.Log(security.EventPasswordReset, c.ClientIP(), "email="+email)
 	c.Redirect(http.StatusFound, "/login?reset=1")
 }

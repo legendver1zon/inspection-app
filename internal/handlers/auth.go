@@ -3,6 +3,7 @@ package handlers
 import (
 	"inspection-app/internal/auth"
 	"inspection-app/internal/models"
+	"inspection-app/internal/security"
 	"inspection-app/internal/storage"
 	"net/http"
 	"strings"
@@ -35,6 +36,8 @@ func PostLogin(c *gin.Context) {
 	var user models.User
 	result := storage.DB.Where("email = ?", email).First(&user)
 	if result.Error != nil || !auth.CheckPassword(password, user.PasswordHash) {
+		security.LoginLimiter.Increment(c.ClientIP())
+		security.Log(security.EventLoginFailed, c.ClientIP(), "email="+email)
 		c.HTML(http.StatusUnauthorized, "login.html", gin.H{
 			"title": "Вход",
 			"error": "Неверный email или пароль",
@@ -51,6 +54,8 @@ func PostLogin(c *gin.Context) {
 		return
 	}
 
+	security.LoginLimiter.Reset(c.ClientIP())
+	security.Log(security.EventLoginSuccess, c.ClientIP(), "email="+email)
 	c.SetCookie("token", token, 86400, "/", "", false, true)
 	c.Redirect(http.StatusFound, "/inspections")
 }
@@ -111,18 +116,18 @@ func PostRegister(c *gin.Context) {
 		return
 	}
 
-	if len(password) < 6 {
-		c.HTML(http.StatusBadRequest, "register.html", gin.H{
-			"title": "Регистрация",
-			"error": "Пароль должен содержать минимум 6 символов",
-		})
-		return
-	}
-
 	if password != confirmPassword {
 		c.HTML(http.StatusBadRequest, "register.html", gin.H{
 			"title": "Регистрация",
 			"error": "Пароли не совпадают",
+		})
+		return
+	}
+
+	if err := security.ValidatePassword(password); err != nil {
+		c.HTML(http.StatusBadRequest, "register.html", gin.H{
+			"title": "Регистрация",
+			"error": err.Error(),
 		})
 		return
 	}
@@ -170,6 +175,8 @@ func PostRegister(c *gin.Context) {
 		return
 	}
 
+	security.RegisterLimiter.Increment(c.ClientIP())
+	security.Log(security.EventRegister, c.ClientIP(), "email="+email)
 	c.Redirect(http.StatusFound, "/login?registered=1")
 }
 

@@ -111,8 +111,8 @@ func TestPostResetPassword_Success(t *testing.T) {
 	form := url.Values{
 		"email":    {"user@test.com"},
 		"code":     {"123456"},
-		"password": {"newpass789"},
-		"confirm":  {"newpass789"},
+		"password": {"NewPass1!"},
+		"confirm":  {"NewPass1!"},
 	}
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/reset-password", strings.NewReader(form.Encode()))
@@ -129,7 +129,7 @@ func TestPostResetPassword_Success(t *testing.T) {
 	// Новый пароль должен работать
 	var updated models.User
 	storage.DB.First(&updated, user.ID)
-	if !auth.CheckPassword("newpass789", updated.PasswordHash) {
+	if !auth.CheckPassword("NewPass1!", updated.PasswordHash) {
 		t.Error("new password was not saved after reset")
 	}
 	// Токен должен быть очищен
@@ -149,8 +149,8 @@ func TestPostResetPassword_WrongCode(t *testing.T) {
 	form := url.Values{
 		"email":    {"user@test.com"},
 		"code":     {"999999"},
-		"password": {"newpass789"},
-		"confirm":  {"newpass789"},
+		"password": {"NewPass1!"},
+		"confirm":  {"NewPass1!"},
 	}
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/reset-password", strings.NewReader(form.Encode()))
@@ -176,8 +176,8 @@ func TestPostResetPassword_ExpiredCode(t *testing.T) {
 	form := url.Values{
 		"email":    {"user@test.com"},
 		"code":     {"123456"},
-		"password": {"newpass789"},
-		"confirm":  {"newpass789"},
+		"password": {"NewPass1!"},
+		"confirm":  {"NewPass1!"},
 	}
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/reset-password", strings.NewReader(form.Encode()))
@@ -253,8 +253,8 @@ func TestPostResetPassword_UnknownEmail(t *testing.T) {
 	form := url.Values{
 		"email":    {"nobody@test.com"},
 		"code":     {"123456"},
-		"password": {"newpass789"},
-		"confirm":  {"newpass789"},
+		"password": {"NewPass1!"},
+		"confirm":  {"NewPass1!"},
 	}
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest("POST", "/reset-password", strings.NewReader(form.Encode()))
