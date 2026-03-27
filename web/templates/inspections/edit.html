@@ -28,7 +28,7 @@
             </div>
             <div class="form-group">
                 <label>Дата</label>
-                <input type="text" value="{{ .inspection.Date.Format "02.01.2006" }}" readonly class="input-readonly">
+                <input type="date" name="inspection_date" form="main-form" value="{{ .inspection.Date.Format "2006-01-02" }}">
             </div>
             <div class="form-group">
                 <label>Время обследования</label>
@@ -317,17 +317,29 @@
             <span id="room-count-label" style="color:#999;font-size:13px"></span>
         </div>
 
-        <!-- Статус и сохранение -->
-        <div class="form-card" style="margin-top:16px">
-            <div class="form-actions" style="justify-content:space-between;align-items:center">
-                <div>
-                    <label style="font-weight:600;margin-right:8px">Статус акта:</label>
-                    <select name="status" style="padding:8px 12px;border:1px solid #dde2f0;border-radius:6px">
-                        <option value="draft" {{ if eq .inspection.Status "draft" }}selected{{ end }}>Черновик</option>
-                        <option value="completed" {{ if eq .inspection.Status "completed" }}selected{{ end }}>Завершён</option>
-                    </select>
+        <!-- Общие замечания по квартире -->
+        <div class="room-block" style="margin-top:16px">
+            <div class="room-header">
+                <div class="room-title">
+                    <span class="room-label">Общие замечания по квартире</span>
                 </div>
-                <button type="submit" class="btn btn-primary">Сохранить дефекты</button>
+            </div>
+            <div style="padding:12px 16px">
+                <div class="form-group">
+                    <label>Электричество</label>
+                    <input type="text" name="electricity" form="main-form" value="{{ .inspection.Electricity }}" placeholder="Замечания по электрике...">
+                </div>
+                <div class="form-group">
+                    <label>Вентиляция</label>
+                    <input type="text" name="ventilation" form="main-form" value="{{ .inspection.Ventilation }}" placeholder="Замечания по вентиляции...">
+                </div>
+                <div class="form-group">
+                    <label>Общие замечания</label>
+                    <textarea name="general_notes" form="main-form" rows="3" style="width:100%;padding:8px;border:1px solid #dde2f0;border-radius:6px;resize:vertical" placeholder="Общие замечания по квартире...">{{ .inspection.GeneralNotes }}</textarea>
+                </div>
+                <div style="display:flex;justify-content:flex-end;margin-top:8px">
+                    <button type="submit" class="btn btn-primary">Сохранить</button>
+                </div>
             </div>
         </div>
 

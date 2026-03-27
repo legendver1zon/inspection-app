@@ -252,6 +252,16 @@ func main() {
 			return ""
 		},
 
+		// sectionNotesDefect — полный объект RoomDefect для записи "Прочее" секции (nil если нет)
+		"sectionNotesDefect": func(room models.InspectionRoom, section string) *models.RoomDefect {
+			for i := range room.Defects {
+				if room.Defects[i].DefectTemplateID == nil && room.Defects[i].Section == section && room.Defects[i].Notes != "" {
+					return &room.Defects[i]
+				}
+			}
+			return nil
+		},
+
 		// wallRows — дефекты стен, сгруппированные по шаблону (для таблицы ст1-ст4)
 		"wallRows": func(room models.InspectionRoom) []wallRow {
 			type entry struct {
@@ -369,6 +379,7 @@ func main() {
 		protected.GET("/inspections/:id", handlers.GetInspection)
 		protected.GET("/inspections/:id/edit", handlers.GetEditInspection)
 		protected.POST("/inspections/:id/edit", handlers.PostEditInspection)
+		protected.POST("/inspections/:id/status", handlers.PostUpdateStatus)
 		protected.GET("/inspections/:id/upload-status", handlers.GetUploadStatus)
 
 		protected.POST("/inspections/:id/generate", handlers.PostGenerateDocument)

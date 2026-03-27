@@ -169,8 +169,9 @@ func GetNewInspection(c *gin.Context) {
 	var count int64
 	storage.DB.Model(&models.Inspection{}).Count(&count)
 
+	n := count + 1
 	inspection := models.Inspection{
-		ActNumber: strconv.FormatInt(count+1, 10),
+		ActNumber: strconv.FormatInt(n, 10) + "-" + time.Now().Format("020106"),
 		UserID:    userID,
 		Date:      time.Now(),
 		Status:    "draft",
@@ -376,11 +377,6 @@ func PostEditInspection(c *gin.Context) {
 		}
 	}
 
-	status := c.PostForm("status")
-	if status == "" {
-		status = "draft"
-	}
-
 	// Обновляем поля шапки акта
 	roomsCount, _ := strconv.Atoi(c.PostForm("rooms_count"))
 	floor, _ := strconv.Atoi(c.PostForm("floor"))
@@ -389,8 +385,7 @@ func PostEditInspection(c *gin.Context) {
 	tempIn, _ := strconv.ParseFloat(c.PostForm("temp_inside"), 64)
 	humidity, _ := strconv.ParseFloat(c.PostForm("humidity"), 64)
 
-	storage.DB.Model(inspection).Updates(map[string]interface{}{
-		"status":             status,
+	updates := map[string]interface{}{
 		"act_number":         c.PostForm("act_number"),
 		"inspection_time":    c.PostForm("inspection_time"),
 		"address":            c.PostForm("address"),
@@ -402,7 +397,19 @@ func PostEditInspection(c *gin.Context) {
 		"humidity":           humidity,
 		"owner_name":         c.PostForm("owner_name"),
 		"developer_rep_name": c.PostForm("developer_rep_name"),
-	})
+		"electricity":        c.PostForm("electricity"),
+		"ventilation":        c.PostForm("ventilation"),
+		"general_notes":      c.PostForm("general_notes"),
+	}
+
+	// Дата — если пришла из формы, обновляем
+	if dateStr := c.PostForm("inspection_date"); dateStr != "" {
+		if d, err := time.Parse("2006-01-02", dateStr); err == nil {
+			updates["date"] = d
+		}
+	}
+
+	storage.DB.Model(inspection).Updates(updates)
 
 	c.Redirect(http.StatusFound, "/inspections/"+strconv.FormatUint(uint64(inspection.ID), 10))
 }
@@ -590,4 +597,18 @@ func buildWallType(c *gin.Context, iStr string) string {
 		types = append(types, "gkl")
 	}
 	return strings.Join(types, ",")
+}
+
+// PostUpdateStatus — обновляет только статус осмотра (draft / completed)
+func PostUpdateStatus(c *gin.Context) {
+	inspection, ok := loadInspection(c)
+	if !ok {
+		return
+	}
+	status := c.PostForm("status")
+	if status != "draft" && status != "completed" {
+		status = "draft"
+	}
+	storage.DB.Model(inspection).Update("status", status)
+	c.Redirect(http.StatusFound, "/inspections/"+strconv.FormatUint(uint64(inspection.ID), 10))
 }

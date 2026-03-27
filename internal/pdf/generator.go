@@ -195,6 +195,16 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 		firstRoom = false
 	}
 
+	// ===== Общие замечания по квартире =====
+	if inspection.Electricity != "" || inspection.Ventilation != "" || inspection.GeneralNotes != "" {
+		if f.GetY() > pageH-marginB-28 {
+			f.AddPage()
+		} else {
+			f.Ln(4)
+		}
+		drawGeneralNotes(f, inspection)
+	}
+
 	// ===== QR-код с ссылкой на фотоматериалы =====
 	if inspection.PhotoFolderURL != "" {
 		const qrH = 33.0 // высота блока с QR (подпись + изображение + отступ)
@@ -647,7 +657,7 @@ func drawSimpleDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 	for _, d := range defects {
 		if d.Notes != "" {
 			f.SetFillColor(255, 253, 240)
-			f.MultiCell(contentW, lineH, "Прочее: "+d.Notes, "LRB", "L", true)
+			f.MultiCell(contentW, lineH, d.Notes, "LRB", "L", true)
 			f.SetFillColor(255, 255, 255)
 			continue
 		}
@@ -656,9 +666,6 @@ func drawSimpleDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 		}
 		name := d.DefectTemplate.Name
 		val := d.Value
-		if d.DefectTemplate.Unit != "" {
-			val += d.DefectTemplate.Unit
-		}
 		if name == "" {
 			continue
 		}
@@ -712,7 +719,7 @@ func drawWallDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 	for _, d := range defects {
 		if d.Notes != "" {
 			setFont(f, "", 9)
-			f.MultiCell(contentW, 5.5, "Прочее: "+d.Notes, "LRB", "L", false)
+			f.MultiCell(contentW, 5.5, d.Notes, "LRB", "L", false)
 			continue
 		}
 		if d.Value == "" || d.DefectTemplateID == nil || d.WallNumber < 1 || d.WallNumber > 4 {
@@ -724,9 +731,6 @@ func drawWallDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 			order = append(order, tid)
 		}
 		val := d.Value
-		if d.DefectTemplate.Unit != "" {
-			val += d.DefectTemplate.Unit
-		}
 		entries[tid].values[d.WallNumber] = val
 	}
 
@@ -796,6 +800,66 @@ func drawWallDefects(f *fpdf.Fpdf, defects []models.RoomDefect) {
 			f.Line(sepX, startY, sepX, endY)
 		}
 
+		f.SetXY(marginL, endY)
+	}
+}
+
+func drawGeneralNotes(f *fpdf.Fpdf, inspection *models.Inspection) {
+	const lineH = 5.5
+	const labelW = contentW * 0.30
+	const valW = contentW * 0.70
+
+	setFont(f, "B", 10)
+	f.SetFillColor(67, 97, 238)
+	f.SetTextColor(255, 255, 255)
+	f.CellFormat(contentW, 7, "Общие замечания по квартире", "", 1, "L", true, 0, "")
+	f.SetTextColor(0, 0, 0)
+	f.SetFillColor(255, 255, 255)
+	f.Ln(1)
+
+	setFont(f, "", 9)
+	rows := [][2]string{}
+	if inspection.Electricity != "" {
+		rows = append(rows, [2]string{"Электричество", inspection.Electricity})
+	}
+	if inspection.Ventilation != "" {
+		rows = append(rows, [2]string{"Вентиляция", inspection.Ventilation})
+	}
+	if inspection.GeneralNotes != "" {
+		rows = append(rows, [2]string{"Общие замечания", inspection.GeneralNotes})
+	}
+
+	for _, row := range rows {
+		labelLines := wrapText(f, row[0], labelW)
+		valLines := wrapText(f, row[1], valW)
+		maxLines := len(labelLines)
+		if len(valLines) > maxLines {
+			maxLines = len(valLines)
+		}
+		rowH := float64(maxLines) * lineH
+
+		if f.GetY()+rowH > pageH-marginB {
+			f.AddPage()
+		}
+		startY := f.GetY()
+
+		for i, line := range labelLines {
+			f.SetXY(marginL, startY+float64(i)*lineH)
+			setFont(f, "B", 9)
+			f.CellFormat(labelW, lineH, line, "", 0, "L", false, 0, "")
+		}
+		for i, line := range valLines {
+			f.SetXY(marginL+labelW, startY+float64(i)*lineH)
+			setFont(f, "", 9)
+			f.CellFormat(valW, lineH, line, "", 0, "L", false, 0, "")
+		}
+
+		endY := startY + rowH
+		f.Line(marginL, startY, marginL+contentW, startY)
+		f.Line(marginL, endY, marginL+contentW, endY)
+		f.Line(marginL, startY, marginL, endY)
+		f.Line(marginL+labelW, startY, marginL+labelW, endY)
+		f.Line(marginL+contentW, startY, marginL+contentW, endY)
 		f.SetXY(marginL, endY)
 	}
 }

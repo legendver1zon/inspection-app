@@ -47,6 +47,11 @@ type Inspection struct {
 	Status           string `gorm:"not null;default:'draft'"`
 	PhotoFolderURL   string // публичная ссылка на папку с фото в облаке
 
+	// Общие замечания по квартире (не привязаны к помещению)
+	Electricity  string
+	Ventilation  string
+	GeneralNotes string
+
 	Rooms []InspectionRoom `gorm:"foreignKey:InspectionID"`
 }
 
