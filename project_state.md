@@ -373,7 +373,7 @@ TEST_DATABASE_URL=postgres://inspection:secret@localhost:5432/inspection_test?ss
 ## 9. 🕓 История изменений (Git)
 
 ```
-(pending) feat: security, async photo upload, Redis queue, worker, tests
+6255f5a  feat: security hardening, async photo upload via Redis, 151 tests
 8962d07  feat: pagination, test account seed, email normalization, integration tests
 8af0090  feat: PDF measurements table improvements
 0e62f3d  feat: dark mode, UI fixes, PDF improvements
