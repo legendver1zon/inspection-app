@@ -334,14 +334,14 @@ func buildDefectInfoMap(inspectionID uint) map[uint]defectInfo {
 	infoMap := map[uint]defectInfo{}
 
 	var defects []models.RoomDefect
-	storage.DB.
+	storage.DB.Unscoped().
 		Preload("DefectTemplate").
 		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
 		Where("inspection_rooms.inspection_id = ?", inspectionID).
 		Find(&defects)
 
 	var rooms []models.InspectionRoom
-	storage.DB.Where("inspection_id = ?", inspectionID).Find(&rooms)
+	storage.DB.Unscoped().Where("inspection_id = ?", inspectionID).Find(&rooms)
 	roomMap := map[uint]models.InspectionRoom{}
 	for _, r := range rooms {
 		roomMap[r.ID] = r
