@@ -4,6 +4,7 @@ import (
 	"inspection-app/internal/models"
 	"inspection-app/internal/security"
 	"inspection-app/internal/storage"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -185,6 +186,12 @@ func GetNewInspection(c *gin.Context) {
 	c.Redirect(http.StatusFound, "/inspections/"+strconv.FormatUint(uint64(inspection.ID), 10)+"/edit")
 }
 
+// ArchivedDefect — удалённый дефект с фото для блока архива в view.html.
+type ArchivedDefect struct {
+	Defect   models.RoomDefect
+	RoomName string
+}
+
 // GetInspection — просмотр осмотра
 func GetInspection(c *gin.Context) {
 	inspection, ok := loadInspection(c)
@@ -195,16 +202,55 @@ func GetInspection(c *gin.Context) {
 	var documents []models.Document
 	storage.DB.Where("inspection_id = ?", inspection.ID).Find(&documents)
 
+	// Удалённые дефекты с фото — для блока архива
+	var deletedDefects []models.RoomDefect
+	storage.DB.Unscoped().
+		Preload("Photos").
+		Preload("DefectTemplate").
+		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+		Where("inspection_rooms.inspection_id = ? AND room_defects.deleted_at IS NOT NULL", inspection.ID).
+		Find(&deletedDefects)
+
+	// Получаем названия помещений для удалённых дефектов
+	roomIDSet := map[uint]struct{}{}
+	for _, d := range deletedDefects {
+		roomIDSet[d.RoomID] = struct{}{}
+	}
+	roomIDs := make([]uint, 0, len(roomIDSet))
+	for id := range roomIDSet {
+		roomIDs = append(roomIDs, id)
+	}
+	var deletedRooms []models.InspectionRoom
+	if len(roomIDs) > 0 {
+		storage.DB.Unscoped().Where("id IN ?", roomIDs).Find(&deletedRooms)
+	}
+	roomNameMap := map[uint]string{}
+	for _, r := range deletedRooms {
+		roomNameMap[r.ID] = r.RoomName
+	}
+
+	// Фильтруем: только дефекты у которых есть хотя бы одно фото
+	var archived []ArchivedDefect
+	for _, d := range deletedDefects {
+		if len(d.Photos) > 0 {
+			archived = append(archived, ArchivedDefect{
+				Defect:   d,
+				RoomName: roomNameMap[d.RoomID],
+			})
+		}
+	}
+
 	userID := c.GetUint("userID")
 	var user models.User
 	storage.DB.First(&user, userID)
 
 	c.HTML(http.StatusOK, "view.html", gin.H{
-		"title":      "Акт №" + inspection.ActNumber,
-		"inspection": inspection,
-		"documents":  documents,
-		"user":       user,
-		"isAdmin":    c.GetString("userRole") == "admin",
+		"title":          "Акт №" + inspection.ActNumber,
+		"inspection":     inspection,
+		"documents":      documents,
+		"user":           user,
+		"isAdmin":        c.GetString("userRole") == "admin",
+		"archivedDefects": archived,
 	})
 }
 
@@ -410,6 +456,16 @@ func PostEditInspection(c *gin.Context) {
 	}
 
 	storage.DB.Model(inspection).Updates(updates)
+
+	// Создаём/переименовываем папку на Яндекс Диске в фоне — не блокируем ответ.
+	// Нужно чтобы QR-код был доступен в PDF сразу после первого сохранения.
+	if cloudStore != nil {
+		go func(id uint) {
+			if _, err := EnsureInspectionFolder(id); err != nil {
+				log.Printf("PostEditInspection EnsureFolder inspectionID=%d: %v", id, err)
+			}
+		}(inspection.ID)
+	}
 
 	c.Redirect(http.StatusFound, "/inspections/"+strconv.FormatUint(uint64(inspection.ID), 10))
 }

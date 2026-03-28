@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"fmt"
 	"inspection-app/internal/models"
 	"inspection-app/internal/pdf"
@@ -43,20 +42,10 @@ func PostGenerateDocument(c *gin.Context) {
 	var genErr error
 
 	if format == "pdf" {
-		if uploadQueue != nil {
-			// Асинхронный путь: синхронно создаём папку (для QR-кода),
-			// фото загружаются в фоне через воркер.
-			if _, err := EnsureInspectionFolder(inspection.ID); err != nil {
-				log.Printf("PostGenerateDocument EnsureFolder: %v", err)
-			}
-			if err := uploadQueue.Push(context.Background(), inspection.ID); err != nil {
-				// Redis недоступен — fallback на синхронную загрузку
-				log.Printf("PostGenerateDocument: Redis недоступен, загружаем синхронно: %v", err)
-				SyncInspectionPhotos(inspection.ID)
-			}
-		} else {
-			// Синхронный fallback (Redis не настроен)
-			SyncInspectionPhotos(inspection.ID)
+		// Создаём/переименовываем папку на Яндекс Диске (нужна для QR-кода в PDF).
+		// Загрузка фото происходит сразу при добавлении, здесь не запускаем.
+		if _, err := EnsureInspectionFolder(inspection.ID); err != nil {
+			log.Printf("PostGenerateDocument EnsureFolder: %v", err)
 		}
 		// Перечитываем осмотр, чтобы получить актуальный PhotoFolderURL
 		storage.DB.Preload("User").Preload("Rooms.Defects.DefectTemplate").Preload("Rooms.Defects.Photos").

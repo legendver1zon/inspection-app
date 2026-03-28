@@ -33,6 +33,12 @@ type mockCloudStore struct {
 
 	uploadedPaths []string
 	ensuredPaths  []string
+
+	// Настраиваемые ответы для FolderExists и MoveFolder
+	folderExistsMap   map[string]bool // relPath → exists
+	folderExistsErr   error
+	moveFolderErr     error
+	moveFolderCalls   []struct{ Old, New string }
 }
 
 func (m *mockCloudStore) EnsurePath(p string) error {
@@ -52,6 +58,18 @@ func (m *mockCloudStore) PublishFile(_ string) (string, error) {
 }
 func (m *mockCloudStore) PublishFolder(_ string) (string, error) {
 	return m.publishFolURL, m.publishFolErr
+}
+func (m *mockCloudStore) FolderExists(relPath string) (bool, error) {
+	if m.folderExistsMap != nil {
+		return m.folderExistsMap[relPath], m.folderExistsErr
+	}
+	return false, m.folderExistsErr
+}
+func (m *mockCloudStore) MoveFolder(old, new string) error {
+	m.mu.Lock()
+	m.moveFolderCalls = append(m.moveFolderCalls, struct{ Old, New string }{old, new})
+	m.mu.Unlock()
+	return m.moveFolderErr
 }
 
 // --- Router with photo routes ---

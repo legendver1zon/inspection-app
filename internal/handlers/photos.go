@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"inspection-app/internal/cloudstorage"
 	"inspection-app/internal/models"
@@ -131,6 +132,18 @@ func PostUploadPhoto(c *gin.Context) {
 		return
 	}
 
+	// Сразу ставим фото в очередь на загрузку (не ждём генерации PDF)
+	if cloudStore != nil {
+		if uploadQueue != nil {
+			if err := uploadQueue.Push(context.Background(), inspection.ID); err != nil {
+				log.Printf("PostUploadPhoto: Redis push error, fallback sync: %v", err)
+				go SyncInspectionPhotos(inspection.ID)
+			}
+		} else {
+			go SyncInspectionPhotos(inspection.ID)
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"id":       photo.ID,
 		"url":      photo.FileURL,
@@ -208,7 +221,8 @@ type uploadTask struct {
 }
 
 // EnsureInspectionFolder создаёт и публикует корневую папку осмотра на Яндекс Диске.
-// Вызывается синхронно перед генерацией PDF — быстро (2-3 запроса к облаку).
+// Папка называется inspections/{ActNumber}. Если существует старая папка inspections/{ID},
+// автоматически переименовывает её. Вызывается перед генерацией PDF и при сохранении акта.
 // Возвращает публичную ссылку на папку (сохраняется в inspection.PhotoFolderURL).
 func EnsureInspectionFolder(inspectionID uint) (string, error) {
 	if cloudStore == nil {
@@ -218,14 +232,44 @@ func EnsureInspectionFolder(inspectionID uint) (string, error) {
 	if err := storage.DB.First(&inspection, inspectionID).Error; err != nil {
 		return "", err
 	}
-	if inspection.PhotoFolderURL != "" {
-		return inspection.PhotoFolderURL, nil
+
+	actNumber := inspection.ActNumber
+	if actNumber == "" {
+		actNumber = fmt.Sprintf("%d", inspectionID) // fallback для старых записей
 	}
-	inspFolder := fmt.Sprintf("inspections/%d", inspectionID)
-	if err := cloudStore.EnsurePath(inspFolder); err != nil {
+	actFolder := fmt.Sprintf("inspections/%s", actNumber)
+	idFolder := fmt.Sprintf("inspections/%d", inspectionID)
+
+	// Ранний выход: если URL уже установлен и старая ID-папка не существует — всё готово
+	if inspection.PhotoFolderURL != "" {
+		oldExists, err := cloudStore.FolderExists(idFolder)
+		if err != nil {
+			log.Printf("EnsureInspectionFolder FolderExists %q: %v", idFolder, err)
+		}
+		if !oldExists {
+			return inspection.PhotoFolderURL, nil
+		}
+		// Старая папка ещё существует → нужна миграция (продолжаем)
+	}
+
+	// Автомиграция: если есть папка inspections/{ID} и нет inspections/{ActNumber} — переименовываем
+	if actNumber != fmt.Sprintf("%d", inspectionID) {
+		oldExists, _ := cloudStore.FolderExists(idFolder)
+		newExists, _ := cloudStore.FolderExists(actFolder)
+		if oldExists && !newExists {
+			if err := cloudStore.MoveFolder(idFolder, actFolder); err != nil {
+				log.Printf("EnsureInspectionFolder MoveFolder %q → %q: %v", idFolder, actFolder, err)
+				// Не прерываем — пробуем создать заново
+			} else {
+				log.Printf("EnsureInspectionFolder: переименована папка %s → %s", idFolder, actFolder)
+			}
+		}
+	}
+
+	if err := cloudStore.EnsurePath(actFolder); err != nil {
 		return "", fmt.Errorf("EnsureInspectionFolder EnsurePath: %w", err)
 	}
-	folderURL, err := cloudStore.PublishFolder(inspFolder)
+	folderURL, err := cloudStore.PublishFolder(actFolder)
 	if err != nil {
 		return "", fmt.Errorf("EnsureInspectionFolder PublishFolder: %w", err)
 	}
@@ -274,7 +318,7 @@ func UploadInspectionPhotos(inspectionID uint) {
 		}
 		defectPhotoCount[p.DefectID]++
 		n := defectPhotoCount[p.DefectID]
-		tasks = append(tasks, buildUploadTask(p, info, inspectionID, n))
+		tasks = append(tasks, buildUploadTask(p, info, n))
 	}
 
 	uploadTasksParallel(tasks, func(t uploadTask, success bool, publicURL string) {
@@ -328,10 +372,19 @@ type defectInfo struct {
 	Section    string
 	WallNumber int
 	DefectName string
+	ActNumber  string // номер акта для именования папки на Яндекс Диске
 }
 
 func buildDefectInfoMap(inspectionID uint) map[uint]defectInfo {
 	infoMap := map[uint]defectInfo{}
+
+	// Получаем номер акта для именования папки
+	var inspection models.Inspection
+	storage.DB.First(&inspection, inspectionID)
+	actNumber := inspection.ActNumber
+	if actNumber == "" {
+		actNumber = fmt.Sprintf("%d", inspectionID) // fallback для старых записей
+	}
 
 	var defects []models.RoomDefect
 	storage.DB.Unscoped().
@@ -358,19 +411,20 @@ func buildDefectInfoMap(inspectionID uint) map[uint]defectInfo {
 			Section:    d.Section,
 			WallNumber: d.WallNumber,
 			DefectName: name,
+			ActNumber:  actNumber,
 		}
 	}
 	return infoMap
 }
 
-func buildUploadTask(p *models.Photo, info defectInfo, inspectionID uint, n int) uploadTask {
+func buildUploadTask(p *models.Photo, info defectInfo, n int) uploadTask {
 	ext := filepath.Ext(p.FileName)
 	roomName := sanitizeFolderName(info.RoomName)
 	if roomName == "" {
 		roomName = fmt.Sprintf("Помещение_%d", info.RoomNumber)
 	}
 	secFolder := sectionFolderName(info.Section, info.WallNumber)
-	relFolder := fmt.Sprintf("inspections/%d/%s/%s", inspectionID, roomName, secFolder)
+	relFolder := fmt.Sprintf("inspections/%s/%s/%s", info.ActNumber, roomName, secFolder)
 
 	defectName := sanitizeFolderName(info.DefectName)
 	if defectName == "" {

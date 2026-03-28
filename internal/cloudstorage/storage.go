@@ -19,4 +19,10 @@ type FileStorage interface {
 
 	// PublishFile публикует файл и возвращает публичную ссылку.
 	PublishFile(relPath string) (publicURL string, err error)
+
+	// FolderExists проверяет существование папки по относительному пути.
+	FolderExists(relPath string) (bool, error)
+
+	// MoveFolder переименовывает (перемещает) папку на облаке.
+	MoveFolder(oldRelPath, newRelPath string) error
 }

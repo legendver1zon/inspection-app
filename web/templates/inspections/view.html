@@ -92,6 +92,35 @@
         .photo-cloud-link:hover { background: var(--surface); }
         .qr-card { text-align: center; padding: 24px; }
         .qr-card img { border-radius: 8px; border: 1px solid var(--border); }
+        /* Иконки статуса загрузки фото */
+        .photo-wrap { position: relative; }
+        .photo-wrap[data-upload-status="pending"]::after,
+        .photo-wrap[data-upload-status="uploading"]::after {
+            content: '⏳';
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            font-size: 11px;
+            line-height: 1;
+            background: rgba(255,255,255,0.85);
+            border-radius: 3px;
+            padding: 1px 2px;
+            pointer-events: none;
+        }
+        .photo-wrap[data-upload-status="failed"]::after {
+            content: '✗';
+            position: absolute;
+            bottom: 2px;
+            right: 2px;
+            font-size: 12px;
+            line-height: 1;
+            color: #ef4444;
+            font-weight: bold;
+            background: rgba(255,255,255,0.85);
+            border-radius: 3px;
+            padding: 1px 2px;
+            pointer-events: none;
+        }
     </style>
 </head>
 <body>
@@ -203,17 +232,7 @@
                     Открыть папку на Яндекс Диске
                 </a>
             </div>
-            <!-- Прогресс загрузки фото в облако -->
-            <div id="upload-status" style="margin-top:16px;display:none">
-                <div style="font-size:13px;color:var(--text-muted,#64748b);margin-bottom:6px" id="upload-status-text">
-                    Загрузка фото в облако...
-                </div>
-                <div style="height:6px;background:var(--border,#e2e8f0);border-radius:3px;overflow:hidden">
-                    <div id="upload-progress-bar" style="height:100%;background:var(--primary,#4361ee);border-radius:3px;transition:width 0.4s;width:0%"></div>
-                </div>
-                <button id="retry-upload-btn" style="display:none;margin-top:8px" class="btn btn-sm btn-secondary"
-                        onclick="retryUpload()">Повторить загрузку</button>
-            </div>
+            <div id="upload-notice" style="display:none;margin-top:12px;font-size:13px;color:var(--text-muted,#64748b)"></div>
         </div>
         {{ end }}
 
@@ -252,7 +271,7 @@
                 {{ if .Photos }}
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
-                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
                         {{ if .FilePath }}
                         <a href="{{ .FileURL }}" target="_blank">
                             <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
@@ -281,7 +300,7 @@
                 {{ if .Photos }}
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
-                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
                         {{ if .FilePath }}
                         <a href="{{ .FileURL }}" target="_blank">
                             <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
@@ -318,7 +337,7 @@
                 {{ if .Photos }}
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
-                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
                         {{ if .FilePath }}
                         <a href="{{ .FileURL }}" target="_blank">
                             <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
@@ -347,7 +366,7 @@
                 {{ if .Photos }}
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
-                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
                         {{ if .FilePath }}
                         <a href="{{ .FileURL }}" target="_blank">
                             <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
@@ -392,7 +411,7 @@
                 {{ if .Photos }}
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
-                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
                         {{ if .FilePath }}
                         <a href="{{ .FileURL }}" target="_blank">
                             <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
@@ -421,7 +440,7 @@
                 {{ if .Photos }}
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
-                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
                         {{ if .FilePath }}
                         <a href="{{ .FileURL }}" target="_blank">
                             <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
@@ -458,7 +477,7 @@
                 {{ if .Photos }}
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
-                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
                         {{ if .FilePath }}
                         <a href="{{ .FileURL }}" target="_blank">
                             <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
@@ -487,7 +506,7 @@
                 {{ if .Photos }}
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
-                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
                         {{ if .FilePath }}
                         <a href="{{ .FileURL }}" target="_blank">
                             <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
@@ -524,7 +543,7 @@
                 {{ if .Photos }}
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
-                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
                         {{ if .FilePath }}
                         <a href="{{ .FileURL }}" target="_blank">
                             <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
@@ -553,7 +572,7 @@
                 {{ if .Photos }}
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
-                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
                         {{ if .FilePath }}
                         <a href="{{ .FileURL }}" target="_blank">
                             <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
@@ -590,7 +609,7 @@
                 {{ if .Photos }}
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
-                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
                         {{ if .FilePath }}
                         <a href="{{ .FileURL }}" target="_blank">
                             <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
@@ -619,7 +638,7 @@
                 {{ if .Photos }}
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
-                    <div class="photo-wrap" data-photo-id="{{ .ID }}">
+                    <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
                         {{ if .FilePath }}
                         <a href="{{ .FileURL }}" target="_blank">
                             <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
@@ -668,6 +687,63 @@
                 <div style="padding:8px 12px">
                     <span class="defect-name">Общие замечания</span>
                     <p style="margin:6px 0 0;white-space:pre-wrap;font-size:14px">{{ .inspection.GeneralNotes }}</p>
+                </div>
+                {{ end }}
+            </div>
+        </div>
+        {{ end }}
+
+        <!-- Архив удалённых дефектов (только если есть фото) -->
+        {{ if .archivedDefects }}
+        <div class="room-block" style="border-color:#e2e8f0">
+            <div class="room-header" style="background:linear-gradient(135deg,#94a3b8,#64748b)">
+                <div class="room-title">
+                    <span class="room-label">Архив удалённых дефектов</span>
+                </div>
+            </div>
+            <div style="padding:12px 16px">
+                {{ range .archivedDefects }}
+                <div style="background:var(--surface,#f8fafc);border:1px solid var(--border,#e2e8f0);border-radius:8px;padding:12px;margin-bottom:8px;opacity:0.85">
+                    <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+                        <span style="background:#94a3b8;color:#fff;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600;flex-shrink:0">УДАЛЁН</span>
+                        {{ if .Defect.DefectTemplate.Name }}
+                        <span style="font-weight:500;color:var(--text,#1e293b)">{{ .Defect.DefectTemplate.Name }}</span>
+                        {{ else if .Defect.Notes }}
+                        <span style="font-weight:500;color:var(--text,#1e293b)">{{ .Defect.Notes }}</span>
+                        {{ else }}
+                        <span style="font-weight:500;color:var(--text,#1e293b)">Прочее</span>
+                        {{ end }}
+                        <span style="color:#94a3b8;font-size:13px">—
+                            {{ if .RoomName }}{{ .RoomName }}{{ else }}Помещение{{ end }}
+                            · {{ if eq .Defect.Section "window" }}Окна
+                            {{ else if eq .Defect.Section "ceiling" }}Потолок
+                            {{ else if eq .Defect.Section "wall" }}Стена{{ if gt .Defect.WallNumber 0 }} {{ .Defect.WallNumber }}{{ end }}
+                            {{ else if eq .Defect.Section "floor" }}Пол
+                            {{ else if eq .Defect.Section "door" }}Двери
+                            {{ else if eq .Defect.Section "plumbing" }}Сантехника
+                            {{ else }}{{ .Defect.Section }}{{ end }}
+                        </span>
+                    </div>
+                    <div style="display:flex;flex-wrap:wrap;gap:8px">
+                        {{ range .Defect.Photos }}
+                        <div style="position:relative;display:inline-flex">
+                            {{ if .FilePath }}
+                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                            {{ else if .FileURL }}
+                            <a href="{{ .FileURL }}" target="_blank">
+                                <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                            </a>
+                            {{ else }}
+                            <span class="photo-filename-label">📎 {{ .FileName }}</span>
+                            {{ end }}
+                            {{ if or (eq .UploadStatus "pending") (eq .UploadStatus "uploading") }}
+                            <span style="position:absolute;bottom:2px;right:2px;font-size:12px;line-height:1" title="Загружается на диск">⏳</span>
+                            {{ else if eq .UploadStatus "failed" }}
+                            <span style="position:absolute;bottom:2px;right:2px;font-size:12px;line-height:1" title="Ошибка загрузки">✗</span>
+                            {{ end }}
+                        </div>
+                        {{ end }}
+                    </div>
                 </div>
                 {{ end }}
             </div>
@@ -742,6 +818,7 @@
             const wrap = document.createElement('div');
             wrap.className = 'photo-wrap';
             wrap.dataset.photoId = data.id;
+            wrap.dataset.uploadStatus = 'pending';
 
             if (data.url) {
                 const a = document.createElement('a');
@@ -767,6 +844,8 @@
             delBtn.onclick = () => deletePhoto(data.id, delBtn);
             wrap.appendChild(delBtn);
             photosDiv.appendChild(wrap);
+
+            startUploadPoll();
 
         } catch (e) {
             alert('Ошибка сети: ' + e.message);
@@ -805,68 +884,59 @@
             btn.disabled = false;
         }
     }
-    // --- Прогресс загрузки фото в облако ---
+    // --- Лёгкий polling статуса загрузки фото (только пока есть незавершённые) ---
     (function() {
         const inspectionId = {{ .inspection.ID }};
-        const statusEl = document.getElementById('upload-status');
-        if (!statusEl) return; // нет QR-блока — облако не настроено
-
         let pollTimer = null;
 
-        function stopPoll() {
+        function hasUnfinished() {
+            return !!document.querySelector('.photo-wrap[data-upload-status="pending"],.photo-wrap[data-upload-status="uploading"]');
+        }
+
+        function stopUploadPoll() {
             if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
         }
 
-        async function pollUploadStatus() {
+        async function pollOnce() {
             try {
                 const resp = await fetch('/inspections/' + inspectionId + '/upload-status');
-                if (!resp.ok) { stopPoll(); return; }
+                if (!resp.ok) { stopUploadPoll(); return; }
                 const d = await resp.json();
-
-                if (d.total === 0) { stopPoll(); return; }
-
-                statusEl.style.display = 'block';
-                const done = d.done || 0;
-                const total = d.total || 0;
-                const pct = total > 0 ? Math.round(done / total * 100) : 0;
-                document.getElementById('upload-progress-bar').style.width = pct + '%';
-
-                const retryBtn = document.getElementById('retry-upload-btn');
-                const textEl = document.getElementById('upload-status-text');
+                const notice = document.getElementById('upload-notice');
 
                 if (d.all_done) {
-                    textEl.textContent = '✓ Все фото загружены в облако (' + total + ' шт.)';
-                    document.getElementById('upload-progress-bar').style.background = '#22c55e';
-                    retryBtn.style.display = 'none';
-                    stopPoll();
-                } else if (d.failed > 0 && d.pending === 0 && d.uploading === 0) {
-                    textEl.textContent = 'Ошибка загрузки ' + d.failed + ' из ' + total + ' фото';
-                    document.getElementById('upload-progress-bar').style.background = '#ef4444';
-                    retryBtn.style.display = 'inline-block';
-                    stopPoll();
-                } else {
-                    textEl.textContent = 'Загрузка фото: ' + done + ' из ' + total;
-                    retryBtn.style.display = 'none';
+                    stopUploadPoll();
+                    // Перезагружаем страницу чтобы показать облачные ссылки вместо локальных
+                    location.reload();
+                    return;
                 }
-            } catch (e) { /* сеть недоступна, попробуем позже */ }
+                if (d.failed > 0 && d.pending === 0 && d.uploading === 0) {
+                    stopUploadPoll();
+                    if (notice) {
+                        notice.style.display = 'block';
+                        notice.textContent = '✗ Ошибка загрузки ' + d.failed + ' фото на Яндекс Диск. Повтор произойдёт автоматически.';
+                    }
+                    // Обновляем иконки на ✗
+                    document.querySelectorAll('.photo-wrap[data-upload-status="pending"],.photo-wrap[data-upload-status="uploading"]')
+                        .forEach(el => el.dataset.uploadStatus = 'failed');
+                    return;
+                }
+                if (notice && d.uploading + d.pending > 0) {
+                    notice.style.display = 'block';
+                    notice.textContent = '⏳ Загрузка фото в облако: ' + d.done + ' из ' + d.total;
+                }
+            } catch (e) { /* сеть недоступна */ }
         }
 
-        async function retryUpload() {
-            document.getElementById('retry-upload-btn').style.display = 'none';
-            document.getElementById('upload-status-text').textContent = 'Повторная загрузка...';
-            document.getElementById('upload-progress-bar').style.background = 'var(--primary,#4361ee)';
-            // Повтор — просто перезапускаем опрос; воркер сам обработает failed
-            startPoll();
-        }
-        window.retryUpload = retryUpload;
+        window.startUploadPoll = function() {
+            if (pollTimer) return; // уже запущен
+            pollTimer = setInterval(pollOnce, 3000);
+        };
 
-        function startPoll() {
-            stopPoll();
-            pollUploadStatus();
-            pollTimer = setInterval(pollUploadStatus, 3000);
+        // Запускаем polling если на странице есть незавершённые фото
+        if (hasUnfinished()) {
+            startUploadPoll();
         }
-
-        startPoll();
     })();
     </script>
 </body>

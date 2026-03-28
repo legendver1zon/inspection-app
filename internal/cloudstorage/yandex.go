@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-const yadiskAPI = "https://cloud-api.yandex.net/v1/disk"
+var yadiskAPI = "https://cloud-api.yandex.net/v1/disk" //nolint:gochecknoglobals
 
 // YandexDisk реализует FileStorage через REST API Яндекс Диска.
 // Документация: https://yandex.ru/dev/disk-api/doc/ru/
@@ -180,6 +180,61 @@ func (y *YandexDisk) publish(fullPath string) (string, error) {
 
 	// Шаг 2: получаем метаданные ресурса с public_url
 	return y.getPublicURL(fullPath)
+}
+
+// FolderExists проверяет существование папки по относительному пути.
+// Возвращает true если ресурс существует (код 200), false если нет (код 404).
+func (y *YandexDisk) FolderExists(relPath string) (bool, error) {
+	fullPath := y.fullPath(relPath)
+	endpoint := yadiskAPI + "/resources?path=" + url.QueryEscape(fullPath) + "&fields=type"
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return false, err
+	}
+	req.Header.Set("Authorization", "OAuth "+y.token)
+
+	resp, err := y.client.Do(req)
+	if err != nil {
+		return false, err
+	}
+	io.ReadAll(resp.Body) //nolint:errcheck
+	resp.Body.Close()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusNotFound:
+		return false, nil
+	default:
+		return false, fmt.Errorf("FolderExists %q: HTTP %d", fullPath, resp.StatusCode)
+	}
+}
+
+// MoveFolder переименовывает папку на Яндекс Диске.
+// Использует API /resources/move (overwrite=false).
+func (y *YandexDisk) MoveFolder(oldRelPath, newRelPath string) error {
+	from := y.fullPath(oldRelPath)
+	to := y.fullPath(newRelPath)
+	endpoint := yadiskAPI + "/resources/move?from=" + url.QueryEscape(from) +
+		"&path=" + url.QueryEscape(to) + "&overwrite=false"
+	req, err := http.NewRequest(http.MethodPost, endpoint, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "OAuth "+y.token)
+
+	resp, err := y.client.Do(req)
+	if err != nil {
+		return err
+	}
+	body, _ := io.ReadAll(resp.Body)
+	resp.Body.Close()
+
+	// 201 — операция создана (async или sync), 200 — выполнено синхронно
+	if resp.StatusCode == http.StatusCreated || resp.StatusCode == http.StatusOK {
+		return nil
+	}
+	return fmt.Errorf("MoveFolder %q → %q: HTTP %d: %s", from, to, resp.StatusCode, body)
 }
 
 // getPublicURL запрашивает метаданные ресурса и возвращает поле public_url.
