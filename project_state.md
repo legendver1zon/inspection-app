@@ -998,3 +998,293 @@ internal/security/
 - Общие замечания → отдельный `<p style="white-space:pre-wrap">` с заголовком `defect-name`
 
 **edit.html** — поля формы обёрнуты в `<div style="padding:12px 16px">` внутри `room-block`; кнопка "Сохранить" выровнена по правому краю через `display:flex; justify-content:flex-end`.
+
+---
+
+## 🔧 17. ПЛАН РЕФАКТОРИНГА СИСТЕМЫ ФОТО (согласован 2026-03-28, НЕ реализован)
+
+> Этот раздел — памятка для AI на следующие сессии. Код НЕ написан. Всё согласовано с пользователем.
+
+---
+
+### Контекст: что было исправлено 2026-03-28 (уже в коде)
+
+**Баг buildDefectInfoMap** (`internal/handlers/photos.go`):
+- `PostEditInspection` soft-delete-ит старые room_defects и пересоздаёт новые
+- `buildDefectInfoMap` запрашивал room_defects через GORM → GORM добавлял `deleted_at IS NULL` → пустой infoMap → 0 задач → фото навсегда в `uploading`
+- **Фикс**: добавлен `.Unscoped()` к обоим запросам в `buildDefectInfoMap`
+- Статус: ✅ задеплоено, работает
+
+**Баг recoverOnStartup без Redis**:
+- `recoverOnStartup` вызывался только если Redis доступен (внутри `Start()` с ранним return)
+- Без Redis фото застрявшие в `uploading` никогда не сбрасывались в `pending`
+- Статус: ⚠️ НЕ исправлен в коде, обходим через ручной SQL при необходимости
+
+---
+
+### Блок A — Переименование папок Яндекс Диска (ID → ActNumber)
+
+**Проблема:** папки называются `inspections/27`, а должны `inspections/18-280326`
+
+**Файлы которые ТРОГАТЬ:**
+
+`internal/cloudstorage/storage.go`:
+- Добавить метод в интерфейс `FileStorage`:
+  ```go
+  MoveFolder(oldRelPath, newRelPath string) error
+  ```
+
+`internal/cloudstorage/yandex.go`:
+- Реализовать `MoveFolder` через Яндекс Диск API:
+  ```
+  POST https://cloud-api.yandex.net/v1/disk/resources/move?from={oldFullPath}&path={newFullPath}&overwrite=false
+  ```
+- HTTP клиент с таймаутом уже есть (`y.client`), использовать его
+
+`internal/handlers/photos.go` — функция `EnsureInspectionFolder`:
+- Сейчас: создаёт папку `inspections/{inspectionID}`
+- Было: `inspFolder := fmt.Sprintf("inspections/%d", inspectionID)`
+- Стало: `inspFolder := fmt.Sprintf("inspections/%s", inspection.ActNumber)`
+- Добавить автомиграцию ПЕРЕД созданием новой папки:
+  ```
+  Если exists("inspections/{ID}") И NOT exists("inspections/{ActNumber}")
+    → MoveFolder("inspections/{ID}", "inspections/{ActNumber}")
+  Иначе если exists("inspections/{ActNumber}")
+    → ок, ничего не делать
+  Иначе
+    → создать новую папку
+  ```
+- Для проверки существования папки: GET `/resources?path=...` → 200 = exists, 404 = not exists
+- Добавить вспомогательный метод `FolderExists(relPath string) bool` в yandex.go
+
+`internal/handlers/photos.go` — функция `buildUploadTask`:
+- Сейчас путь: `inspections/{inspectionID}/{RoomName}/{Section}/`
+- Стало: `inspections/{actNumber}/{RoomName}/{Section}/`
+- Нужно передавать actNumber в эту функцию. Изменить сигнатуру или добавить в `defectInfo`:
+  ```go
+  type defectInfo struct {
+      ...
+      ActNumber string  // добавить
+  }
+  ```
+- В `buildDefectInfoMap` добавить запрос inspection по ID чтобы получить ActNumber
+
+**Файлы которые НЕ ТРОГАТЬ:**
+- `internal/models/models.go` — модели не меняются
+- `internal/worker/uploader.go` — логика воркера не меняется
+- `internal/queue/redis.go` — очередь не меняется
+- `internal/pdf/generator.go` — PDF не меняется
+- `internal/handlers/documents.go` — пока не трогать (изменится в Блоке B)
+
+---
+
+### Блок B — Загрузка фото сразу при добавлении (не при генерации PDF)
+
+**Проблема:** фото "висят" как `pending` до нажатия "Сформировать акт"
+
+**Новая логика:**
+```
+Пользователь нажимает 📷 → фото сохраняется локально → сразу push в Redis → воркер грузит на диск
+```
+
+**Файлы которые ТРОГАТЬ:**
+
+`internal/handlers/photos.go` — функция `PostUploadPhoto`:
+- В конце, после `storage.DB.Create(&photo)`, добавить:
+  ```go
+  // Сразу ставим в очередь на загрузку
+  if uploadQueue != nil {
+      uploadQueue.Push(context.Background(), inspection.ID)
+  } else if cloudStore != nil {
+      go SyncInspectionPhotos(inspection.ID)  // горутина, не блокируем ответ
+  }
+  ```
+- `uploadQueue` уже объявлен в `documents.go` — нужно сделать его доступным из `photos.go`
+  ИЛИ переместить `uploadQueue` в отдельный пакет/файл `handlers/state.go`
+
+`internal/handlers/documents.go` — функция `PostGenerateDocument`:
+- УБРАТЬ блок загрузки фото (строки с `uploadQueue.Push` и `SyncInspectionPhotos`)
+- Оставить только:
+  1. `EnsureInspectionFolder` (папка нужна для QR-кода в PDF)
+  2. Перечитать inspection с актуальным `PhotoFolderURL`
+  3. `pdf.Generate()`
+- Результат: PDF генерируется мгновенно, без ожидания загрузки фото
+
+`internal/handlers/inspections.go` — функция `PostEditInspection`:
+- В конце (после сохранения всех дефектов) добавить вызов:
+  ```go
+  if cloudStore != nil {
+      go handlers.EnsureInspectionFolder(inspection.ID)
+  }
+  ```
+- Это создаёт папку на Яндекс Диске при первом сохранении и записывает `PhotoFolderURL`
+- QR-код в PDF становится доступен сразу после первого сохранения
+
+**Важно:** `EnsureInspectionFolder` уже идемпотентная (проверяет `inspection.PhotoFolderURL != ""`), повторные вызовы безвредны
+
+**Файлы которые НЕ ТРОГАТЬ:**
+- `internal/worker/uploader.go` — воркер не меняется, логика та же
+- `internal/models/models.go` — не меняется
+- `internal/pdf/generator.go` — не меняется
+
+---
+
+### Блок C — Архив удалённых дефектов в view.html
+
+**Поведение:**
+- После редактирования акта старые room_defects soft-delete-ятся
+- Если у них есть фото (любой статус) — показывать отдельный блок внизу view.html
+- Блок называется "Архив удалённых дефектов"
+- Только просмотр, кнопки 📷 нет
+- В PDF НЕ попадают
+- Загрузка фото продолжается даже для soft-deleted дефектов (buildDefectInfoMap уже Unscoped)
+
+**Файлы которые ТРОГАТЬ:**
+
+`cmd/server/main.go` — добавить template function:
+```go
+"deletedDefectsWithPhotos": func(inspectionID uint) []models.RoomDefect {
+    var defects []models.RoomDefect
+    storage.DB.Unscoped().
+        Preload("Photos").
+        Preload("DefectTemplate").
+        Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+        Where("inspection_rooms.inspection_id = ? AND room_defects.deleted_at IS NOT NULL", inspectionID).
+        Having("COUNT(photos.id) > 0").  // только если есть фото
+        Find(&defects)
+    return defects
+}
+```
+Либо передавать эти данные через GetInspection handler — тогда добавить поле в шаблонный контекст.
+
+`internal/handlers/inspections.go` — функция `GetInspection`:
+- Добавить в контекст шаблона `deletedDefects []models.RoomDefect`:
+  ```go
+  var deletedDefects []models.RoomDefect
+  storage.DB.Unscoped().
+      Preload("Photos").
+      Preload("DefectTemplate").
+      Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+      Joins("LEFT JOIN photos ON photos.defect_id = room_defects.id AND photos.deleted_at IS NULL").
+      Where("inspection_rooms.inspection_id = ? AND room_defects.deleted_at IS NOT NULL", inspection.ID).
+      Group("room_defects.id").
+      Having("COUNT(photos.id) > 0").
+      Find(&deletedDefects)
+  ```
+- Добавить в `gin.H{}` → `"deletedDefects": deletedDefects`
+
+`web/templates/inspections/view.html`:
+- Добавить блок ПОСЛЕ секций помещений, ПЕРЕД блоком документов:
+  ```html
+  {{ if .deletedDefects }}
+  <div class="room-block" style="border-color:#e2e8f0">
+    <div class="room-header" style="background:linear-gradient(135deg,#94a3b8,#64748b)">
+      <div class="room-title">
+        <span class="room-label">Архив удалённых дефектов</span>
+      </div>
+    </div>
+    <div style="padding:12px 16px">
+      {{ range .deletedDefects }}
+      <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-bottom:8px;opacity:0.8">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+          <span style="background:#94a3b8;color:#fff;font-size:11px;padding:2px 8px;border-radius:4px;font-weight:600">УДАЛЁН</span>
+          <span style="font-weight:500;color:#475569">{{ дефект название }}</span>
+          <span style="color:#94a3b8;font-size:13px">— {{ комната }} · {{ секция }}</span>
+        </div>
+        <!-- миниатюры фото, только просмотр, без кнопки добавить -->
+        {{ range .Photos }}
+          <img src="{{ .FileURL }}" style="width:80px;height:60px;object-fit:cover;border-radius:4px;margin-right:4px">
+        {{ end }}
+        <!-- статус загрузки -->
+        {{ if not all done }} <span>⏳ загружается на диск</span> {{ end }}
+      </div>
+      {{ end }}
+    </div>
+  </div>
+  {{ end }}
+  ```
+
+**Файлы которые НЕ ТРОГАТЬ:**
+- `internal/pdf/generator.go` — PDF не должен показывать архив
+- `internal/models/models.go` — поле `deleted_at` уже есть (GORM soft delete)
+- `web/templates/inspections/edit.html` — edit не меняется
+
+---
+
+### Блок D — Статус фото у миниатюр (вместо общего прогресс-бара)
+
+**Цель:** убрать большой прогресс-бар внизу view.html, показывать ⏳/✓/✗ у каждого фото
+
+**Файлы которые ТРОГАТЬ:**
+
+`web/templates/inspections/view.html`:
+- Убрать блок `<div id="upload-status">` с прогресс-баром (строки ~206-216)
+- Убрать JS функции `pollUploadStatus`, `startPoll`, `retryUpload`, `stopPoll`
+- У каждой миниатюры фото добавить статусный бейдж на основе `upload_status` из данных шаблона:
+  - `pending` или `uploading` → ⏳ маленькая иконка поверх фото
+  - `done` → ничего (фото чистое)
+  - `failed` → ✗ красная иконка + кнопка "повторить" (POST на новый endpoint или через Redis)
+- Статус известен в момент рендера (Photo.UploadStatus передаётся через Preload)
+- Для реального времени (pending → done) оставить лёгкий polling только если есть фото не в `done`
+
+**Файлы которые НЕ ТРОГАТЬ:**
+- `internal/handlers/inspections.go` → `GetUploadStatus` — оставить как есть (нужен для polling)
+- Маршрут `GET /inspections/:id/upload-status` — оставить
+
+---
+
+### Порядок реализации (рекомендуемый)
+
+```
+1. Блок A (переименование папок) — yandex.go → storage.go → photos.go
+   Тест: вручную через кнопку "Сформировать акт" на существующем акте
+   Проверить: папки на Яндекс Диске переименованы
+
+2. Блок B (загрузка сразу) — photos.go → documents.go → inspections.go
+   Тест: добавить фото → открыть логи → убедиться что worker: processing сразу
+   Проверить: PDF генерируется мгновенно без загрузки
+
+3. Блок C (архив удалённых) — inspections.go → view.html
+   Тест: создать акт с фото → редактировать (изменить текст) → проверить архив в view
+
+4. Блок D (статусы у фото) — view.html
+   Тест: добавить фото → убедиться что иконка ⏳ появляется → потом ✓
+```
+
+---
+
+### Что КАТЕГОРИЧЕСКИ НЕ ТРОГАТЬ
+
+| Файл/компонент | Причина |
+|----------------|---------|
+| `internal/auth/` | Полностью рабочий, покрыт тестами |
+| `internal/models/models.go` | Поля не меняются (только читаем) |
+| `internal/pdf/generator.go` | PDF не меняется |
+| `internal/worker/uploader.go` | Воркер не меняется |
+| `internal/queue/redis.go` | Очередь не меняется |
+| `internal/seed/` | Шаблоны дефектов не меняются |
+| `internal/mailer/` | SMTP не трогаем |
+| `web/static/css/style.css` | CSS классы room-block и т.д. уже корректны |
+| `web/templates/inspections/edit.html` | Форма не меняется (кроме вызова EnsureFolder) |
+| Все тесты (`*_test.go`) | Не ломать существующие тесты |
+
+---
+
+### Известные риски
+
+1. **MoveFolder на Яндекс Диске** — операция не атомарная: если переименование прервётся, папка может существовать с обоими именами или ни с одним. Решение: проверять exists после move.
+
+2. **Параллельные push в Redis** — если пользователь добавляет 10 фото быстро, в очередь попадёт 10 задач для одного inspectionID. Воркер обработает дубли за счёт проверки `count pending == 0 → skip`. Это безопасно.
+
+3. **EnsureFolder при каждом сохранении** — вызов идемпотентный (проверяет `PhotoFolderURL != ""`), но при первом вызове делает 2-3 HTTP запроса к Яндекс Диску. Запускать через `go` горутину, не блокировать HTTP ответ.
+
+4. **Архив удалённых дефектов** — JOIN + GROUP BY + HAVING в GORM может быть неочевидным. Если сложно — использовать raw SQL через `storage.DB.Raw(...)`.
+
+5. **recoverOnStartup без Redis** — всё ещё не исправлен. При рестарте сервера без Redis фото в `uploading` не сбросятся. Временное решение: добавить в `cmd/server/main.go` при старте:
+   ```go
+   // Сбрасываем застрявшие uploading независимо от Redis
+   storage.DB.Model(&models.Photo{}).
+       Where("upload_status = 'uploading'").
+       Update("upload_status", "pending")
+   ```
+   Это безопасно — при рестарте всегда сбрасывать.
