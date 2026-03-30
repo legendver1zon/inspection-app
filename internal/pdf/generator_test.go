@@ -1,6 +1,9 @@
 package pdf
 
-import "testing"
+import (
+	"inspection-app/internal/models"
+	"testing"
+)
 
 func TestFmtFloat(t *testing.T) {
 	tests := []struct {
@@ -111,6 +114,87 @@ func TestWallTypeName(t *testing.T) {
 		if result != tt.expected {
 			t.Errorf("wallTypeName(%q) = %q, want %q", tt.input, result, tt.expected)
 		}
+	}
+}
+
+func TestSplitByWords(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected int
+	}{
+		{"", 1},
+		{"слово", 1},
+		{"два слова", 2},
+		{"три слова тут", 3},
+		{"   пробелы   ", 1},
+	}
+	for _, tt := range tests {
+		result := splitByWords(tt.input)
+		if len(result) != tt.expected {
+			t.Errorf("splitByWords(%q) returned %d parts, want %d", tt.input, len(result), tt.expected)
+		}
+	}
+}
+
+func TestRoomHasAnyDefects(t *testing.T) {
+	room1 := &models.InspectionRoom{
+		Defects: []models.RoomDefect{
+			{Value: "трещина"},
+		},
+	}
+	if !roomHasAnyDefects(room1) {
+		t.Error("roomHasAnyDefects должен вернуть true для комнаты с дефектом")
+	}
+
+	room2 := &models.InspectionRoom{
+		Defects: []models.RoomDefect{
+			{Value: "", Notes: ""},
+		},
+	}
+	if roomHasAnyDefects(room2) {
+		t.Error("roomHasAnyDefects должен вернуть false для комнаты без данных")
+	}
+
+	room3 := &models.InspectionRoom{}
+	if roomHasAnyDefects(room3) {
+		t.Error("roomHasAnyDefects должен вернуть false для пустой комнаты")
+	}
+}
+
+func TestMaxWindowsUsed(t *testing.T) {
+	tests := []struct {
+		name     string
+		rooms    []models.InspectionRoom
+		expected int
+	}{
+		{"no windows", []models.InspectionRoom{{Window1Height: 0}}, 1},
+		{"window 1 only", []models.InspectionRoom{{Window1Height: 1.5}}, 1},
+		{"window 2", []models.InspectionRoom{{Window2Height: 1.0}}, 2},
+		{"window 3", []models.InspectionRoom{{Window3Width: 0.5}}, 3},
+		{"window 5", []models.InspectionRoom{{Window5Height: 2.0}}, 5},
+		{"mixed rooms", []models.InspectionRoom{
+			{Window1Height: 1.0},
+			{Window3Width: 0.5},
+		}, 3},
+	}
+
+	for _, tt := range tests {
+		result := maxWindowsUsed(tt.rooms)
+		if result != tt.expected {
+			t.Errorf("maxWindowsUsed(%s) = %d, want %d", tt.name, result, tt.expected)
+		}
+	}
+}
+
+func TestHasAnyMeasurements(t *testing.T) {
+	if hasAnyMeasurements([]models.InspectionRoom{{Length: 0, Width: 0}}) {
+		t.Error("Не должно быть замеров для нулевых значений")
+	}
+	if !hasAnyMeasurements([]models.InspectionRoom{{Length: 5.5}}) {
+		t.Error("Должен найти замер Length=5.5")
+	}
+	if !hasAnyMeasurements([]models.InspectionRoom{{DoorHeight: 2.1}}) {
+		t.Error("Должен найти замер DoorHeight=2.1")
 	}
 }
 
