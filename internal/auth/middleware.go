@@ -18,7 +18,7 @@ func RequireAuth() gin.HandlerFunc {
 
 		claims, err := ParseToken(tokenStr)
 		if err != nil {
-			c.SetCookie("token", "", -1, "/", "", false, true)
+			ClearAuthCookie(c)
 			c.Redirect(http.StatusFound, "/login")
 			c.Abort()
 			return

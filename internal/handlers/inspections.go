@@ -50,7 +50,7 @@ func GetInspections(c *gin.Context) {
 
 	// Фильтр по фамилии собственника
 	if ownerFilter != "" {
-		like := "%" + ownerFilter + "%"
+		like := "%" + escapeLike(ownerFilter) + "%"
 		draftQ = draftQ.Where("owner_name LIKE ?", like)
 		completedQ = completedQ.Where("owner_name LIKE ?", like)
 		listQ = listQ.Where("owner_name LIKE ?", like)
@@ -58,7 +58,7 @@ func GetInspections(c *gin.Context) {
 
 	// Фильтр по фамилии инспектора (подзапрос по таблице users)
 	if inspectorFilter != "" {
-		sub := storage.DB.Table("users").Select("id").Where("full_name LIKE ?", "%"+inspectorFilter+"%")
+		sub := storage.DB.Table("users").Select("id").Where("full_name LIKE ?", "%"+escapeLike(inspectorFilter)+"%")
 		draftQ = draftQ.Where("user_id IN (?)", sub)
 		completedQ = completedQ.Where("user_id IN (?)", sub)
 		listQ = listQ.Where("user_id IN (?)", sub)
@@ -66,7 +66,7 @@ func GetInspections(c *gin.Context) {
 
 	// Фильтр по адресу
 	if addressFilter != "" {
-		like := "%" + addressFilter + "%"
+		like := "%" + escapeLike(addressFilter) + "%"
 		draftQ = draftQ.Where("address LIKE ?", like)
 		completedQ = completedQ.Where("address LIKE ?", like)
 		listQ = listQ.Where("address LIKE ?", like)
@@ -156,7 +156,8 @@ func GetInspections(c *gin.Context) {
 	})
 }
 
-// GetNewInspection — сразу создаёт пустой осмотр и редиректит на редактирование
+// GetNewInspection — сразу создаёт пустой осмотр и редиректит на редактирование.
+// Номер акта формируется из ID записи (гарантированно уникален, без race condition).
 func GetNewInspection(c *gin.Context) {
 	userID := c.GetUint("userID")
 	role := c.GetString("userRole")
@@ -167,18 +168,22 @@ func GetNewInspection(c *gin.Context) {
 		return
 	}
 
-	var count int64
-	storage.DB.Model(&models.Inspection{}).Count(&count)
-
-	n := count + 1
 	inspection := models.Inspection{
-		ActNumber: strconv.FormatInt(n, 10) + "-" + time.Now().Format("020106"),
+		ActNumber: "-", // placeholder, обновляется ниже внутри транзакции
 		UserID:    userID,
 		Date:      time.Now(),
 		Status:    "draft",
 	}
 
-	if err := storage.DB.Create(&inspection).Error; err != nil {
+	err := storage.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(&inspection).Error; err != nil {
+			return err
+		}
+		actNumber := strconv.FormatUint(uint64(inspection.ID), 10) + "-" + time.Now().Format("020106")
+		return tx.Model(&inspection).Update("act_number", actNumber).Error
+	})
+
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания"})
 		return
 	}
@@ -315,115 +320,7 @@ func PostEditInspection(c *gin.Context) {
 		activeRooms = 3
 	}
 
-	// Удаляем старые данные
-	var oldRooms []models.InspectionRoom
-	storage.DB.Where("inspection_id = ?", inspection.ID).Find(&oldRooms)
-	for _, r := range oldRooms {
-		storage.DB.Where("room_id = ?", r.ID).Delete(&models.RoomDefect{})
-	}
-	storage.DB.Where("inspection_id = ?", inspection.ID).Delete(&models.InspectionRoom{})
-
-	var allTemplates []models.DefectTemplate
-	storage.DB.Order("section, order_index").Find(&allTemplates)
-
-	simpleSections := []string{"window", "ceiling", "floor", "door", "plumbing"}
-
-	for i := 1; i <= activeRooms; i++ {
-		iStr := strconv.Itoa(i)
-
-		length, _ := strconv.ParseFloat(c.PostForm("room_length_"+iStr), 64)
-		width, _ := strconv.ParseFloat(c.PostForm("room_width_"+iStr), 64)
-		height, _ := strconv.ParseFloat(c.PostForm("room_height_"+iStr), 64)
-		w1h, _ := strconv.ParseFloat(c.PostForm("room_w1h_"+iStr), 64)
-		w1w, _ := strconv.ParseFloat(c.PostForm("room_w1w_"+iStr), 64)
-		w2h, _ := strconv.ParseFloat(c.PostForm("room_w2h_"+iStr), 64)
-		w2w, _ := strconv.ParseFloat(c.PostForm("room_w2w_"+iStr), 64)
-		w3h, _ := strconv.ParseFloat(c.PostForm("room_w3h_"+iStr), 64)
-		w3w, _ := strconv.ParseFloat(c.PostForm("room_w3w_"+iStr), 64)
-		w4h, _ := strconv.ParseFloat(c.PostForm("room_w4h_"+iStr), 64)
-		w4w, _ := strconv.ParseFloat(c.PostForm("room_w4w_"+iStr), 64)
-		w5h, _ := strconv.ParseFloat(c.PostForm("room_w5h_"+iStr), 64)
-		w5w, _ := strconv.ParseFloat(c.PostForm("room_w5w_"+iStr), 64)
-		dh, _ := strconv.ParseFloat(c.PostForm("room_dh_"+iStr), 64)
-		dw, _ := strconv.ParseFloat(c.PostForm("room_dw_"+iStr), 64)
-
-		room := models.InspectionRoom{
-			InspectionID:  inspection.ID,
-			RoomNumber:    i,
-			RoomName:      c.PostForm("room_name_" + iStr),
-			Length:        length,
-			Width:         width,
-			Height:        height,
-			Window1Height: w1h,
-			Window1Width:  w1w,
-			Window2Height: w2h,
-			Window2Width:  w2w,
-			Window3Height: w3h,
-			Window3Width:  w3w,
-			Window4Height: w4h,
-			Window4Width:  w4w,
-			Window5Height: w5h,
-			Window5Width:  w5w,
-			DoorHeight:    dh,
-			DoorWidth:     dw,
-			WindowType:    c.PostForm("room_window_type_" + iStr),
-			WallType:      buildWallType(c, iStr),
-		}
-
-		if err := storage.DB.Create(&room).Error; err != nil {
-			continue
-		}
-
-		// Простые секции (одно значение на дефект)
-		for _, tmpl := range allTemplates {
-			if !containsStr(simpleSections, tmpl.Section) {
-				continue
-			}
-			key := "defect_" + strconv.FormatUint(uint64(tmpl.ID), 10) + "_" + iStr
-			if val := c.PostForm(key); val != "" {
-				tid := tmpl.ID
-				storage.DB.Create(&models.RoomDefect{
-					RoomID:           room.ID,
-					DefectTemplateID: &tid,
-					Section:          tmpl.Section,
-					Value:            val,
-				})
-			}
-		}
-
-		// Стены — 4 значения на дефект
-		for _, tmpl := range allTemplates {
-			if tmpl.Section != "wall" {
-				continue
-			}
-			for w := 1; w <= 4; w++ {
-				key := "defect_" + strconv.FormatUint(uint64(tmpl.ID), 10) + "_" + iStr + "_wall" + strconv.Itoa(w)
-				if val := c.PostForm(key); val != "" {
-					tid := tmpl.ID
-					storage.DB.Create(&models.RoomDefect{
-						RoomID:           room.ID,
-						DefectTemplateID: &tid,
-						Section:          "wall",
-						Value:            val,
-						WallNumber:       w,
-					})
-				}
-			}
-		}
-
-		// Прочее для каждой секции
-		for _, sec := range append(simpleSections, "wall") {
-			if notes := c.PostForm("notes_" + sec + "_" + iStr); notes != "" {
-				storage.DB.Create(&models.RoomDefect{
-					RoomID:  room.ID,
-					Section: sec,
-					Notes:   notes,
-				})
-			}
-		}
-	}
-
-	// Обновляем поля шапки акта
+	// Собираем данные шапки акта ДО транзакции (парсинг формы не требует БД)
 	roomsCount, _ := strconv.Atoi(c.PostForm("rooms_count"))
 	floor, _ := strconv.Atoi(c.PostForm("floor"))
 	totalArea, _ := strconv.ParseFloat(c.PostForm("total_area"), 64)
@@ -447,20 +344,103 @@ func PostEditInspection(c *gin.Context) {
 		"ventilation":        c.PostForm("ventilation"),
 		"general_notes":      c.PostForm("general_notes"),
 	}
-
-	// Дата — если пришла из формы, обновляем
 	if dateStr := c.PostForm("inspection_date"); dateStr != "" {
 		if d, err := time.Parse("2006-01-02", dateStr); err == nil {
 			updates["date"] = d
 		}
 	}
 
-	storage.DB.Model(inspection).Updates(updates)
+	// Всё сохранение — в одной транзакции (атомарность: или всё, или ничего).
+	txErr := storage.DB.Transaction(func(tx *gorm.DB) error {
+		// Удаляем старые данные (P12: subquery вместо N+1 цикла)
+		roomIDs := tx.Model(&models.InspectionRoom{}).Select("id").Where("inspection_id = ?", inspection.ID)
+		tx.Where("room_id IN (?)", roomIDs).Delete(&models.RoomDefect{})
+		tx.Where("inspection_id = ?", inspection.ID).Delete(&models.InspectionRoom{})
+
+		var allTemplates []models.DefectTemplate
+		tx.Order("section, order_index").Find(&allTemplates)
+
+		simpleSections := []string{"window", "ceiling", "floor", "door", "plumbing"}
+
+		for i := 1; i <= activeRooms; i++ {
+			iStr := strconv.Itoa(i)
+
+			room := parseRoom(c, iStr, inspection.ID, i)
+			if err := tx.Create(&room).Error; err != nil {
+				log.Printf("PostEditInspection: room %d create error: %v", i, err)
+				continue
+			}
+
+			// Простые секции (одно значение на дефект)
+			for _, tmpl := range allTemplates {
+				if !containsStr(simpleSections, tmpl.Section) {
+					continue
+				}
+				key := "defect_" + strconv.FormatUint(uint64(tmpl.ID), 10) + "_" + iStr
+				if val := c.PostForm(key); val != "" {
+					tid := tmpl.ID
+					tx.Create(&models.RoomDefect{
+						RoomID:           room.ID,
+						DefectTemplateID: &tid,
+						Section:          tmpl.Section,
+						Value:            val,
+					})
+				}
+			}
+
+			// Стены — 4 значения на дефект
+			for _, tmpl := range allTemplates {
+				if tmpl.Section != "wall" {
+					continue
+				}
+				for w := 1; w <= 4; w++ {
+					key := "defect_" + strconv.FormatUint(uint64(tmpl.ID), 10) + "_" + iStr + "_wall" + strconv.Itoa(w)
+					if val := c.PostForm(key); val != "" {
+						tid := tmpl.ID
+						tx.Create(&models.RoomDefect{
+							RoomID:           room.ID,
+							DefectTemplateID: &tid,
+							Section:          "wall",
+							Value:            val,
+							WallNumber:       w,
+						})
+					}
+				}
+			}
+
+			// Прочее для каждой секции
+			for _, sec := range append(simpleSections, "wall") {
+				if notes := c.PostForm("notes_" + sec + "_" + iStr); notes != "" {
+					tx.Create(&models.RoomDefect{
+						RoomID:  room.ID,
+						Section: sec,
+						Notes:   notes,
+					})
+				}
+			}
+		}
+
+		// Обновляем поля шапки акта
+		if err := tx.Model(inspection).Updates(updates).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+
+	if txErr != nil {
+		log.Printf("PostEditInspection transaction error: %v", txErr)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения"})
+		return
+	}
 
 	// Создаём/переименовываем папку на Яндекс Диске в фоне — не блокируем ответ.
-	// Нужно чтобы QR-код был доступен в PDF сразу после первого сохранения.
 	if cloudStore != nil {
 		go func(id uint) {
+			defer func() {
+				if r := recover(); r != nil {
+					log.Printf("EnsureInspectionFolder panic inspectionID=%d: %v", id, r)
+				}
+			}()
 			if _, err := EnsureInspectionFolder(id); err != nil {
 				log.Printf("PostEditInspection EnsureFolder inspectionID=%d: %v", id, err)
 			}
@@ -566,12 +546,9 @@ func PostDeleteInspection(c *gin.Context) {
 		return
 	}
 
-	// Удаляем дефекты всех помещений
-	var rooms []models.InspectionRoom
-	storage.DB.Where("inspection_id = ?", id).Find(&rooms)
-	for _, r := range rooms {
-		storage.DB.Where("room_id = ?", r.ID).Delete(&models.RoomDefect{})
-	}
+	// Удаляем дефекты всех помещений (subquery вместо N+1 цикла)
+	roomIDs := storage.DB.Model(&models.InspectionRoom{}).Select("id").Where("inspection_id = ?", id)
+	storage.DB.Where("room_id IN (?)", roomIDs).Delete(&models.RoomDefect{})
 	storage.DB.Where("inspection_id = ?", id).Delete(&models.InspectionRoom{})
 
 	// Удаляем файлы документов и записи
@@ -639,6 +616,44 @@ func containsStr(slice []string, s string) bool {
 		}
 	}
 	return false
+}
+
+// escapeLike экранирует спецсимволы LIKE (%, _) в пользовательском вводе.
+func escapeLike(s string) string {
+	s = strings.ReplaceAll(s, "\\", "\\\\")
+	s = strings.ReplaceAll(s, "%", "\\%")
+	s = strings.ReplaceAll(s, "_", "\\_")
+	return s
+}
+
+// parseRoom парсит данные одного помещения из формы.
+func parseRoom(c *gin.Context, iStr string, inspectionID uint, roomNumber int) models.InspectionRoom {
+	pf := func(name string) float64 {
+		v, _ := strconv.ParseFloat(c.PostForm(name+iStr), 64)
+		return v
+	}
+	return models.InspectionRoom{
+		InspectionID:  inspectionID,
+		RoomNumber:    roomNumber,
+		RoomName:      c.PostForm("room_name_" + iStr),
+		Length:        pf("room_length_"),
+		Width:         pf("room_width_"),
+		Height:        pf("room_height_"),
+		Window1Height: pf("room_w1h_"),
+		Window1Width:  pf("room_w1w_"),
+		Window2Height: pf("room_w2h_"),
+		Window2Width:  pf("room_w2w_"),
+		Window3Height: pf("room_w3h_"),
+		Window3Width:  pf("room_w3w_"),
+		Window4Height: pf("room_w4h_"),
+		Window4Width:  pf("room_w4w_"),
+		Window5Height: pf("room_w5h_"),
+		Window5Width:  pf("room_w5w_"),
+		DoorHeight:    pf("room_dh_"),
+		DoorWidth:     pf("room_dw_"),
+		WindowType:    c.PostForm("room_window_type_" + iStr),
+		WallType:      buildWallType(c, iStr),
+	}
 }
 
 func buildWallType(c *gin.Context, iStr string) string {

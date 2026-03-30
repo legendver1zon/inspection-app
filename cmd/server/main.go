@@ -366,7 +366,7 @@ func main() {
 		userID := c.GetUint("userID")
 		var u models.User
 		if storage.DB.First(&u, userID).Error != nil {
-			c.SetCookie("token", "", -1, "/", "", false, true)
+			auth.ClearAuthCookie(c)
 			c.Redirect(http.StatusFound, "/login")
 			c.Abort()
 			return

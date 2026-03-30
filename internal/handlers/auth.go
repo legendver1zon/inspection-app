@@ -56,7 +56,7 @@ func PostLogin(c *gin.Context) {
 
 	security.LoginLimiter.Reset(c.ClientIP())
 	security.Log(security.EventLoginSuccess, c.ClientIP(), "email="+email)
-	c.SetCookie("token", token, 86400, "/", "", false, true)
+	auth.SetAuthCookie(c, token)
 	c.Redirect(http.StatusFound, "/inspections")
 }
 
@@ -182,6 +182,6 @@ func PostRegister(c *gin.Context) {
 
 // PostLogout — выход из системы
 func PostLogout(c *gin.Context) {
-	c.SetCookie("token", "", -1, "/", "", false, true)
+	auth.ClearAuthCookie(c)
 	c.Redirect(http.StatusFound, "/login")
 }

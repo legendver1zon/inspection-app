@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -135,8 +136,15 @@ func GetDownloadDocument(c *gin.Context) {
 		return
 	}
 
+	// Санитизация ActNumber для безопасного использования в HTTP-заголовке
+	safeActNumber := strings.Map(func(r rune) rune {
+		if r == '"' || r == '\\' || r == '/' || r < 32 {
+			return '_'
+		}
+		return r
+	}, doc.Inspection.ActNumber)
 	c.Header("Content-Disposition", fmt.Sprintf(
-		`attachment; filename="act_%s.%s"`, doc.Inspection.ActNumber, doc.Format,
+		`attachment; filename="act_%s.%s"`, safeActNumber, doc.Format,
 	))
 	c.File(absPath)
 }

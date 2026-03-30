@@ -19,6 +19,7 @@ web/static/documents/*.docx
 # Переменные окружения
 .env
 .env.*
+!.env.example
 
 # IDE
 .idea/

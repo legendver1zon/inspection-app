@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/go-pdf/fpdf"
 	"github.com/skip2/go-qrcode"
@@ -890,9 +891,17 @@ func drawSignatures(f *fpdf.Fpdf, inspection *models.Inspection) {
 
 // ===== Вспомогательные функции =====
 
+var (
+	fontOnce     sync.Once
+	useArialFont bool
+)
+
 func setFont(f *fpdf.Fpdf, style string, size float64) {
-	_, errR := fontFS.ReadFile("fonts/font.ttf")
-	if errR == nil || findFont(fontCandidates) != "" {
+	fontOnce.Do(func() {
+		_, errR := fontFS.ReadFile("fonts/font.ttf")
+		useArialFont = errR == nil || findFont(fontCandidates) != ""
+	})
+	if useArialFont {
 		f.SetFont("Arial", style, size)
 	} else {
 		f.SetFont("Helvetica", style, size)

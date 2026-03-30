@@ -3,12 +3,25 @@ package storage
 import (
 	"inspection-app/internal/models"
 	"log"
+	"net/url"
 	"os"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 )
+
+// maskDSN маскирует пароль в DSN для безопасного логирования.
+func maskDSN(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return "***"
+	}
+	if u.User != nil {
+		u.User = url.UserPassword(u.User.Username(), "***")
+	}
+	return u.String()
+}
 
 var DB *gorm.DB
 
@@ -21,7 +34,7 @@ func Connect(dsn string) {
 	if err != nil {
 		log.Fatalf("Ошибка подключения к БД: %v", err)
 	}
-	log.Println("БД подключена:", dsn)
+	log.Println("БД подключена:", maskDSN(dsn))
 }
 
 // ConnectFromEnv читает DATABASE_URL из переменных окружения и подключается к БД.

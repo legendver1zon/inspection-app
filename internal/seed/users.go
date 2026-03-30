@@ -5,6 +5,7 @@ import (
 	"inspection-app/internal/models"
 	"inspection-app/internal/storage"
 	"log"
+	"os"
 	"strings"
 )
 
@@ -14,8 +15,12 @@ const TestUserEmail = "test@example.com"
 const TestUserPassword = "Test1234!"
 
 // SeedTestUser создаёт тестового пользователя, если он не существует.
-// Безопасно вызывать при каждом старте приложения.
+// В production (GIN_MODE=release) тестовый пользователь НЕ создаётся.
 func SeedTestUser() {
+	if os.Getenv("GIN_MODE") == "release" {
+		return
+	}
+
 	var existing models.User
 	if err := storage.DB.Where("email = ?", TestUserEmail).First(&existing).Error; err == nil {
 		// Пользователь уже существует — ничего не делать

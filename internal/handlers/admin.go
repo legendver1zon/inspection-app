@@ -141,6 +141,21 @@ func DeleteAdminUser(c *gin.Context) {
 		return
 	}
 
+	// Нельзя удалить последнего администратора
+	var target models.User
+	if err := storage.DB.First(&target, id).Error; err != nil {
+		c.Redirect(http.StatusFound, "/admin/users")
+		return
+	}
+	if target.Role == models.RoleAdmin {
+		var adminCount int64
+		storage.DB.Model(&models.User{}).Where("role = ?", models.RoleAdmin).Count(&adminCount)
+		if adminCount <= 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Нельзя удалить единственного администратора"})
+			return
+		}
+	}
+
 	storage.DB.Delete(&models.User{}, id)
 	c.Redirect(http.StatusFound, "/admin/users")
 }

@@ -137,10 +137,10 @@ func PostUploadPhoto(c *gin.Context) {
 		if uploadQueue != nil {
 			if err := uploadQueue.Push(context.Background(), inspection.ID); err != nil {
 				log.Printf("PostUploadPhoto: Redis push error, fallback sync: %v", err)
-				go SyncInspectionPhotos(inspection.ID)
+				go safeSync(inspection.ID)
 			}
 		} else {
-			go SyncInspectionPhotos(inspection.ID)
+			go safeSync(inspection.ID)
 		}
 	}
 
@@ -187,6 +187,17 @@ func DeletePhoto(c *gin.Context) {
 
 	storage.DB.Delete(&photo)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// safeSync запускает SyncInspectionPhotos с recover, чтобы паника в горутине
+// не уронила всё приложение.
+func safeSync(inspectionID uint) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("SyncInspectionPhotos panic inspectionID=%d: %v", inspectionID, r)
+		}
+	}()
+	SyncInspectionPhotos(inspectionID)
 }
 
 // sectionFolderName возвращает читаемое название папки для секции дефекта.
@@ -323,12 +334,14 @@ func UploadInspectionPhotos(inspectionID uint) {
 
 	uploadTasksParallel(tasks, func(t uploadTask, success bool, publicURL string) {
 		if success {
-			os.Remove(t.filePath)
+			// K3: Сначала обновляем БД, потом удаляем файл.
+			// Если DB упадёт — файл останется (безвредно). Обратный порядок = потеря фото.
 			storage.DB.Model(t.photo).Updates(map[string]interface{}{
 				"file_url":      publicURL,
 				"file_path":     "",
 				"upload_status": "done",
 			})
+			os.Remove(t.filePath)
 		} else {
 			storage.DB.Model(t.photo).Update("upload_status", "failed")
 		}

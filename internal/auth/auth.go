@@ -2,6 +2,7 @@ package auth
 
 import (
 	"errors"
+	"log"
 	"os"
 	"time"
 
@@ -14,7 +15,10 @@ var jwtSecret = []byte(getSecret())
 func getSecret() string {
 	s := os.Getenv("JWT_SECRET")
 	if s == "" {
-		return "inspection-secret-key-change-in-production"
+		if os.Getenv("GIN_MODE") == "release" {
+			log.Fatal("JWT_SECRET обязателен в production (GIN_MODE=release)")
+		}
+		return "dev-only-secret-do-not-use-in-production"
 	}
 	return s
 }
