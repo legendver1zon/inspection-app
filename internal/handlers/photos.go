@@ -94,7 +94,8 @@ func PostUploadPhoto(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Максимум %d фото на дефект", maxPhotosPerDefect)})
 		return
 	}
-	fileName := fmt.Sprintf("photo_%d%s", photoCount+1, ext)
+	// Уникальное имя через timestamp — исключает race condition при одновременной загрузке
+	fileName := fmt.Sprintf("photo_%d_%d%s", defectID, time.Now().UnixMilli(), ext)
 
 	localDir := filepath.Join("web", "static", "uploads", "photos",
 		strconv.Itoa(int(inspection.ID)), strconv.Itoa(defectID))
@@ -319,7 +320,18 @@ func UploadInspectionPhotos(inspectionID uint) {
 	// Собираем данные дефектов для построения путей
 	infoMap := buildDefectInfoMap(inspectionID)
 
+	// Считаем уже загруженные фото per defect, чтобы не перезаписать файлы на Яндекс Диске
 	defectPhotoCount := map[uint]int{}
+	var donePhotos []models.Photo
+	storage.DB.
+		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
+		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+		Where("inspection_rooms.inspection_id = ? AND photos.upload_status = 'done'", inspectionID).
+		Find(&donePhotos)
+	for _, dp := range donePhotos {
+		defectPhotoCount[dp.DefectID]++
+	}
+
 	var tasks []uploadTask
 	for i := range photos {
 		p := &photos[i]
@@ -513,6 +525,13 @@ func uploadTasksParallel(tasks []uploadTask, callback func(uploadTask, bool, str
 			publicURL, err := cloudStore.PublishFile(t.relFile)
 			if err != nil {
 				log.Printf("uploadTasks publish %q: %v", t.relFile, err)
+				callback(t, false, "")
+				return
+			}
+			if publicURL == "" {
+				log.Printf("uploadTasks publish %q: empty public URL", t.relFile)
+				callback(t, false, "")
+				return
 			}
 			callback(t, true, publicURL)
 		}(task)
