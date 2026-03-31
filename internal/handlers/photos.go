@@ -467,9 +467,19 @@ func buildUploadTask(p *models.Photo, info defectInfo, n int) uploadTask {
 // uploadTasksParallel выполняет загрузку задач параллельно (до syncWorkers горутин).
 // callback вызывается для каждой задачи с результатом (success, publicURL).
 func uploadTasksParallel(tasks []uploadTask, callback func(uploadTask, bool, string)) {
+	// Фаза 1: создаём ВСЕ папки последовательно (Яндекс Диск блокирует при параллельных mkdir)
 	createdFolders := map[string]bool{}
-	var folderMu sync.Mutex
+	for _, t := range tasks {
+		if createdFolders[t.relFolder] {
+			continue
+		}
+		if err := cloudStore.EnsurePath(t.relFolder); err != nil {
+			log.Printf("uploadTasks EnsurePath %q: %v", t.relFolder, err)
+		}
+		createdFolders[t.relFolder] = true
+	}
 
+	// Фаза 2: загружаем файлы параллельно (папки уже созданы)
 	sem := make(chan struct{}, syncWorkers)
 	var wg sync.WaitGroup
 
@@ -479,24 +489,6 @@ func uploadTasksParallel(tasks []uploadTask, callback func(uploadTask, bool, str
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-
-			folderMu.Lock()
-			needCreate := !createdFolders[t.relFolder]
-			if needCreate {
-				createdFolders[t.relFolder] = true
-			}
-			folderMu.Unlock()
-
-			if needCreate {
-				if err := cloudStore.EnsurePath(t.relFolder); err != nil {
-					log.Printf("uploadTasks EnsurePath %q: %v", t.relFolder, err)
-					folderMu.Lock()
-					delete(createdFolders, t.relFolder)
-					folderMu.Unlock()
-					callback(t, false, "")
-					return
-				}
-			}
 
 			data, err := os.ReadFile(t.filePath)
 			if err != nil {
@@ -522,18 +514,10 @@ func uploadTasksParallel(tasks []uploadTask, callback func(uploadTask, bool, str
 				return
 			}
 
-			publicURL, err := cloudStore.PublishFile(t.relFile)
-			if err != nil {
-				log.Printf("uploadTasks publish %q: %v", t.relFile, err)
-				callback(t, false, "")
-				return
-			}
-			if publicURL == "" {
-				log.Printf("uploadTasks publish %q: empty public URL", t.relFile)
-				callback(t, false, "")
-				return
-			}
-			callback(t, true, publicURL)
+			// Файл загружен. Папка осмотра уже публикуется через EnsureInspectionFolder,
+			// поэтому отдельный PublishFile не нужен — файлы внутри публичной папки доступны.
+			// Сохраняем относительный путь как URL (отображается как "☁ имя" в UI).
+			callback(t, true, t.relFile)
 		}(task)
 	}
 	wg.Wait()
