@@ -32,15 +32,31 @@ func GetAdminUsers(c *gin.Context) {
 
 // PostAdminChangeRole — изменение роли пользователя
 func PostAdminChangeRole(c *gin.Context) {
-	id := c.Param("id")
-	role := c.PostForm("role")
+	targetID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+		return
+	}
 
+	role := c.PostForm("role")
 	if role != "admin" && role != "inspector" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверная роль"})
 		return
 	}
 
-	storage.DB.Model(&models.User{}).Where("id = ?", id).Update("role", role)
+	var target models.User
+	if err := storage.DB.First(&target, targetID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
+		return
+	}
+
+	// Нельзя менять свою роль
+	if uint(targetID) == c.GetUint("userID") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Нельзя изменить свою роль"})
+		return
+	}
+
+	storage.DB.Model(&target).Update("role", role)
 	c.Redirect(http.StatusFound, "/admin/users")
 }
 
@@ -132,11 +148,15 @@ func PostAdminEditUser(c *gin.Context) {
 
 // DeleteAdminUser — удаление пользователя
 func DeleteAdminUser(c *gin.Context) {
-	id := c.Param("id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+		return
+	}
 	currentUserID := c.GetUint("userID")
 
 	// Нельзя удалить себя
-	if id == strconv.FormatUint(uint64(currentUserID), 10) {
+	if uint(id) == currentUserID {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Нельзя удалить свой аккаунт"})
 		return
 	}

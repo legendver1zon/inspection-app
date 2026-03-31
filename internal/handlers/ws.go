@@ -3,6 +3,8 @@ package handlers
 import (
 	"encoding/json"
 	"inspection-app/internal/logger"
+	"inspection-app/internal/models"
+	"inspection-app/internal/storage"
 	"net/http"
 	"strconv"
 	"sync"
@@ -15,14 +17,41 @@ import (
 // --- WebSocket Hub для push-уведомлений о загрузке фото ---
 
 var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+	CheckOrigin: func(r *http.Request) bool {
+		origin := r.Header.Get("Origin")
+		// Пустой Origin (не из браузера) или совпадение хоста — разрешаем
+		if origin == "" {
+			return true
+		}
+		// Разрешаем если origin содержит тот же хост
+		return r.Header.Get("Origin") == "http://"+r.Host ||
+			r.Header.Get("Origin") == "https://"+r.Host
+	},
+}
+
+// safeConn оборачивает websocket.Conn с мьютексом для потокобезопасной записи.
+type safeConn struct {
+	conn *websocket.Conn
+	mu   sync.Mutex
+}
+
+func (sc *safeConn) writeJSON(msg []byte) error {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	return sc.conn.WriteMessage(websocket.TextMessage, msg)
+}
+
+func (sc *safeConn) writePing() error {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	return sc.conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second))
 }
 
 // wsHub хранит подписки: inspectionID → набор соединений
 var wsHub = struct {
 	sync.RWMutex
-	conns map[uint]map[*websocket.Conn]struct{}
-}{conns: make(map[uint]map[*websocket.Conn]struct{})}
+	conns map[uint]map[*safeConn]struct{}
+}{conns: make(map[uint]map[*safeConn]struct{})}
 
 // WsUploadStatus — GET /inspections/:id/ws
 // Устанавливает WebSocket-соединение для получения обновлений upload-status.
@@ -34,16 +63,30 @@ func WsUploadStatus(c *gin.Context) {
 	}
 	inspectionID := uint(id)
 
-	conn, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+	// Проверка доступа: владелец или admin
+	userID := c.GetUint("userID")
+	role := c.GetString("userRole")
+	var inspection models.Inspection
+	if err := storage.DB.First(&inspection, inspectionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Осмотр не найден"})
+		return
+	}
+	if role != "admin" && inspection.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещён"})
+		return
+	}
+
+	raw, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 	if err != nil {
 		logger.Error("ws upgrade failed", "error", err)
 		return
 	}
+	conn := &safeConn{conn: raw}
 
 	// Регистрируем соединение
 	wsHub.Lock()
 	if wsHub.conns[inspectionID] == nil {
-		wsHub.conns[inspectionID] = make(map[*websocket.Conn]struct{})
+		wsHub.conns[inspectionID] = make(map[*safeConn]struct{})
 	}
 	wsHub.conns[inspectionID][conn] = struct{}{}
 	wsHub.Unlock()
@@ -57,18 +100,18 @@ func WsUploadStatus(c *gin.Context) {
 				delete(wsHub.conns, inspectionID)
 			}
 			wsHub.Unlock()
-			conn.Close()
+			conn.conn.Close()
 		}()
 
-		conn.SetReadLimit(512)
-		conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		conn.SetPongHandler(func(string) error {
-			conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		conn.conn.SetReadLimit(512)
+		conn.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+		conn.conn.SetPongHandler(func(string) error {
+			conn.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
 			return nil
 		})
 
 		for {
-			_, _, err := conn.ReadMessage()
+			_, _, err := conn.conn.ReadMessage()
 			if err != nil {
 				break
 			}
@@ -86,7 +129,7 @@ func WsUploadStatus(c *gin.Context) {
 			if !exists {
 				return
 			}
-			if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(5*time.Second)); err != nil {
+			if err := conn.writePing(); err != nil {
 				return
 			}
 		}
@@ -103,7 +146,7 @@ func NotifyUploadStatus(inspectionID uint, data map[string]interface{}) {
 		return
 	}
 	// Копируем список чтобы не держать lock
-	conns := make([]*websocket.Conn, 0, len(clients))
+	conns := make([]*safeConn, 0, len(clients))
 	for c := range clients {
 		conns = append(conns, c)
 	}
@@ -114,13 +157,12 @@ func NotifyUploadStatus(inspectionID uint, data map[string]interface{}) {
 		return
 	}
 
-	for _, conn := range conns {
-		if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
-			// Удаляем битое соединение
+	for _, sc := range conns {
+		if err := sc.writeJSON(msg); err != nil {
 			wsHub.Lock()
-			delete(wsHub.conns[inspectionID], conn)
+			delete(wsHub.conns[inspectionID], sc)
 			wsHub.Unlock()
-			conn.Close()
+			sc.conn.Close()
 		}
 	}
 }

@@ -35,7 +35,14 @@ func PostLogin(c *gin.Context) {
 
 	var user models.User
 	result := storage.DB.Where("email = ?", email).First(&user)
-	if result.Error != nil || !auth.CheckPassword(password, user.PasswordHash) {
+	// Constant-time: всегда выполняем bcrypt даже если пользователь не найден (anti timing attack)
+	dummyHash := "$2a$10$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+	hashToCheck := dummyHash
+	if result.Error == nil {
+		hashToCheck = user.PasswordHash
+	}
+	passwordValid := auth.CheckPassword(password, hashToCheck)
+	if result.Error != nil || !passwordValid {
 		security.LoginLimiter.Increment(c.ClientIP())
 		security.Log(security.EventLoginFailed, c.ClientIP(), "email="+email)
 		c.HTML(http.StatusUnauthorized, "login.html", gin.H{

@@ -562,34 +562,7 @@ func GetUploadStatus(c *gin.Context) {
 		return
 	}
 
-	type statusCount struct {
-		Status string
-		Count  int64
-	}
-	var rows []statusCount
-	storage.DB.Model(&models.Photo{}).
-		Select("photos.upload_status as status, COUNT(*) as count").
-		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
-		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
-		Where("inspection_rooms.inspection_id = ?", id).
-		Group("photos.upload_status").
-		Scan(&rows)
-
-	counts := map[string]int64{"pending": 0, "uploading": 0, "done": 0, "failed": 0}
-	var total int64
-	for _, r := range rows {
-		counts[r.Status] = r.Count
-		total += r.Count
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"total":     total,
-		"pending":   counts["pending"],
-		"uploading": counts["uploading"],
-		"done":      counts["done"],
-		"failed":    counts["failed"],
-		"all_done":  counts["pending"] == 0 && counts["uploading"] == 0 && counts["failed"] == 0,
-	})
+	c.JSON(http.StatusOK, BuildUploadStatusMap(uint(id)))
 }
 
 // PostDeleteInspection — удаление акта осмотра (только admin)

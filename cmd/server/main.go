@@ -22,6 +22,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -79,6 +80,52 @@ func main() {
 	r.SetTrustedProxies([]string{"127.0.0.1", "::1"})
 	r.Use(logger.PanicRecovery())
 	r.Use(logger.RequestLogger())
+	// Security headers
+	r.Use(func(c *gin.Context) {
+		c.Header("X-Content-Type-Options", "nosniff")
+		c.Header("X-Frame-Options", "DENY")
+		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
+		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		c.Next()
+	})
+
+	// Кеш для проверки диска (обновляется не чаще раза в 30 секунд)
+	var diskCache struct {
+		sync.Mutex
+		pct     int
+		status  string
+		updated time.Time
+	}
+	getDiskUsage := func() (int, string) {
+		diskCache.Lock()
+		defer diskCache.Unlock()
+		if time.Since(diskCache.updated) < 30*time.Second {
+			return diskCache.pct, diskCache.status
+		}
+		out, err := exec.Command("df", "--output=pcent", "/").Output()
+		if err != nil {
+			return -1, ""
+		}
+		lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		if len(lines) < 2 {
+			return -1, ""
+		}
+		pctStr := strings.TrimSpace(strings.TrimSuffix(lines[len(lines)-1], "%"))
+		pct, err := strconv.Atoi(pctStr)
+		if err != nil {
+			return -1, ""
+		}
+		s := "ok"
+		if pct > 90 {
+			s = "critical"
+		} else if pct > 80 {
+			s = "warning"
+		}
+		diskCache.pct = pct
+		diskCache.status = s
+		diskCache.updated = time.Now()
+		return pct, s
+	}
 
 	// Health-check для мониторинга
 	r.GET("/healthz", func(c *gin.Context) {
@@ -99,22 +146,12 @@ func main() {
 			result["db"] = "ok"
 		}
 
-		// Проверка диска (через df, работает в Linux/Docker)
-		if out, err := exec.Command("df", "--output=pcent", "/").Output(); err == nil {
-			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
-			if len(lines) >= 2 {
-				pctStr := strings.TrimSpace(strings.TrimSuffix(lines[len(lines)-1], "%"))
-				if pct, err := strconv.Atoi(pctStr); err == nil {
-					result["disk_used_pct"] = fmt.Sprintf("%d%%", pct)
-					if pct > 90 {
-						result["disk"] = "critical"
-						result["status"] = "warning"
-					} else if pct > 80 {
-						result["disk"] = "warning"
-					} else {
-						result["disk"] = "ok"
-					}
-				}
+		// Проверка диска (кешировано, обновляется раз в 30 сек)
+		if pct, diskStatus := getDiskUsage(); pct >= 0 {
+			result["disk_used_pct"] = fmt.Sprintf("%d%%", pct)
+			result["disk"] = diskStatus
+			if diskStatus == "critical" {
+				result["status"] = "warning"
 			}
 		}
 

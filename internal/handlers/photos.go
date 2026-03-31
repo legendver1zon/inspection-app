@@ -183,7 +183,9 @@ func DeletePhoto(c *gin.Context) {
 
 	// Удаляем локальный файл
 	if photo.FilePath != "" {
-		os.Remove(photo.FilePath)
+		if err := os.Remove(photo.FilePath); err != nil && !os.IsNotExist(err) {
+			logger.Ctx(c.Request.Context()).Warn("не удалось удалить файл фото", "path", photo.FilePath, "error", err)
+		}
 	}
 
 	storage.DB.Delete(&photo)
@@ -365,6 +367,12 @@ func UploadInspectionPhotos(inspectionID uint) {
 
 // notifyUploadProgress собирает текущий статус фото и отправляет через WebSocket.
 func notifyUploadProgress(inspectionID uint) {
+	NotifyUploadStatus(inspectionID, BuildUploadStatusMap(inspectionID))
+}
+
+// BuildUploadStatusMap возвращает map со статусами загрузки фото для осмотра.
+// Используется в GetUploadStatus (HTTP) и notifyUploadProgress (WebSocket).
+func BuildUploadStatusMap(inspectionID uint) map[string]interface{} {
 	type statusCount struct {
 		Status string
 		Count  int64
@@ -378,16 +386,30 @@ func notifyUploadProgress(inspectionID uint) {
 		Group("photos.upload_status").
 		Scan(&rows)
 
-	counts := map[string]interface{}{"pending": int64(0), "uploading": int64(0), "done": int64(0), "failed": int64(0)}
+	pending, uploading, done, failed := int64(0), int64(0), int64(0), int64(0)
 	var total int64
 	for _, r := range rows {
-		counts[r.Status] = r.Count
+		switch r.Status {
+		case "pending":
+			pending = r.Count
+		case "uploading":
+			uploading = r.Count
+		case "done":
+			done = r.Count
+		case "failed":
+			failed = r.Count
+		}
 		total += r.Count
 	}
-	counts["total"] = total
-	counts["all_done"] = counts["pending"] == int64(0) && counts["uploading"] == int64(0) && counts["failed"] == int64(0)
 
-	NotifyUploadStatus(inspectionID, counts)
+	return map[string]interface{}{
+		"total":     total,
+		"pending":   pending,
+		"uploading": uploading,
+		"done":      done,
+		"failed":    failed,
+		"all_done":  pending == 0 && uploading == 0 && failed == 0,
+	}
 }
 
 // SyncInspectionPhotos — синхронный fallback: загружает все фото и публикует папку.

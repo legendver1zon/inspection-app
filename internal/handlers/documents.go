@@ -99,7 +99,9 @@ func PostDeleteDocument(c *gin.Context) {
 	}
 
 	if doc.FilePath != "" {
-		os.Remove(doc.FilePath)
+		if err := os.Remove(doc.FilePath); err != nil && !os.IsNotExist(err) {
+			logger.Ctx(c.Request.Context()).Warn("не удалось удалить файл документа", "path", doc.FilePath, "error", err)
+		}
 	}
 	storage.DB.Delete(&doc)
 
@@ -128,7 +130,18 @@ func GetDownloadDocument(c *gin.Context) {
 		return
 	}
 
-	absPath, _ := filepath.Abs(doc.FilePath)
+	absPath, err := filepath.Abs(doc.FilePath)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка пути"})
+		return
+	}
+	// Проверка path traversal: файл должен быть в ожидаемой директории
+	allowedDir, _ := filepath.Abs("web/static/documents")
+	if !strings.HasPrefix(absPath, allowedDir) {
+		logger.Ctx(c.Request.Context()).Error("path traversal attempt", "path", doc.FilePath)
+		c.JSON(http.StatusForbidden, gin.H{"error": "Недопустимый путь"})
+		return
+	}
 	if _, err := os.Stat(absPath); os.IsNotExist(err) {
 		// Файл потерян — удаляем устаревшую запись и редиректим обратно
 		storage.DB.Delete(&doc)
