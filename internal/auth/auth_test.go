@@ -128,6 +128,33 @@ func TestParseToken_Expired(t *testing.T) {
 	}
 }
 
+// --- Timing attack resistance ---
+
+func TestCheckPassword_ConstantTime_ValidHash(t *testing.T) {
+	hash, _ := HashPassword("testpassword")
+	start := time.Now()
+	CheckPassword("wrongpassword", hash)
+	validHashDuration := time.Since(start)
+
+	// bcrypt должен занять минимум 50ms даже для неправильного пароля
+	if validHashDuration < 50*time.Millisecond {
+		t.Errorf("CheckPassword with valid hash too fast: %v (expected >50ms bcrypt)", validHashDuration)
+	}
+}
+
+func TestCheckPassword_ConstantTime_DummyHash(t *testing.T) {
+	// Симулируем dummy hash как в auth handler (anti timing attack)
+	dummyHash, _ := HashPassword("dummy-password")
+	start := time.Now()
+	CheckPassword("anypassword", string(dummyHash))
+	dummyDuration := time.Since(start)
+
+	// dummy hash тоже должен занять >50ms (полный bcrypt)
+	if dummyDuration < 50*time.Millisecond {
+		t.Errorf("CheckPassword with dummy hash too fast: %v (expected >50ms bcrypt)", dummyDuration)
+	}
+}
+
 func TestParseToken_WrongSigningMethod(t *testing.T) {
 	// Попытка создать токен с другим алгоритмом
 	claims := Claims{

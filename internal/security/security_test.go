@@ -159,6 +159,54 @@ func TestRateLimiter_IndependentKeys(t *testing.T) {
 
 // --- CheckInspectionLimit ---
 
+// --- RateLimiter interface ---
+
+func TestMemoryRateLimiter_ImplementsInterface(t *testing.T) {
+	var _ RateLimiter = (*MemoryRateLimiter)(nil)
+}
+
+func TestRedisRateLimiter_ImplementsInterface(t *testing.T) {
+	var _ RateLimiter = (*RedisRateLimiter)(nil)
+}
+
+func TestRateLimiter_Interface_Check(t *testing.T) {
+	var rl RateLimiter = NewMemoryRateLimiter(2, time.Hour)
+	allowed, _ := rl.Check("test-key")
+	if !allowed {
+		t.Error("fresh limiter should allow")
+	}
+	rl.Increment("test-key")
+	rl.Increment("test-key")
+	allowed, retryAfter := rl.Check("test-key")
+	if allowed {
+		t.Error("should be blocked after 2 increments")
+	}
+	if retryAfter <= 0 {
+		t.Error("retryAfter should be > 0")
+	}
+	rl.Reset("test-key")
+	allowed, _ = rl.Check("test-key")
+	if !allowed {
+		t.Error("should be allowed after reset")
+	}
+}
+
+func TestRateLimiter_Interface_CheckAndIncrement(t *testing.T) {
+	var rl RateLimiter = NewMemoryRateLimiter(2, time.Hour)
+	for i := 0; i < 2; i++ {
+		allowed, _ := rl.CheckAndIncrement("k")
+		if !allowed {
+			t.Errorf("attempt %d should be allowed", i+1)
+		}
+	}
+	allowed, _ := rl.CheckAndIncrement("k")
+	if allowed {
+		t.Error("3rd attempt should be blocked")
+	}
+}
+
+// --- CheckInspectionLimit ---
+
 func TestCheckInspectionLimit_AdminBypass(t *testing.T) {
 	InspectionLimiter = NewMemoryRateLimiter(1, time.Hour) // лимит 1, но admin проходит
 	for i := 0; i < 5; i++ {

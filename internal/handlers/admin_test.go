@@ -289,6 +289,88 @@ func TestDeleteAdminUser_CannotDeleteSelf(t *testing.T) {
 	}
 }
 
+// --- Тесты новых security-проверок ---
+
+func TestPostAdminChangeRole_CannotChangeSelf(t *testing.T) {
+	setupTestDB(t)
+	r := setupRouter(t)
+
+	admin := newUser(t, "admin@test.com", "pass123", "Иванов Иван Иванович", models.RoleAdmin)
+	token := tokenFor(t, admin.ID, "admin")
+
+	form := url.Values{"role": {"inspector"}}
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/admin/users/"+itoa(admin.ID)+"/role", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "token", Value: token})
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("change self role: got %d, want 400", w.Code)
+	}
+	// Роль не должна измениться
+	var updated models.User
+	storage.DB.First(&updated, admin.ID)
+	if updated.Role != models.RoleAdmin {
+		t.Error("admin role should not change when changing self")
+	}
+}
+
+func TestPostAdminChangeRole_NotFound(t *testing.T) {
+	setupTestDB(t)
+	r := setupRouter(t)
+
+	admin := newUser(t, "admin@test.com", "pass123", "Иванов Иван Иванович", models.RoleAdmin)
+	token := tokenFor(t, admin.ID, "admin")
+
+	form := url.Values{"role": {"inspector"}}
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/admin/users/99999/role", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "token", Value: token})
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("change role not found: got %d, want 404", w.Code)
+	}
+}
+
+func TestPostAdminChangeRole_InvalidID(t *testing.T) {
+	setupTestDB(t)
+	r := setupRouter(t)
+
+	admin := newUser(t, "admin@test.com", "pass123", "Иванов Иван Иванович", models.RoleAdmin)
+	token := tokenFor(t, admin.ID, "admin")
+
+	form := url.Values{"role": {"admin"}}
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/admin/users/abc/role", strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.AddCookie(&http.Cookie{Name: "token", Value: token})
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("invalid ID: got %d, want 400", w.Code)
+	}
+}
+
+func TestDeleteAdminUser_InvalidID(t *testing.T) {
+	setupTestDB(t)
+	r := setupRouter(t)
+
+	admin := newUser(t, "admin@test.com", "pass123", "Иванов Иван Иванович", models.RoleAdmin)
+	token := tokenFor(t, admin.ID, "admin")
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("POST", "/admin/users/abc/delete", nil)
+	req.AddCookie(&http.Cookie{Name: "token", Value: token})
+	r.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("delete invalid ID: got %d, want 400", w.Code)
+	}
+}
+
 // --- вспомогательная функция ---
 
 func itoa(id uint) string {

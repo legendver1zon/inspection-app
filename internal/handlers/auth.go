@@ -9,7 +9,12 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"golang.org/x/crypto/bcrypt"
 )
+
+// dummyHash — заранее вычисленный bcrypt hash для constant-time проверки
+// при несуществующем пользователе (anti timing attack).
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("dummy-password"), bcrypt.DefaultCost)
 
 // GetLogin — страница входа
 func GetLogin(c *gin.Context) {
@@ -36,8 +41,7 @@ func PostLogin(c *gin.Context) {
 	var user models.User
 	result := storage.DB.Where("email = ?", email).First(&user)
 	// Constant-time: всегда выполняем bcrypt даже если пользователь не найден (anti timing attack)
-	dummyHash := "$2a$10$xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-	hashToCheck := dummyHash
+	hashToCheck := string(dummyHash)
 	if result.Error == nil {
 		hashToCheck = user.PasswordHash
 	}
