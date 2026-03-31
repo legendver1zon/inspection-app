@@ -1,17 +1,26 @@
 package security
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 )
 
+// RateLimiter — интерфейс для rate limiting (in-memory или Redis).
+type RateLimiter interface {
+	Check(key string) (allowed bool, retryAfter time.Duration)
+	Increment(key string)
+	CheckAndIncrement(key string) (allowed bool, retryAfter time.Duration)
+	Reset(key string)
+}
+
 // MemoryRateLimiter — потокобезопасный rate limiter на основе скользящего окна.
-// Хранит счётчики неудачных попыток в памяти.
-// Для продакшна с несколькими инстансами заменить на Redis-backed реализацию (Section 14).
+// Хранит счётчики в памяти. Для нескольких инстансов — использовать RedisRateLimiter.
 type MemoryRateLimiter struct {
 	mu      sync.Mutex
 	windows map[string]*limitWindow
@@ -108,18 +117,38 @@ func (rl *MemoryRateLimiter) cleanup() {
 // --- Глобальные лимитеры (инициализируются через Init() в main.go) ---
 
 var (
-	LoginLimiter          *MemoryRateLimiter
-	RegisterLimiter       *MemoryRateLimiter
-	ForgotPasswordLimiter *MemoryRateLimiter
-	InspectionLimiter     *MemoryRateLimiter
+	LoginLimiter          RateLimiter
+	RegisterLimiter       RateLimiter
+	ForgotPasswordLimiter RateLimiter
+	InspectionLimiter     RateLimiter
 )
 
-// Init инициализирует все rate limiter с настройками по умолчанию.
+// Init инициализирует все rate limiter (in-memory).
 func Init() {
-	LoginLimiter          = NewMemoryRateLimiter(5, 15*time.Minute) // 5 неудачных попыток / 15 мин с IP
-	RegisterLimiter       = NewMemoryRateLimiter(3, time.Hour)       // 3 регистрации / час с IP
-	ForgotPasswordLimiter = NewMemoryRateLimiter(3, time.Hour)       // 3 сброса пароля / час с IP
-	InspectionLimiter     = NewMemoryRateLimiter(20, time.Hour)      // 20 новых актов / час на пользователя
+	LoginLimiter          = NewMemoryRateLimiter(5, 15*time.Minute)
+	RegisterLimiter       = NewMemoryRateLimiter(3, time.Hour)
+	ForgotPasswordLimiter = NewMemoryRateLimiter(3, time.Hour)
+	InspectionLimiter     = NewMemoryRateLimiter(20, time.Hour)
+}
+
+// InitWithRedis инициализирует rate limiter на Redis (для нескольких инстансов).
+func InitWithRedis(redisURL string) {
+	opts, err := redis.ParseURL(redisURL)
+	if err != nil {
+		Init() // fallback
+		return
+	}
+	client := redis.NewClient(opts)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	if err := client.Ping(ctx).Err(); err != nil {
+		Init() // fallback
+		return
+	}
+	LoginLimiter          = NewRedisRateLimiter(client, "login", 5, 15*time.Minute)
+	RegisterLimiter       = NewRedisRateLimiter(client, "register", 3, time.Hour)
+	ForgotPasswordLimiter = NewRedisRateLimiter(client, "forgot", 3, time.Hour)
+	InspectionLimiter     = NewRedisRateLimiter(client, "inspection", 20, time.Hour)
 }
 
 // --- Тексты сообщений об ограничениях ---

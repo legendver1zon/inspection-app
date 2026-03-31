@@ -126,19 +126,22 @@
         {{ $visible := le $i $.activeRooms }}
         <div class="room-block {{ if not $visible }}room-hidden{{ end }}" id="room-{{ $i }}" data-room="{{ $i }}">
 
-            <!-- Заголовок помещения -->
-            <div class="room-header">
+            <!-- Заголовок помещения (клик сворачивает/разворачивает) -->
+            <div class="room-header" onclick="toggleRoom({{ $i }}, event)">
                 <div class="room-title">
+                    <span class="room-toggle-icon" id="room-icon-{{ $i }}">▼</span>
                     <span class="room-label">Помещение {{ $i }}</span>
                     <input type="text"
                            name="room_name_{{ $i }}"
                            value="{{ roomField $.roomMap $i "name" }}"
-                           placeholder="Кухня, Зал, Спальня...">
+                           placeholder="Кухня, Зал, Спальня..."
+                           onclick="event.stopPropagation()">
                 </div>
                 {{ if gt $i 1 }}
-                <button type="button" class="btn btn-sm btn-danger" onclick="removeRoom({{ $i }})">× Убрать</button>
+                <button type="button" class="btn btn-sm btn-danger" onclick="event.stopPropagation(); removeRoom({{ $i }})">× Убрать</button>
                 {{ end }}
             </div>
+            <div class="room-body" id="room-body-{{ $i }}">
 
             <!-- Замеры (сворачиваемые) -->
             <details class="measures-block">
@@ -307,6 +310,7 @@
                 </div>
             </div>
 
+            </div><!-- /room-body -->
         </div><!-- /room-block -->
         {{ end }}
 
@@ -347,231 +351,9 @@
     </form>
 </main>
 
-<script>
-const MAX_ROOMS = 10;
-let activeRooms = {{ .activeRooms }};
-
-function updateUI() {
-    document.getElementById('active_rooms').value = activeRooms;
-    const label = document.getElementById('room-count-label');
-    label.textContent = activeRooms + ' из ' + MAX_ROOMS + ' помещений';
-    document.getElementById('btn-add-room').disabled = activeRooms >= MAX_ROOMS;
-
-    for (let i = 1; i <= MAX_ROOMS; i++) {
-        const block = document.getElementById('room-' + i);
-        if (!block) continue;
-        if (i <= activeRooms) {
-            block.classList.remove('room-hidden');
-            block.querySelectorAll('input, select, textarea').forEach(el => el.disabled = false);
-        } else {
-            block.classList.add('room-hidden');
-            block.querySelectorAll('input, select, textarea').forEach(el => el.disabled = true);
-        }
-    }
-}
-
-function addRoom() {
-    if (activeRooms >= MAX_ROOMS) return;
-    activeRooms++;
-    updateUI();
-    const newRoom = document.getElementById('room-' + activeRooms);
-    if (newRoom) newRoom.scrollIntoView({ behavior: 'smooth', block: 'start' });
-}
-
-function removeRoom(num) {
-    if (activeRooms <= 1) return;
-    // Очищаем значения в убираемой комнате
-    const block = document.getElementById('room-' + num);
-    if (block) {
-        block.querySelectorAll('input[type=text], input[type=number]').forEach(el => el.value = '');
-        block.querySelectorAll('input[type=radio], input[type=checkbox]').forEach(el => el.checked = false);
-    }
-    // Если убираем не последнюю — перемещаем данные вверх
-    for (let i = num; i < activeRooms; i++) {
-        swapRoomData(i, i + 1);
-    }
-    activeRooms--;
-    updateUI();
-}
-
-function swapRoomData(to, from) {
-    const toBlock = document.getElementById('room-' + to);
-    const fromBlock = document.getElementById('room-' + from);
-    if (!toBlock || !fromBlock) return;
-
-    const toInputs = toBlock.querySelectorAll('input, select, textarea');
-    const fromInputs = fromBlock.querySelectorAll('input, select, textarea');
-
-    fromInputs.forEach((fromEl, idx) => {
-        const toEl = toInputs[idx];
-        if (!toEl) return;
-        if (fromEl.type === 'radio' || fromEl.type === 'checkbox') {
-            toEl.checked = fromEl.checked;
-        } else {
-            toEl.value = fromEl.value;
-        }
-    });
-}
-
-// Инициализация при загрузке
-updateUI();
-initWindows();
-
-// ===== Динамические окна =====
-function initWindows() {
-    for (let r = 1; r <= MAX_ROOMS; r++) {
-        // Определяем максимальный номер окна с данными
-        let maxWin = 1;
-        for (let w = 2; w <= 5; w++) {
-            const hEl = document.querySelector(`input[name="room_w${w}h_${r}"]`);
-            const wEl = document.querySelector(`input[name="room_w${w}w_${r}"]`);
-            if ((hEl && hEl.value) || (wEl && wEl.value)) {
-                maxWin = w;
-            }
-        }
-        // Показываем окна 2..maxWin
-        for (let w = 2; w <= maxWin; w++) {
-            showWindowPair(r, w);
-        }
-        updateWinBtn(r);
-    }
-}
-
-function showWindowPair(roomNum, winNum) {
-    document.querySelectorAll(`.extra-win[data-room="${roomNum}"][data-wnum="${winNum}"]`)
-        .forEach(el => el.style.display = '');
-}
-
-function addWindow(roomNum) {
-    for (let w = 2; w <= 5; w++) {
-        const pairs = document.querySelectorAll(`.extra-win[data-room="${roomNum}"][data-wnum="${w}"]`);
-        if (pairs.length > 0 && pairs[0].style.display === 'none') {
-            pairs.forEach(el => el.style.display = '');
-            updateWinBtn(roomNum);
-            return;
-        }
-    }
-}
-
-function updateWinBtn(roomNum) {
-    const btn = document.getElementById('btn-win-' + roomNum);
-    if (!btn) return;
-    // Кнопка недоступна когда окно 5 уже показано
-    const w5 = document.querySelectorAll(`.extra-win[data-room="${roomNum}"][data-wnum="5"]`);
-    const maxReached = w5.length > 0 && w5[0].style.display !== 'none';
-    btn.disabled = maxReached;
-    btn.style.opacity = maxReached ? '0.4' : '';
-}
-</script>
-
+<script src="/static/js/edit-rooms.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
-<script>
-(function() {
-    const planFile   = document.getElementById('plan-file');
-    const uploadBtn  = document.getElementById('upload-btn');
-    const uploadForm = document.getElementById('upload-form');
-    const cropModal  = document.getElementById('crop-modal');
-    const cropImg    = document.getElementById('crop-img');
-    const cropApply  = document.getElementById('crop-apply');
-    const cropCancel = document.getElementById('crop-cancel');
-    const cropStatus = document.getElementById('crop-status');
-    const rotLeft    = document.getElementById('rot-left');
-    const rotRight   = document.getElementById('rot-right');
-    let cropper = null;
-    let croppedBlob = null;
-    let origBlobUrl = null;
-    let totalRot = 0;
-
-    function initCropper(src) {
-        if (cropper) { cropper.destroy(); cropper = null; }
-        cropImg.src = src;
-        cropModal.style.display = 'flex';
-        cropper = new Cropper(cropImg, {
-            viewMode: 1,
-            autoCropArea: 0.95,
-            movable: true,
-            zoomable: true,
-            rotatable: false,
-        });
-    }
-
-    planFile.addEventListener('change', function() {
-        if (!this.files.length) return;
-        if (origBlobUrl) URL.revokeObjectURL(origBlobUrl);
-        origBlobUrl = URL.createObjectURL(this.files[0]);
-        totalRot = 0;
-        initCropper(origBlobUrl);
-    });
-
-    function rotateFit(deg) {
-        if (!origBlobUrl) return;
-        totalRot = (totalRot + deg + 360) % 360;
-        const img = new Image();
-        img.onload = function() {
-            const swap = totalRot === 90 || totalRot === 270;
-            const cw = swap ? img.height : img.width;
-            const ch = swap ? img.width : img.height;
-            const cv = document.createElement('canvas');
-            cv.width = cw; cv.height = ch;
-            const ctx = cv.getContext('2d');
-            ctx.translate(cw / 2, ch / 2);
-            ctx.rotate(totalRot * Math.PI / 180);
-            ctx.drawImage(img, -img.width / 2, -img.height / 2);
-            initCropper(cv.toDataURL('image/jpeg', 0.95));
-        };
-        img.src = origBlobUrl;
-    }
-    rotLeft.addEventListener('click',  function() { rotateFit(-90); });
-    rotRight.addEventListener('click', function() { rotateFit(90); });
-
-    cropCancel.addEventListener('click', function() {
-        cropModal.style.display = 'none';
-        if (cropper) { cropper.destroy(); cropper = null; }
-        planFile.value = '';
-        uploadBtn.disabled = true;
-        origBlobUrl = null;
-        totalRot = 0;
-    });
-
-    cropApply.addEventListener('click', function() {
-        if (!cropper) return;
-        cropStatus.textContent = 'Обработка...';
-        cropApply.disabled = true;
-        cropper.getCroppedCanvas({ maxWidth: 2400, maxHeight: 2400 }).toBlob(function(blob) {
-            croppedBlob = blob;
-            cropModal.style.display = 'none';
-            cropper.destroy(); cropper = null;
-            cropApply.disabled = false;
-            cropStatus.textContent = '';
-            uploadBtn.disabled = false;
-            // показать превью
-            const previewWrap = document.getElementById('plan-preview-wrap');
-            const preview = document.getElementById('plan-preview');
-            if (preview) {
-                preview.src = URL.createObjectURL(blob);
-                if (previewWrap) previewWrap.style.display = 'block';
-            }
-        }, 'image/jpeg', 0.92);
-    });
-
-    uploadForm.addEventListener('submit', async function(e) {
-        e.preventDefault();
-        if (!croppedBlob) return;
-        uploadBtn.disabled = true;
-        uploadBtn.textContent = 'Загрузка...';
-        const fd = new FormData();
-        fd.append('plan_image', croppedBlob, 'plan.jpg');
-        try {
-            await fetch(this.action, { method: 'POST', body: fd });
-            location.reload();
-        } catch(err) {
-            uploadBtn.disabled = false;
-            uploadBtn.textContent = 'Загрузить фото';
-            alert('Ошибка загрузки. Попробуйте ещё раз.');
-        }
-    });
-})();
-</script>
+<script src="/static/js/edit-plan.js"></script>
 <script src="/static/js/ui.js"></script>
 </body>
 </html>

@@ -11,13 +11,16 @@ import (
 	"inspection-app/internal/models"
 	"inspection-app/internal/queue"
 	"inspection-app/internal/security"
+	"inspection-app/internal/templatefuncs"
 	"inspection-app/internal/seed"
 	"inspection-app/internal/storage"
 	"inspection-app/internal/worker"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
@@ -26,10 +29,6 @@ import (
 	"github.com/joho/godotenv"
 )
 
-type wallRow struct {
-	Name, W1, W2, W3, W4 string
-}
-
 func setupLogger() {
 	logger.Init()
 }
@@ -37,7 +36,13 @@ func setupLogger() {
 func main() {
 	_ = godotenv.Load() // загружает .env если есть (игнорирует ошибку если файл отсутствует)
 	setupLogger()
-	security.Init()
+	if redisURL := os.Getenv("REDIS_URL"); redisURL != "" {
+		security.InitWithRedis(redisURL)
+		logger.Info("rate limiter: redis")
+	} else {
+		security.Init()
+		logger.Info("rate limiter: in-memory")
+	}
 	storage.ConnectFromEnv()
 	storage.Migrate()
 	seed.SeedDefects()
@@ -70,254 +75,53 @@ func main() {
 	}
 
 	r := gin.New()
+	// В Docker-среде доверяем только localhost; при Nginx reverse proxy — добавить IP прокси
+	r.SetTrustedProxies([]string{"127.0.0.1", "::1"})
 	r.Use(logger.PanicRecovery())
 	r.Use(logger.RequestLogger())
 
-	funcMap := template.FuncMap{
-		"string": func(v interface{}) string {
-			return fmt.Sprintf("%v", v)
-		},
-		// initials2 — первые буквы первых двух слов (аббревиатура для аватара)
-		"initials2": func(s string) string {
-			parts := strings.Fields(s)
-			result := ""
-			for i, p := range parts {
-				if i >= 2 {
-					break
-				}
-				r := []rune(p)
-				if len(r) > 0 {
-					result += string(r[0])
-				}
-			}
-			if result == "" {
-				return "?"
-			}
-			return result
-		},
-		// defectVal — значение дефекта для комнаты из roomMap
-		"defectVal": func(roomMap map[int]*models.InspectionRoom, roomNum int, templateID uint, wallNum int) string {
-			if room, ok := roomMap[roomNum]; ok && room != nil {
-				for _, d := range room.Defects {
-					if d.DefectTemplateID != nil && *d.DefectTemplateID == templateID && d.WallNumber == wallNum {
-						return d.Value
-					}
-				}
-			}
-			return ""
-		},
-		// notesVal — текст "Прочее" для секции комнаты
-		"notesVal": func(roomMap map[int]*models.InspectionRoom, roomNum int, section string) string {
-			if room, ok := roomMap[roomNum]; ok && room != nil {
-				for _, d := range room.Defects {
-					if d.DefectTemplateID == nil && d.Section == section {
-						return d.Notes
-					}
-				}
-			}
-			return ""
-		},
-		// roomField — поле замеров/типов комнаты
-		"roomField": func(roomMap map[int]*models.InspectionRoom, roomNum int, field string) string {
-			if room, ok := roomMap[roomNum]; ok && room != nil {
-				switch field {
-				case "name":
-					return room.RoomName
-				case "window_type":
-					return room.WindowType
-				case "wall_type":
-					return room.WallType
-				case "length":
-					if room.Length != 0 {
-						return fmt.Sprintf("%g", room.Length)
-					}
-				case "width":
-					if room.Width != 0 {
-						return fmt.Sprintf("%g", room.Width)
-					}
-				case "height":
-					if room.Height != 0 {
-						return fmt.Sprintf("%g", room.Height)
-					}
-				case "w1h":
-					if room.Window1Height != 0 {
-						return fmt.Sprintf("%g", room.Window1Height)
-					}
-				case "w1w":
-					if room.Window1Width != 0 {
-						return fmt.Sprintf("%g", room.Window1Width)
-					}
-				case "w2h":
-					if room.Window2Height != 0 {
-						return fmt.Sprintf("%g", room.Window2Height)
-					}
-				case "w2w":
-					if room.Window2Width != 0 {
-						return fmt.Sprintf("%g", room.Window2Width)
-					}
-				case "w3h":
-					if room.Window3Height != 0 {
-						return fmt.Sprintf("%g", room.Window3Height)
-					}
-				case "w3w":
-					if room.Window3Width != 0 {
-						return fmt.Sprintf("%g", room.Window3Width)
-					}
-				case "w4h":
-					if room.Window4Height != 0 {
-						return fmt.Sprintf("%g", room.Window4Height)
-					}
-				case "w4w":
-					if room.Window4Width != 0 {
-						return fmt.Sprintf("%g", room.Window4Width)
-					}
-				case "w5h":
-					if room.Window5Height != 0 {
-						return fmt.Sprintf("%g", room.Window5Height)
-					}
-				case "w5w":
-					if room.Window5Width != 0 {
-						return fmt.Sprintf("%g", room.Window5Width)
-					}
-				case "dh":
-					if room.DoorHeight != 0 {
-						return fmt.Sprintf("%g", room.DoorHeight)
-					}
-				case "dw":
-					if room.DoorWidth != 0 {
-						return fmt.Sprintf("%g", room.DoorWidth)
-					}
-				}
-			}
-			return ""
-		},
-		// roomExists — есть ли комната в roomMap
-		"roomExists": func(roomMap map[int]*models.InspectionRoom, roomNum int) bool {
-			room, ok := roomMap[roomNum]
-			return ok && room != nil
-		},
-		// add — сложение для шаблонов
-		"add": func(a, b int) int { return a + b },
+	// Health-check для мониторинга
+	r.GET("/healthz", func(c *gin.Context) {
+		result := gin.H{"status": "ok"}
+		status := http.StatusOK
 
-		// roomHasDefects — есть ли хоть один дефект в помещении
-		"roomHasDefects": func(room models.InspectionRoom) bool {
-			for _, d := range room.Defects {
-				if d.Value != "" || d.Notes != "" {
-					return true
+		// Проверка БД
+		sqlDB, err := storage.DB.DB()
+		if err != nil {
+			result["db"] = "unavailable"
+			result["status"] = "error"
+			status = http.StatusServiceUnavailable
+		} else if err := sqlDB.Ping(); err != nil {
+			result["db"] = "ping failed"
+			result["status"] = "error"
+			status = http.StatusServiceUnavailable
+		} else {
+			result["db"] = "ok"
+		}
+
+		// Проверка диска (через df, работает в Linux/Docker)
+		if out, err := exec.Command("df", "--output=pcent", "/").Output(); err == nil {
+			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+			if len(lines) >= 2 {
+				pctStr := strings.TrimSpace(strings.TrimSuffix(lines[len(lines)-1], "%"))
+				if pct, err := strconv.Atoi(pctStr); err == nil {
+					result["disk_used_pct"] = fmt.Sprintf("%d%%", pct)
+					if pct > 90 {
+						result["disk"] = "critical"
+						result["status"] = "warning"
+					} else if pct > 80 {
+						result["disk"] = "warning"
+					} else {
+						result["disk"] = "ok"
+					}
 				}
 			}
-			return false
-		},
+		}
 
-		// roomHasSection — есть ли данные в секции помещения
-		"roomHasSection": func(room models.InspectionRoom, section string) bool {
-			for _, d := range room.Defects {
-				if d.Section == section && (d.Value != "" || d.Notes != "") {
-					return true
-				}
-			}
-			return false
-		},
+		c.JSON(status, result)
+	})
 
-		// sectionDefects — дефекты секции (только с Value, без Notes)
-		"sectionDefects": func(room models.InspectionRoom, section string) []models.RoomDefect {
-			var result []models.RoomDefect
-			for _, d := range room.Defects {
-				if d.Section == section && d.Notes == "" && d.Value != "" {
-					result = append(result, d)
-				}
-			}
-			return result
-		},
-
-		// sectionNotes — текст "Прочее" для секции
-		"sectionNotes": func(room models.InspectionRoom, section string) string {
-			for _, d := range room.Defects {
-				if d.Section == section && d.Notes != "" {
-					return d.Notes
-				}
-			}
-			return ""
-		},
-
-		// sectionNotesDefect — полный объект RoomDefect для записи "Прочее" секции (nil если нет)
-		"sectionNotesDefect": func(room models.InspectionRoom, section string) *models.RoomDefect {
-			for i := range room.Defects {
-				if room.Defects[i].DefectTemplateID == nil && room.Defects[i].Section == section && room.Defects[i].Notes != "" {
-					return &room.Defects[i]
-				}
-			}
-			return nil
-		},
-
-		// wallRows — дефекты стен, сгруппированные по шаблону (для таблицы ст1-ст4)
-		"wallRows": func(room models.InspectionRoom) []wallRow {
-			type entry struct {
-				name   string
-				values [5]string
-			}
-			entries := make(map[uint]*entry)
-			order := []uint{}
-			for _, d := range room.Defects {
-				if d.Section != "wall" || d.Notes != "" || d.DefectTemplateID == nil || d.WallNumber < 1 || d.WallNumber > 4 {
-					continue
-				}
-				tid := *d.DefectTemplateID
-				if _, ok := entries[tid]; !ok {
-					entries[tid] = &entry{name: d.DefectTemplate.Name}
-					order = append(order, tid)
-				}
-				entries[tid].values[d.WallNumber] = d.Value
-			}
-			rows := make([]wallRow, 0, len(order))
-			for _, id := range order {
-				e := entries[id]
-				rows = append(rows, wallRow{Name: e.name, W1: e.values[1], W2: e.values[2], W3: e.values[3], W4: e.values[4]})
-			}
-			return rows
-		},
-
-		// windowTypeName — отображаемое название типа окна
-		"windowTypeName": func(t string) string {
-			switch t {
-			case "pvc":
-				return "ПВХ"
-			case "al":
-				return "Al"
-			case "wood":
-				return "Дерево"
-			}
-			return ""
-		},
-
-		// wallTypeName — отображаемые названия типов стен (через запятую)
-		"wallTypeName": func(t string) string {
-			var names []string
-			for _, p := range strings.Split(t, ",") {
-				switch strings.TrimSpace(p) {
-				case "paint":
-					names = append(names, "Окраска")
-				case "tile":
-					names = append(names, "Плитка")
-				case "gkl":
-					names = append(names, "ГКЛ")
-				}
-			}
-			return strings.Join(names, "/")
-		},
-
-		// hasWallType — есть ли конкретный тип в строке wall_type
-		"hasWallType": func(wallType, checkType string) bool {
-			for _, p := range strings.Split(wallType, ",") {
-				if strings.TrimSpace(p) == checkType {
-					return true
-				}
-			}
-			return false
-		},
-	}
-
-	tmpl := template.New("").Funcs(funcMap)
+	tmpl := template.New("").Funcs(templatefuncs.FuncMap())
 	tmpl = template.Must(tmpl.ParseGlob("web/templates/partials/*.html"))
 	tmpl = template.Must(tmpl.ParseGlob("web/templates/auth/*.html"))
 	tmpl = template.Must(tmpl.ParseGlob("web/templates/inspections/*.html"))
@@ -362,6 +166,7 @@ func main() {
 		c.Next()
 	})
 	{
+		protected.GET("/dashboard", handlers.GetDashboard)
 		protected.GET("/inspections", handlers.GetInspections)
 		protected.GET("/inspections/new", handlers.GetNewInspection)
 		protected.GET("/inspections/:id", handlers.GetInspection)

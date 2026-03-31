@@ -18,6 +18,7 @@ type YandexDisk struct {
 	token   string // OAuth-токен (YADISK_TOKEN)
 	rootDir string // Корневая папка, например "disk:/inspection-app"
 	client  *http.Client
+	sem     chan struct{} // семафор: ограничивает одновременные запросы к API
 }
 
 // NewYandexDisk создаёт адаптер.
@@ -31,8 +32,13 @@ func NewYandexDisk(token, rootDir string) *YandexDisk {
 		token:   token,
 		rootDir: strings.TrimRight(rootDir, "/"),
 		client:  &http.Client{Timeout: 30 * time.Second},
+		sem:     make(chan struct{}, 3), // макс 3 одновременных запроса
 	}
 }
+
+// acquire/release — управление семафором для throttling API-запросов
+func (y *YandexDisk) acquire() { y.sem <- struct{}{} }
+func (y *YandexDisk) release() { <-y.sem }
 
 // fullPath собирает полный путь Яндекс Диска из относительного.
 func (y *YandexDisk) fullPath(relPath string) string {
@@ -64,6 +70,9 @@ func (y *YandexDisk) EnsurePath(relPath string) error {
 
 // mkdir создаёт одну папку. Ответ 409 (ConflictError — уже существует) не является ошибкой.
 func (y *YandexDisk) mkdir(fullPath string) error {
+	y.acquire()
+	defer y.release()
+
 	endpoint := yadiskAPI + "/resources?path=" + url.QueryEscape(fullPath)
 	req, err := http.NewRequest(http.MethodPut, endpoint, nil)
 	if err != nil {
@@ -87,6 +96,9 @@ func (y *YandexDisk) mkdir(fullPath string) error {
 
 // UploadFile загружает файл по относительному пути.
 func (y *YandexDisk) UploadFile(relPath string, r io.Reader) error {
+	y.acquire()
+	defer y.release()
+
 	path := y.fullPath(relPath)
 
 	// Шаг 1: получаем URL для загрузки
@@ -159,6 +171,9 @@ func (y *YandexDisk) PublishFile(relPath string) (string, error) {
 
 // publish публикует ресурс (файл или папку) и возвращает его public_url.
 func (y *YandexDisk) publish(fullPath string) (string, error) {
+	y.acquire()
+	defer y.release()
+
 	// Шаг 1: публикуем ресурс
 	endpoint := yadiskAPI + "/resources/publish?path=" + url.QueryEscape(fullPath)
 	req, err := http.NewRequest(http.MethodPut, endpoint, nil)

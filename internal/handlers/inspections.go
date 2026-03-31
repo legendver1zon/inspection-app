@@ -19,6 +19,53 @@ import (
 
 const pageSize = 20
 
+// GetDashboard — страница статистики
+func GetDashboard(c *gin.Context) {
+	userID := c.GetUint("userID")
+	role := c.GetString("userRole")
+
+	var user models.User
+	storage.DB.First(&user, userID)
+
+	base := storage.DB.Model(&models.Inspection{})
+	if role != "admin" {
+		base = base.Where("user_id = ?", userID)
+	}
+
+	var draftCount, completedCount, totalCount int64
+	base.Session(&gorm.Session{}).Count(&totalCount)
+	base.Session(&gorm.Session{}).Where("status = ?", "draft").Count(&draftCount)
+	base.Session(&gorm.Session{}).Where("status = ?", "completed").Count(&completedCount)
+
+	// Создано сегодня
+	today := time.Now().Truncate(24 * time.Hour)
+	var todayCount int64
+	base.Session(&gorm.Session{}).Where("created_at >= ?", today).Count(&todayCount)
+
+	// Создано за последние 7 дней
+	weekAgo := today.AddDate(0, 0, -7)
+	var weekCount int64
+	base.Session(&gorm.Session{}).Where("created_at >= ?", weekAgo).Count(&weekCount)
+
+	// Фото: pending/failed
+	var photoPending, photoFailed int64
+	storage.DB.Model(&models.Photo{}).Where("upload_status = ?", "pending").Count(&photoPending)
+	storage.DB.Model(&models.Photo{}).Where("upload_status = ?", "failed").Count(&photoFailed)
+
+	c.HTML(http.StatusOK, "dashboard.html", gin.H{
+		"title":          "Статистика",
+		"user":           user,
+		"isAdmin":        role == "admin",
+		"totalCount":     totalCount,
+		"draftCount":     draftCount,
+		"completedCount": completedCount,
+		"todayCount":     todayCount,
+		"weekCount":      weekCount,
+		"photoPending":   photoPending,
+		"photoFailed":    photoFailed,
+	})
+}
+
 // GetInspections — список осмотров
 func GetInspections(c *gin.Context) {
 	userID := c.GetUint("userID")
@@ -30,6 +77,7 @@ func GetInspections(c *gin.Context) {
 	}
 
 	// Параметры поиска
+	actFilter := strings.TrimSpace(c.Query("act_number"))
 	ownerFilter := strings.TrimSpace(c.Query("owner"))
 	inspectorFilter := strings.TrimSpace(c.Query("inspector"))
 	addressFilter := strings.TrimSpace(c.Query("address"))
@@ -46,6 +94,14 @@ func GetInspections(c *gin.Context) {
 		draftQ = draftQ.Where("user_id = ?", userID)
 		completedQ = completedQ.Where("user_id = ?", userID)
 		listQ = listQ.Where("user_id = ?", userID)
+	}
+
+	// Фильтр по номеру акта
+	if actFilter != "" {
+		like := "%" + escapeLike(actFilter) + "%"
+		draftQ = draftQ.Where("act_number LIKE ?", like)
+		completedQ = completedQ.Where("act_number LIKE ?", like)
+		listQ = listQ.Where("act_number LIKE ?", like)
 	}
 
 	// Фильтр по фамилии собственника
@@ -111,11 +167,14 @@ func GetInspections(c *gin.Context) {
 	var user models.User
 	storage.DB.First(&user, userID)
 
-	hasFilters := ownerFilter != "" || inspectorFilter != "" || addressFilter != "" || dateFrom != "" || dateTo != ""
+	hasFilters := actFilter != "" || ownerFilter != "" || inspectorFilter != "" || addressFilter != "" || dateFrom != "" || dateTo != ""
 
 	// Базовый URL для ссылок пагинации (все текущие фильтры без page)
 	qp := url.Values{}
 	qp.Set("tab", tab)
+	if actFilter != "" {
+		qp.Set("act_number", actFilter)
+	}
 	if ownerFilter != "" {
 		qp.Set("owner", ownerFilter)
 	}
@@ -141,6 +200,7 @@ func GetInspections(c *gin.Context) {
 		"tab":             tab,
 		"draftCount":      draftCount,
 		"completedCount":  completedCount,
+		"filterActNumber": actFilter,
 		"filterOwner":     ownerFilter,
 		"filterInspector": inspectorFilter,
 		"filterAddress":   addressFilter,
@@ -546,23 +606,50 @@ func PostDeleteInspection(c *gin.Context) {
 		return
 	}
 
-	// Удаляем дефекты всех помещений (subquery вместо N+1 цикла)
-	roomIDs := storage.DB.Model(&models.InspectionRoom{}).Select("id").Where("inspection_id = ?", id)
-	storage.DB.Where("room_id IN (?)", roomIDs).Delete(&models.RoomDefect{})
-	storage.DB.Where("inspection_id = ?", id).Delete(&models.InspectionRoom{})
-
-	// Удаляем файлы документов и записи
+	// Собираем пути файлов до транзакции (удалим после успешного коммита)
 	var docs []models.Document
 	storage.DB.Where("inspection_id = ?", id).Find(&docs)
+	var filePaths []string
 	for _, doc := range docs {
 		if doc.FilePath != "" {
-			os.Remove(doc.FilePath)
+			filePaths = append(filePaths, doc.FilePath)
 		}
 	}
-	storage.DB.Where("inspection_id = ?", id).Delete(&models.Document{})
 
-	// Удаляем сам осмотр
-	storage.DB.Delete(&inspection)
+	err = storage.DB.Transaction(func(tx *gorm.DB) error {
+		// Удаляем фото дефектов
+		defectIDs := tx.Model(&models.RoomDefect{}).Select("id").
+			Where("room_id IN (?)", tx.Model(&models.InspectionRoom{}).Select("id").Where("inspection_id = ?", id))
+		if err := tx.Where("defect_id IN (?)", defectIDs).Delete(&models.Photo{}).Error; err != nil {
+			return err
+		}
+		// Удаляем дефекты всех помещений (subquery вместо N+1 цикла)
+		roomIDs := tx.Model(&models.InspectionRoom{}).Select("id").Where("inspection_id = ?", id)
+		if err := tx.Where("room_id IN (?)", roomIDs).Delete(&models.RoomDefect{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("inspection_id = ?", id).Delete(&models.InspectionRoom{}).Error; err != nil {
+			return err
+		}
+		// Удаляем документы
+		if err := tx.Where("inspection_id = ?", id).Delete(&models.Document{}).Error; err != nil {
+			return err
+		}
+		// Удаляем сам осмотр
+		return tx.Delete(&inspection).Error
+	})
+	if err != nil {
+		logger.Ctx(c.Request.Context()).Error("ошибка удаления осмотра", "id", id, "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка удаления"})
+		return
+	}
+
+	// Файлы удаляем после успешной транзакции
+	for _, fp := range filePaths {
+		if err := os.Remove(fp); err != nil {
+			logger.Ctx(c.Request.Context()).Warn("не удалось удалить файл", "path", fp, "error", err)
+		}
+	}
 
 	c.Redirect(http.StatusFound, "/inspections")
 }

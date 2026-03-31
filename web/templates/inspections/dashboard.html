@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ .title }} — Акты осмотра</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/ui.css">
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <script>(function(){var t=localStorage.getItem("theme");if(t)document.documentElement.setAttribute("data-theme",t);})()</script>
+    <style>
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        .stat-card .stat-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--primary);
+            line-height: 1;
+        }
+        .stat-card .stat-label {
+            margin-top: 8px;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+        }
+        .stat-card.warning .stat-value { color: var(--warning, #e67e22); }
+        .stat-card.danger .stat-value { color: var(--danger, #e74c3c); }
+        .stat-card.success .stat-value { color: var(--success, #27ae60); }
+        .dashboard-section {
+            margin-bottom: 24px;
+        }
+        .dashboard-section h2 {
+            margin-bottom: 12px;
+            font-size: 1.1rem;
+        }
+    </style>
+</head>
+<body>
+{{ template "navbar" . }}
+
+<main class="container page-enter">
+    <div class="page-header">
+        <h1>Статистика</h1>
+        <a href="/inspections" class="btn btn-secondary">← К осмотрам</a>
+    </div>
+
+    <div class="dashboard-section">
+        <h2>Осмотры</h2>
+        <div class="dashboard-grid">
+            <div class="stat-card">
+                <div class="stat-value">{{ .totalCount }}</div>
+                <div class="stat-label">Всего</div>
+            </div>
+            <div class="stat-card warning">
+                <div class="stat-value">{{ .draftCount }}</div>
+                <div class="stat-label">Черновики</div>
+            </div>
+            <div class="stat-card success">
+                <div class="stat-value">{{ .completedCount }}</div>
+                <div class="stat-label">Завершено</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ .todayCount }}</div>
+                <div class="stat-label">Создано сегодня</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">{{ .weekCount }}</div>
+                <div class="stat-label">За 7 дней</div>
+            </div>
+        </div>
+    </div>
+
+    {{ if .isAdmin }}
+    <div class="dashboard-section">
+        <h2>Фото (загрузка в облако)</h2>
+        <div class="dashboard-grid">
+            <div class="stat-card{{ if gt .photoPending 0 }} warning{{ end }}">
+                <div class="stat-value">{{ .photoPending }}</div>
+                <div class="stat-label">В очереди</div>
+            </div>
+            <div class="stat-card{{ if gt .photoFailed 0 }} danger{{ end }}">
+                <div class="stat-value">{{ .photoFailed }}</div>
+                <div class="stat-label">Ошибки загрузки</div>
+            </div>
+        </div>
+    </div>
+    {{ end }}
+</main>
+
+<script src="/static/js/ui.js"></script>
+</body>
+</html>

@@ -791,6 +791,8 @@ a:hover { color: var(--brand-dark); text-decoration: underline; }
     outline: none;
 }
 .room-header input::placeholder { color: rgba(255,255,255,.65); }
+.room-header { cursor: pointer; user-select: none; }
+.room-toggle-icon { font-size: 12px; transition: transform .2s; }
 
 /* Замеры */
 .measures-block { padding: 0 22px; border-bottom: 1px solid var(--border-light); }

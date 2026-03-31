@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -35,7 +36,16 @@ func Connect(dsn string) {
 	if err != nil {
 		log.Fatalf("Ошибка подключения к БД: %v", err)
 	}
-	applog.Info("database connected", "dsn", maskDSN(dsn))
+
+	sqlDB, err := DB.DB()
+	if err != nil {
+		log.Fatalf("Ошибка получения sql.DB: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(25)
+	sqlDB.SetMaxIdleConns(5)
+	sqlDB.SetConnMaxLifetime(5 * time.Minute)
+
+	applog.Info("database connected", "dsn", maskDSN(dsn), "max_open", 25, "max_idle", 5)
 }
 
 // ConnectFromEnv читает DATABASE_URL из переменных окружения и подключается к БД.

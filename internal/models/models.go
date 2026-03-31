@@ -44,7 +44,7 @@ type Inspection struct {
 	PlanImage        string
 	OwnerName        string
 	DeveloperRepName string
-	Status           string `gorm:"not null;default:'draft'"`
+	Status           string `gorm:"not null;default:'draft';index"`
 	PhotoFolderURL   string // публичная ссылка на папку с фото в облаке
 
 	// Общие замечания по квартире (не привязаны к помещению)
@@ -62,7 +62,7 @@ type Photo struct {
 	FileURL      string // публичная ссылка на файл (после синхронизации с облаком)
 	FilePath     string // локальный путь до файла (до синхронизации)
 	FileName     string
-	UploadStatus string `gorm:"not null;default:'done'"` // pending | uploading | done | failed
+	UploadStatus string `gorm:"not null;default:'done';index"` // pending | uploading | done | failed
 }
 
 // InspectionRoom — помещение (основная единица, содержит замеры и дефекты)

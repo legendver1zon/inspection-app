@@ -97,6 +97,10 @@
             <input type="hidden" name="tab" id="tab-input" value="{{ .tab }}">
             <div class="filter-row">
                 <div class="filter-group">
+                    <label>№ акта</label>
+                    <input type="text" name="act_number" value="{{ .filterActNumber }}" placeholder="Например: 42">
+                </div>
+                <div class="filter-group">
                     <label>Фамилия собственника</label>
                     <input type="text" name="owner" value="{{ .filterOwner }}" placeholder="Введите фамилию...">
                 </div>
