@@ -3,10 +3,10 @@ package worker
 import (
 	"context"
 	"inspection-app/internal/handlers"
+	"inspection-app/internal/logger"
 	"inspection-app/internal/models"
 	"inspection-app/internal/queue"
 	"inspection-app/internal/storage"
-	"log"
 	"sync"
 	"time"
 )
@@ -66,7 +66,7 @@ func (u *Uploader) loop(ctx context.Context) {
 
 		inspectionID, err := u.q.Pop(ctx)
 		if err != nil {
-			log.Printf("worker: Pop error: %v", err)
+			logger.Error("worker pop", "error", err)
 			continue
 		}
 		if inspectionID == 0 {
@@ -78,7 +78,7 @@ func (u *Uploader) loop(ctx context.Context) {
 }
 
 func (u *Uploader) processJob(inspectionID uint) {
-	log.Printf("worker: processing inspectionID=%d", inspectionID)
+	logger.Debug("worker processing", "inspection_id", inspectionID)
 
 	// Проверяем, есть ли pending-фото — если нет, пропускаем
 	var count int64
@@ -89,12 +89,12 @@ func (u *Uploader) processJob(inspectionID uint) {
 		Count(&count)
 
 	if count == 0 {
-		log.Printf("worker: no pending photos for inspectionID=%d, skipping", inspectionID)
+		logger.Debug("worker skip, no pending", "inspection_id", inspectionID)
 		return
 	}
 
 	handlers.UploadInspectionPhotos(inspectionID)
-	log.Printf("worker: done inspectionID=%d", inspectionID)
+	logger.Info("worker done", "inspection_id", inspectionID)
 }
 
 // recoverOnStartup находит незавершённые задачи после рестарта сервера и возобновляет их.
@@ -115,9 +115,9 @@ func (u *Uploader) recoverOnStartup(ctx context.Context) {
 
 	for _, id := range inspectionIDs {
 		if err := u.q.Push(ctx, id); err != nil {
-			log.Printf("worker: recover Push inspectionID=%d: %v", id, err)
+			logger.Error("worker recover push", "inspection_id", id, "error", err)
 		} else {
-			log.Printf("worker: recovered inspectionID=%d", id)
+			logger.Info("worker recovered", "inspection_id", id)
 		}
 	}
 }
@@ -161,7 +161,7 @@ func (u *Uploader) retryFailed(ctx context.Context) {
 		}
 
 		if err := u.q.Push(ctx, id); err != nil {
-			log.Printf("worker: retryFailed Push inspectionID=%d: %v", id, err)
+			logger.Error("worker retry push", "inspection_id", id, "error", err)
 		}
 	}
 }

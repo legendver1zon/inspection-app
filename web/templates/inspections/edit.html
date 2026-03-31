@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ .title }} — Акты осмотра</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/ui.css">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <script>(function(){var t=localStorage.getItem("theme");if(t)document.documentElement.setAttribute("data-theme",t);})()</script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css">
@@ -116,7 +117,7 @@
     </div>
 
     <!-- Основная форма: помещения + статус -->
-    <form method="POST" action="/inspections/{{ .inspection.ID }}/edit" enctype="multipart/form-data" id="main-form">
+    <form method="POST" action="/inspections/{{ .inspection.ID }}/edit" enctype="multipart/form-data" id="main-form" data-loading>
         <input type="hidden" name="active_rooms" id="active_rooms" value="{{ .activeRooms }}">
 
         <!-- Помещения -->
@@ -571,5 +572,6 @@ function updateWinBtn(roomNum) {
     });
 })();
 </script>
+<script src="/static/js/ui.js"></script>
 </body>
 </html>

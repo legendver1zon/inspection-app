@@ -2,11 +2,11 @@ package handlers
 
 import (
 	"fmt"
+	"inspection-app/internal/logger"
 	"inspection-app/internal/models"
 	"inspection-app/internal/pdf"
 	"inspection-app/internal/queue"
 	"inspection-app/internal/storage"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -46,7 +46,7 @@ func PostGenerateDocument(c *gin.Context) {
 		// Создаём/переименовываем папку на Яндекс Диске (нужна для QR-кода в PDF).
 		// Загрузка фото происходит сразу при добавлении, здесь не запускаем.
 		if _, err := EnsureInspectionFolder(inspection.ID); err != nil {
-			log.Printf("PostGenerateDocument EnsureFolder: %v", err)
+			logger.Ctx(c.Request.Context()).Error("PDF generate EnsureFolder", "inspection_id", inspection.ID, "error", err)
 		}
 		// Перечитываем осмотр, чтобы получить актуальный PhotoFolderURL
 		storage.DB.Preload("User").Preload("Rooms.Defects.DefectTemplate").Preload("Rooms.Defects.Photos").

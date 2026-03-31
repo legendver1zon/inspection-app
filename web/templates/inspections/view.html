@@ -5,123 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ .title }} — Акты осмотра</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/ui.css">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <script>(function(){var t=localStorage.getItem("theme");if(t)document.documentElement.setAttribute("data-theme",t);})()</script>
-    <style>
-        .defect-photo-btn {
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            width: 28px;
-            height: 28px;
-            border-radius: 6px;
-            border: 1px dashed var(--border);
-            color: var(--primary, #4361ee);
-            font-size: 14px;
-            opacity: 0.7;
-            flex-shrink: 0;
-            transition: opacity 0.2s, border-color 0.2s;
-        }
-        .defect-photo-btn:hover { opacity: 1; border-color: var(--primary, #4361ee); }
-        .defect-photo-btn.uploading { opacity: 0.4; pointer-events: none; }
-        .defect-photos-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-            padding: 6px 12px 10px 12px;
-        }
-        .defect-photo-thumb {
-            width: 80px;
-            height: 64px;
-            object-fit: cover;
-            border-radius: 5px;
-            border: 1px solid var(--border);
-            cursor: pointer;
-            transition: transform 0.15s, box-shadow 0.15s;
-            display: block;
-        }
-        .defect-photo-thumb:hover { transform: scale(1.05); box-shadow: 0 2px 8px rgba(0,0,0,.25); }
-        .photo-wrap {
-            position: relative;
-            display: inline-flex;
-            align-items: center;
-        }
-        .photo-delete-btn {
-            position: absolute;
-            top: -6px;
-            right: -6px;
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            background: #e53e3e;
-            color: #fff;
-            border: none;
-            font-size: 12px;
-            line-height: 1;
-            cursor: pointer;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            padding: 0;
-            z-index: 1;
-        }
-        .photo-wrap:hover .photo-delete-btn { display: flex; }
-        .photo-filename-label {
-            font-size: 12px;
-            color: var(--text-muted, #64748b);
-            padding: 4px 8px;
-            border: 1px dashed var(--border);
-            border-radius: 4px;
-            align-self: center;
-        }
-        .photo-cloud-link {
-            font-size: 12px;
-            color: var(--primary, #4361ee);
-            padding: 4px 8px;
-            border: 1px solid var(--border);
-            border-radius: 4px;
-            text-decoration: none;
-            align-self: center;
-            white-space: nowrap;
-            max-width: 120px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            display: inline-block;
-        }
-        .photo-cloud-link:hover { background: var(--surface); }
-        .qr-card { text-align: center; padding: 24px; }
-        .qr-card img { border-radius: 8px; border: 1px solid var(--border); }
-        /* Иконки статуса загрузки фото */
-        .photo-wrap { position: relative; }
-        .photo-wrap[data-upload-status="pending"]::after,
-        .photo-wrap[data-upload-status="uploading"]::after {
-            content: '⏳';
-            position: absolute;
-            bottom: 2px;
-            right: 2px;
-            font-size: 11px;
-            line-height: 1;
-            background: rgba(255,255,255,0.85);
-            border-radius: 3px;
-            padding: 1px 2px;
-            pointer-events: none;
-        }
-        .photo-wrap[data-upload-status="failed"]::after {
-            content: '✗';
-            position: absolute;
-            bottom: 2px;
-            right: 2px;
-            font-size: 12px;
-            line-height: 1;
-            color: #ef4444;
-            font-weight: bold;
-            background: rgba(255,255,255,0.85);
-            border-radius: 3px;
-            padding: 1px 2px;
-            pointer-events: none;
-        }
-    </style>
 </head>
 <body>
     {{ template "navbar" . }}
@@ -770,9 +656,9 @@
             </div>
             {{ end }}
 
-            <form method="POST" action="/inspections/{{ .inspection.ID }}/generate">
+            <form method="POST" action="/inspections/{{ .inspection.ID }}/generate" data-loading>
                 <div style="display:flex;align-items:center;gap:12px">
-                    <select name="format" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--bg);color:var(--text)">
+                    <select name="format" class="form-group" style="padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;background:var(--surface);color:var(--text)">
                         <option value="pdf">PDF</option>
                     </select>
                     <button type="submit" class="btn btn-primary">Сгенерировать документ</button>
@@ -862,7 +748,9 @@
         await Promise.all(uploads);
 
         if (errors > 0) {
-            alert('Не удалось загрузить ' + errors + ' из ' + files.length + ' фото');
+            showToast('Не удалось загрузить ' + errors + ' из ' + files.length + ' фото', 'error', {title: 'Ошибка загрузки'});
+        } else if (uploaded > 0) {
+            showToast('Загружено ' + uploaded + ' фото', 'success');
         }
 
         startUploadPoll();
@@ -881,7 +769,7 @@
             const data = await resp.json();
 
             if (!resp.ok) {
-                alert('Ошибка: ' + (data.error || resp.status));
+                showToast(data.error || 'Ошибка ' + resp.status, 'error');
                 btn.disabled = false;
                 return;
             }
@@ -895,7 +783,7 @@
                 photosDiv.style.display = 'none';
             }
         } catch (e) {
-            alert('Ошибка сети: ' + e.message);
+            showToast('Ошибка сети: ' + e.message, 'error');
             btn.disabled = false;
         }
     }
@@ -954,5 +842,6 @@
         }
     })();
     </script>
+<script src="/static/js/ui.js"></script>
 </body>
 </html>

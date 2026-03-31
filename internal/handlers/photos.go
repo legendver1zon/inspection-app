@@ -5,10 +5,10 @@ import (
 	"context"
 	"fmt"
 	"inspection-app/internal/cloudstorage"
+	"inspection-app/internal/logger"
 	"inspection-app/internal/models"
 	"inspection-app/internal/storage"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -137,7 +137,7 @@ func PostUploadPhoto(c *gin.Context) {
 	if cloudStore != nil {
 		if uploadQueue != nil {
 			if err := uploadQueue.Push(context.Background(), inspection.ID); err != nil {
-				log.Printf("PostUploadPhoto: Redis push error, fallback sync: %v", err)
+				logger.Ctx(c.Request.Context()).Error("redis push failed, fallback sync", "inspection_id", inspection.ID, "error", err)
 				go safeSync(inspection.ID)
 			}
 		} else {
@@ -195,7 +195,7 @@ func DeletePhoto(c *gin.Context) {
 func safeSync(inspectionID uint) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Printf("SyncInspectionPhotos panic inspectionID=%d: %v", inspectionID, r)
+			logger.Error("SyncInspectionPhotos panic", "inspection_id", inspectionID, "error", r)
 		}
 	}()
 	SyncInspectionPhotos(inspectionID)
@@ -256,7 +256,7 @@ func EnsureInspectionFolder(inspectionID uint) (string, error) {
 	if inspection.PhotoFolderURL != "" {
 		oldExists, err := cloudStore.FolderExists(idFolder)
 		if err != nil {
-			log.Printf("EnsureInspectionFolder FolderExists %q: %v", idFolder, err)
+			logger.Warn("EnsureInspectionFolder FolderExists", "path", idFolder, "error", err)
 		}
 		if !oldExists {
 			return inspection.PhotoFolderURL, nil
@@ -270,10 +270,10 @@ func EnsureInspectionFolder(inspectionID uint) (string, error) {
 		newExists, _ := cloudStore.FolderExists(actFolder)
 		if oldExists && !newExists {
 			if err := cloudStore.MoveFolder(idFolder, actFolder); err != nil {
-				log.Printf("EnsureInspectionFolder MoveFolder %q → %q: %v", idFolder, actFolder, err)
+				logger.Error("EnsureInspectionFolder MoveFolder", "from", idFolder, "to", actFolder, "error", err)
 				// Не прерываем — пробуем создать заново
 			} else {
-				log.Printf("EnsureInspectionFolder: переименована папка %s → %s", idFolder, actFolder)
+				logger.Info("EnsureInspectionFolder moved", "from", idFolder, "to", actFolder)
 			}
 		}
 	}
@@ -385,7 +385,7 @@ func SyncInspectionPhotos(inspectionID uint) {
 
 	// Публикуем папку осмотра
 	if _, err := EnsureInspectionFolder(inspectionID); err != nil {
-		log.Printf("SyncInspectionPhotos EnsureFolder: %v", err)
+		logger.Error("SyncInspectionPhotos EnsureFolder", "inspection_id", inspectionID, "error", err)
 	}
 }
 
@@ -474,7 +474,7 @@ func uploadTasksParallel(tasks []uploadTask, callback func(uploadTask, bool, str
 			continue
 		}
 		if err := cloudStore.EnsurePath(t.relFolder); err != nil {
-			log.Printf("uploadTasks EnsurePath %q: %v", t.relFolder, err)
+			logger.Error("upload EnsurePath", "folder", t.relFolder, "error", err)
 		}
 		createdFolders[t.relFolder] = true
 	}
@@ -492,7 +492,7 @@ func uploadTasksParallel(tasks []uploadTask, callback func(uploadTask, bool, str
 
 			data, err := os.ReadFile(t.filePath)
 			if err != nil {
-				log.Printf("uploadTasks read %q: %v", t.filePath, err)
+				logger.Error("upload read file", "path", t.filePath, "error", err)
 				callback(t, false, "")
 				return
 			}
@@ -503,13 +503,13 @@ func uploadTasksParallel(tasks []uploadTask, callback func(uploadTask, bool, str
 				if uploadErr == nil {
 					break
 				}
-				log.Printf("uploadTasks upload attempt %d/%d %q: %v", attempt+1, uploadRetries, t.relFile, uploadErr)
+				logger.Warn("upload attempt failed", "attempt", attempt+1, "max", uploadRetries, "file", t.relFile, "error", uploadErr)
 				if attempt < uploadRetries-1 {
 					time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
 				}
 			}
 			if uploadErr != nil {
-				log.Printf("uploadTasks upload failed %q: %v", t.relFile, uploadErr)
+				logger.Error("upload failed permanently", "file", t.relFile, "error", uploadErr)
 				callback(t, false, "")
 				return
 			}

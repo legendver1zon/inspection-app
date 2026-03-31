@@ -1,6 +1,7 @@
 package storage
 
 import (
+	applog "inspection-app/internal/logger"
 	"inspection-app/internal/models"
 	"log"
 	"net/url"
@@ -8,7 +9,7 @@ import (
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
-	"gorm.io/gorm/logger"
+	gormlog "gorm.io/gorm/logger"
 )
 
 // maskDSN маскирует пароль в DSN для безопасного логирования.
@@ -29,12 +30,12 @@ var DB *gorm.DB
 func Connect(dsn string) {
 	var err error
 	DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{
-		Logger: logger.Default.LogMode(logger.Warn),
+		Logger: gormlog.Default.LogMode(gormlog.Warn),
 	})
 	if err != nil {
 		log.Fatalf("Ошибка подключения к БД: %v", err)
 	}
-	log.Println("БД подключена:", maskDSN(dsn))
+	applog.Info("database connected", "dsn", maskDSN(dsn))
 }
 
 // ConnectFromEnv читает DATABASE_URL из переменных окружения и подключается к БД.
@@ -63,5 +64,5 @@ func Migrate() {
 	if err != nil {
 		log.Fatalf("Ошибка миграции: %v", err)
 	}
-	log.Println("Миграции применены")
+	applog.Info("migrations applied")
 }

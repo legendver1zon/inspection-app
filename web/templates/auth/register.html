@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ .title }} — Акты осмотра</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/ui.css">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <script>(function(){var t=localStorage.getItem("theme");if(t)document.documentElement.setAttribute("data-theme",t);})()</script>
 </head>
@@ -17,7 +18,7 @@
         <div class="alert alert-error">{{ .error }}</div>
         {{ end }}
 
-        <form method="POST" action="/register">
+        <form method="POST" action="/register" data-loading>
             <div class="form-group">
                 <label for="full_name">ФИО полностью</label>
                 <input type="text" id="full_name" name="full_name" required
@@ -109,5 +110,6 @@ function togglePwd(id, btn) {
     btn.querySelector('.eye-closed').style.display = show ? 'inline' : 'none';
 }
 </script>
+<script src="/static/js/ui.js"></script>
 </body>
 </html>

@@ -1,10 +1,10 @@
 package handlers
 
 import (
+	"inspection-app/internal/logger"
 	"inspection-app/internal/models"
 	"inspection-app/internal/security"
 	"inspection-app/internal/storage"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -367,7 +367,7 @@ func PostEditInspection(c *gin.Context) {
 
 			room := parseRoom(c, iStr, inspection.ID, i)
 			if err := tx.Create(&room).Error; err != nil {
-				log.Printf("PostEditInspection: room %d create error: %v", i, err)
+				logger.Ctx(c.Request.Context()).Error("room create failed", "room", i, "inspection_id", inspection.ID, "error", err)
 				continue
 			}
 
@@ -428,7 +428,7 @@ func PostEditInspection(c *gin.Context) {
 	})
 
 	if txErr != nil {
-		log.Printf("PostEditInspection transaction error: %v", txErr)
+		logger.Ctx(c.Request.Context()).Error("edit inspection transaction failed", "inspection_id", inspection.ID, "error", txErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения"})
 		return
 	}
@@ -438,11 +438,11 @@ func PostEditInspection(c *gin.Context) {
 		go func(id uint) {
 			defer func() {
 				if r := recover(); r != nil {
-					log.Printf("EnsureInspectionFolder panic inspectionID=%d: %v", id, r)
+					logger.Error("EnsureInspectionFolder panic", "inspection_id", id, "error", r)
 				}
 			}()
 			if _, err := EnsureInspectionFolder(id); err != nil {
-				log.Printf("PostEditInspection EnsureFolder inspectionID=%d: %v", id, err)
+				logger.Error("EnsureInspectionFolder failed", "inspection_id", id, "error", err)
 			}
 		}(inspection.ID)
 	}

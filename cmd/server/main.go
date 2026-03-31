@@ -7,13 +7,13 @@ import (
 	"inspection-app/internal/auth"
 	"inspection-app/internal/cloudstorage"
 	"inspection-app/internal/handlers"
+	"inspection-app/internal/logger"
 	"inspection-app/internal/models"
 	"inspection-app/internal/queue"
 	"inspection-app/internal/security"
 	"inspection-app/internal/seed"
 	"inspection-app/internal/storage"
 	"inspection-app/internal/worker"
-	"io"
 	"log"
 	"net/http"
 	"os"
@@ -31,21 +31,7 @@ type wallRow struct {
 }
 
 func setupLogger() {
-	logDir := "/var/log/inspection-app"
-	if err := os.MkdirAll(logDir, 0755); err != nil {
-		log.Printf("Не удалось создать директорию логов: %v", err)
-		return
-	}
-	logFile, err := os.OpenFile(logDir+"/app.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
-	if err != nil {
-		log.Printf("Не удалось открыть лог-файл: %v", err)
-		return
-	}
-	mw := io.MultiWriter(os.Stdout, logFile)
-	log.SetOutput(mw)
-	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
-	gin.DefaultWriter = mw
-	gin.DefaultErrorWriter = mw
+	logger.Init()
 }
 
 func main() {
@@ -61,9 +47,9 @@ func main() {
 	if token := os.Getenv("YADISK_TOKEN"); token != "" {
 		rootDir := os.Getenv("YADISK_ROOT")
 		handlers.SetCloudStorage(cloudstorage.NewYandexDisk(token, rootDir))
-		log.Println("Облачное хранилище: Яндекс Диск")
+		logger.Info("cloud storage enabled", "provider", "yandex_disk")
 	} else {
-		log.Println("YADISK_TOKEN не задан — загрузка фото в облако отключена")
+		logger.Warn("cloud storage disabled", "reason", "YADISK_TOKEN not set")
 	}
 
 	// Инициализация Redis-очереди и фонового воркера загрузки фото
@@ -72,18 +58,20 @@ func main() {
 
 	q, err := queue.NewFromEnv()
 	if err != nil {
-		log.Printf("Redis недоступен, асинхронная загрузка фото отключена: %v", err)
+		logger.Warn("redis unavailable, sync photo upload", "error", err)
 	} else if q != nil {
 		handlers.SetUploadQueue(q)
 		uploader := worker.New(q)
 		uploader.Start(ctx, 5)
 		defer uploader.Stop()
-		log.Println("Redis подключён, фоновый воркер запущен (5 горутин)")
+		logger.Info("redis connected, worker started", "goroutines", 5)
 	} else {
-		log.Println("REDIS_URL не задан — загрузка фото выполняется синхронно")
+		logger.Warn("redis not configured", "reason", "REDIS_URL not set")
 	}
 
-	r := gin.Default()
+	r := gin.New()
+	r.Use(logger.PanicRecovery())
+	r.Use(logger.RequestLogger())
 
 	funcMap := template.FuncMap{
 		"string": func(v interface{}) string {
@@ -417,18 +405,18 @@ func main() {
 	}
 
 	go func() {
-		log.Println("Сервер запущен: http://localhost:8080")
+		logger.Info("server started", "addr", ":8080")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Ошибка запуска сервера: %v", err)
+			log.Fatalf("server start failed: %v", err)
 		}
 	}()
 
 	// Ждём сигнала остановки
 	<-ctx.Done()
-	log.Println("Завершение работы сервера...")
+	logger.Info("server shutting down")
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 	if err := srv.Shutdown(shutdownCtx); err != nil {
-		log.Printf("Ошибка graceful shutdown: %v", err)
+		logger.Error("graceful shutdown failed", "error", err)
 	}
 }
