@@ -358,6 +358,36 @@ func UploadInspectionPhotos(inspectionID uint) {
 			storage.DB.Model(t.photo).Update("upload_status", "failed")
 		}
 	})
+
+	// Push обновление через WebSocket
+	notifyUploadProgress(inspectionID)
+}
+
+// notifyUploadProgress собирает текущий статус фото и отправляет через WebSocket.
+func notifyUploadProgress(inspectionID uint) {
+	type statusCount struct {
+		Status string
+		Count  int64
+	}
+	var rows []statusCount
+	storage.DB.Model(&models.Photo{}).
+		Select("photos.upload_status as status, COUNT(*) as count").
+		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
+		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+		Where("inspection_rooms.inspection_id = ?", inspectionID).
+		Group("photos.upload_status").
+		Scan(&rows)
+
+	counts := map[string]interface{}{"pending": int64(0), "uploading": int64(0), "done": int64(0), "failed": int64(0)}
+	var total int64
+	for _, r := range rows {
+		counts[r.Status] = r.Count
+		total += r.Count
+	}
+	counts["total"] = total
+	counts["all_done"] = counts["pending"] == int64(0) && counts["uploading"] == int64(0) && counts["failed"] == int64(0)
+
+	NotifyUploadStatus(inspectionID, counts)
 }
 
 // SyncInspectionPhotos — синхронный fallback: загружает все фото и публикует папку.

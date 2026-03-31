@@ -787,58 +787,82 @@
             btn.disabled = false;
         }
     }
-    // --- Лёгкий polling статуса загрузки фото (только пока есть незавершённые) ---
+    // --- WebSocket + polling fallback для статуса загрузки фото ---
     (function() {
-        const inspectionId = {{ .inspection.ID }};
-        let pollTimer = null;
+        var inspectionId = {{ .inspection.ID }};
+        var pollTimer = null;
+        var ws = null;
 
         function hasUnfinished() {
             return !!document.querySelector('.photo-wrap[data-upload-status="pending"],.photo-wrap[data-upload-status="uploading"]');
         }
 
-        function stopUploadPoll() {
+        function stopAll() {
             if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+            if (ws) { ws.close(); ws = null; }
         }
 
-        async function pollOnce() {
-            try {
-                const resp = await fetch('/inspections/' + inspectionId + '/upload-status');
-                if (!resp.ok) { stopUploadPoll(); return; }
-                const d = await resp.json();
-                const notice = document.getElementById('upload-notice');
+        function handleStatus(d) {
+            var notice = document.getElementById('upload-notice');
 
-                if (d.all_done) {
-                    stopUploadPoll();
-                    // Перезагружаем страницу чтобы показать облачные ссылки вместо локальных
-                    location.reload();
-                    return;
-                }
-                if (d.failed > 0 && d.pending === 0 && d.uploading === 0) {
-                    stopUploadPoll();
-                    if (notice) {
-                        notice.style.display = 'block';
-                        notice.textContent = '✗ Ошибка загрузки ' + d.failed + ' фото на Яндекс Диск. Повтор произойдёт автоматически.';
-                    }
-                    // Обновляем иконки на ✗
-                    document.querySelectorAll('.photo-wrap[data-upload-status="pending"],.photo-wrap[data-upload-status="uploading"]')
-                        .forEach(el => el.dataset.uploadStatus = 'failed');
-                    return;
-                }
-                if (notice && d.uploading + d.pending > 0) {
+            if (d.all_done) {
+                stopAll();
+                location.reload();
+                return;
+            }
+            if (d.failed > 0 && d.pending === 0 && d.uploading === 0) {
+                stopAll();
+                if (notice) {
                     notice.style.display = 'block';
-                    notice.textContent = '⏳ Загрузка фото в облако: ' + d.done + ' из ' + d.total;
+                    notice.textContent = '✗ Ошибка загрузки ' + d.failed + ' фото на Яндекс Диск. Повтор произойдёт автоматически.';
                 }
-            } catch (e) { /* сеть недоступна */ }
+                document.querySelectorAll('.photo-wrap[data-upload-status="pending"],.photo-wrap[data-upload-status="uploading"]')
+                    .forEach(function(el) { el.dataset.uploadStatus = 'failed'; });
+                return;
+            }
+            if (notice && d.uploading + d.pending > 0) {
+                notice.style.display = 'block';
+                notice.textContent = '⏳ Загрузка фото в облако: ' + d.done + ' из ' + d.total;
+            }
+        }
+
+        // WebSocket подключение
+        function connectWs() {
+            var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+            ws = new WebSocket(proto + '//' + location.host + '/inspections/' + inspectionId + '/ws');
+
+            ws.onmessage = function(e) {
+                try { handleStatus(JSON.parse(e.data)); } catch(err) {}
+            };
+            ws.onclose = function() {
+                ws = null;
+                // Fallback на polling при потере WS
+                if (hasUnfinished()) startPoll();
+            };
+            ws.onerror = function() {
+                ws.close();
+            };
+        }
+
+        // Polling fallback
+        function startPoll() {
+            if (pollTimer) return;
+            pollTimer = setInterval(async function() {
+                try {
+                    var resp = await fetch('/inspections/' + inspectionId + '/upload-status');
+                    if (!resp.ok) { stopAll(); return; }
+                    handleStatus(await resp.json());
+                } catch(e) {}
+            }, 5000); // 5 сек вместо 3 — fallback менее агрессивный
         }
 
         window.startUploadPoll = function() {
-            if (pollTimer) return; // уже запущен
-            pollTimer = setInterval(pollOnce, 3000);
+            if (ws || pollTimer) return;
+            try { connectWs(); } catch(e) { startPoll(); }
         };
 
-        // Запускаем polling если на странице есть незавершённые фото
         if (hasUnfinished()) {
-            startUploadPoll();
+            try { connectWs(); } catch(e) { startPoll(); }
         }
     })();
     </script>

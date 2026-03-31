@@ -174,6 +174,7 @@ func main() {
 		protected.POST("/inspections/:id/edit", handlers.PostEditInspection)
 		protected.POST("/inspections/:id/status", handlers.PostUpdateStatus)
 		protected.GET("/inspections/:id/upload-status", handlers.GetUploadStatus)
+		protected.GET("/inspections/:id/ws", handlers.WsUploadStatus)
 
 		protected.POST("/inspections/:id/generate", handlers.PostGenerateDocument)
 		protected.GET("/documents/:id/download", handlers.GetDownloadDocument)
