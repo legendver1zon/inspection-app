@@ -2,8 +2,156 @@ package pdf
 
 import (
 	"inspection-app/internal/models"
+	"os"
+	"strings"
 	"testing"
+	"time"
 )
+
+// --- Integration: Generate() creates a valid PDF ---
+
+func TestGenerate_CreatesFile(t *testing.T) {
+	tmpDir := t.TempDir() // автоматически очищается
+
+	inspection := &models.Inspection{
+		ActNumber:      "42-310326",
+		Date:           time.Date(2026, 3, 31, 10, 0, 0, 0, time.UTC),
+		InspectionTime: "10:00",
+		Address:        "ул. Тестовая, д. 1, кв. 5",
+		RoomsCount:     2,
+		Floor:          3,
+		TotalArea:      55.5,
+		TempOutside:    -5,
+		TempInside:     22,
+		Humidity:       45.3,
+		OwnerName:      "Иванов И.И.",
+		DeveloperRepName: "Петров П.П.",
+		User:           models.User{FullName: "Сидоров С.С.", Initials: "Сидоров С.С."},
+		Rooms: []models.InspectionRoom{
+			{
+				RoomNumber: 1,
+				RoomName:   "Кухня",
+				Length:     4.5,
+				Width:      3.2,
+				Height:     2.7,
+				WindowType: "pvc",
+				WallType:   "paint,tile",
+				Defects: []models.RoomDefect{
+					{
+						Section: "window",
+						Value:   "2 мм",
+						DefectTemplate: models.DefectTemplate{
+							Name:      "Отклонение от прямолинейности",
+							Threshold: "1",
+							Unit:      "мм",
+						},
+					},
+					{
+						Section: "ceiling",
+						Notes:   "Небольшие пятна в углу",
+					},
+				},
+			},
+			{
+				RoomNumber: 2,
+				RoomName:   "Комната",
+				Length:     5.0,
+				Width:      4.0,
+				Height:     2.7,
+			},
+		},
+	}
+
+	path, err := Generate(inspection, tmpDir)
+	if err != nil {
+		t.Fatalf("Generate() error: %v", err)
+	}
+
+	// Файл существует
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("PDF file not found: %v", err)
+	}
+
+	// Файл не пустой (минимум 1KB для реального PDF)
+	if info.Size() < 1024 {
+		t.Errorf("PDF too small: %d bytes", info.Size())
+	}
+
+	// Имя файла содержит номер акта
+	if !strings.Contains(path, "act_42-310326.pdf") {
+		t.Errorf("unexpected filename: %s", path)
+	}
+
+	t.Logf("PDF created: %s (%d bytes)", path, info.Size())
+}
+
+func TestGenerate_EmptyInspection(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	inspection := &models.Inspection{
+		ActNumber: "1-010126",
+		Date:      time.Now(),
+		User:      models.User{Initials: "Тест Т.Т."},
+	}
+
+	path, err := Generate(inspection, tmpDir)
+	if err != nil {
+		t.Fatalf("Generate() with empty inspection error: %v", err)
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatalf("PDF file not found: %v", err)
+	}
+	if info.Size() == 0 {
+		t.Error("PDF is empty")
+	}
+}
+
+func TestGenerate_WithWallDefects(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	tid := uint(1)
+	inspection := &models.Inspection{
+		ActNumber: "99-310326",
+		Date:      time.Now(),
+		User:      models.User{Initials: "Тест Т."},
+		Rooms: []models.InspectionRoom{
+			{
+				RoomNumber: 1,
+				RoomName:   "Зал",
+				WallType:   "paint",
+				Defects: []models.RoomDefect{
+					{
+						Section:          "wall",
+						Value:            "5 мм",
+						WallNumber:       1,
+						DefectTemplateID: &tid,
+						DefectTemplate:   models.DefectTemplate{Name: "Отклонение от вертикали"},
+					},
+					{
+						Section:          "wall",
+						Value:            "3 мм",
+						WallNumber:       2,
+						DefectTemplateID: &tid,
+						DefectTemplate:   models.DefectTemplate{Name: "Отклонение от вертикали"},
+					},
+				},
+			},
+		},
+	}
+
+	path, err := Generate(inspection, tmpDir)
+	if err != nil {
+		t.Fatalf("Generate() with wall defects error: %v", err)
+	}
+
+	info, _ := os.Stat(path)
+	t.Logf("PDF with walls: %d bytes", info.Size())
+}
+
+// --- Unit tests ---
 
 func TestFmtFloat(t *testing.T) {
 	tests := []struct {
