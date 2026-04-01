@@ -9,6 +9,8 @@ import (
 	"inspection-app/internal/storage"
 	"sync"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 const (
@@ -145,19 +147,23 @@ func (u *Uploader) retryFailed(ctx context.Context) {
 		Select("DISTINCT inspection_rooms.inspection_id").
 		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
 		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
-		Where("photos.upload_status = 'failed'").
+		Where("photos.upload_status = 'failed' AND photos.retry_count < ?", maxFailRetries).
 		Scan(&inspectionIDs)
 
 	for _, id := range inspectionIDs {
-		// Сбрасываем failed → pending через подзапрос (PostgreSQL не поддерживает JOIN в UPDATE через GORM)
 		var failedIDs []uint
 		storage.DB.Table("photos").Select("photos.id").
 			Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
 			Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
-			Where("inspection_rooms.inspection_id = ? AND photos.upload_status = 'failed' AND photos.deleted_at IS NULL", id).
+			Where("inspection_rooms.inspection_id = ? AND photos.upload_status = 'failed' AND photos.retry_count < ? AND photos.deleted_at IS NULL", id, maxFailRetries).
 			Pluck("photos.id", &failedIDs)
 		if len(failedIDs) > 0 {
-			storage.DB.Model(&models.Photo{}).Where("id IN ?", failedIDs).Update("upload_status", "pending")
+			storage.DB.Model(&models.Photo{}).Where("id IN ?", failedIDs).
+				Updates(map[string]interface{}{
+					"upload_status": "pending",
+					"retry_count":   gorm.Expr("retry_count + 1"),
+				})
+			logger.Info("worker retry: reset failed→pending", "inspection_id", id, "photos", len(failedIDs))
 		}
 
 		if err := u.q.Push(ctx, id); err != nil {

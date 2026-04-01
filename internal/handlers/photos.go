@@ -23,8 +23,9 @@ import (
 const (
 	maxPhotoSize       = 20 * 1024 * 1024 // 20 MB
 	maxPhotosPerDefect = 30
-	syncWorkers        = 5
+	syncWorkers        = 3 // макс параллельных загрузок на Yandex Disk
 	uploadRetries      = 3
+	maxFailRetries     = 5 // макс попыток для одного фото
 )
 
 // cloudStore — глобальный экземпляр облачного хранилища.
@@ -133,15 +134,15 @@ func PostUploadPhoto(c *gin.Context) {
 		return
 	}
 
-	// Сразу ставим фото в очередь на загрузку (не ждём генерации PDF)
+	// Ставим фото в очередь на загрузку
 	if cloudStore != nil {
 		if uploadQueue != nil {
 			if err := uploadQueue.Push(context.Background(), inspection.ID); err != nil {
 				logger.Ctx(c.Request.Context()).Error("redis push failed, fallback sync", "inspection_id", inspection.ID, "error", err)
-				go safeSync(inspection.ID)
+				ScheduleSync(inspection.ID)
 			}
 		} else {
-			go safeSync(inspection.ID)
+			ScheduleSync(inspection.ID)
 		}
 	}
 
@@ -190,6 +191,72 @@ func DeletePhoto(c *gin.Context) {
 
 	storage.DB.Delete(&photo)
 	c.JSON(http.StatusOK, gin.H{"ok": true})
+}
+
+// GetPhotoDownload — GET /photos/:id/download
+// Проксирует скачивание фото: если файл локальный — отдаёт напрямую,
+// если в облаке — редиректит на временный URL скачивания.
+func GetPhotoDownload(c *gin.Context) {
+	photoID, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+		return
+	}
+
+	var photo models.Photo
+	if err := storage.DB.First(&photo, photoID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Фото не найдено"})
+		return
+	}
+
+	// Проверяем права: дефект → помещение → осмотр
+	var defect models.RoomDefect
+	storage.DB.First(&defect, photo.DefectID)
+	var room models.InspectionRoom
+	storage.DB.First(&room, defect.RoomID)
+	var inspection models.Inspection
+	storage.DB.First(&inspection, room.InspectionID)
+
+	userID := c.GetUint("userID")
+	role := c.GetString("userRole")
+	if role != "admin" && inspection.UserID != userID {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещён"})
+		return
+	}
+
+	// 1. Локальный файл — отдаём напрямую
+	if photo.FilePath != "" {
+		if _, err := os.Stat(photo.FilePath); err == nil {
+			c.File(photo.FilePath)
+			return
+		}
+	}
+
+	// 2. Облачный файл — URL начинается с http
+	if strings.HasPrefix(photo.FileURL, "http") {
+		c.Redirect(http.StatusTemporaryRedirect, photo.FileURL)
+		return
+	}
+
+	// 3. Облачный файл — относительный путь на Yandex Disk
+	if cloudStore != nil && photo.FileURL != "" && !strings.HasPrefix(photo.FileURL, "/static/") {
+		downloadURL, err := cloudStore.GetDownloadURL(photo.FileURL)
+		if err != nil {
+			logger.Ctx(c.Request.Context()).Error("cloud download URL", "photo_id", photoID, "error", err)
+			c.JSON(http.StatusBadGateway, gin.H{"error": "Ошибка получения ссылки из облака"})
+			return
+		}
+		c.Redirect(http.StatusTemporaryRedirect, downloadURL)
+		return
+	}
+
+	// 4. Локальный static URL (legacy)
+	if strings.HasPrefix(photo.FileURL, "/static/") {
+		c.Redirect(http.StatusTemporaryRedirect, photo.FileURL)
+		return
+	}
+
+	c.JSON(http.StatusNotFound, gin.H{"error": "Файл недоступен"})
 }
 
 // safeSync запускает SyncInspectionPhotos с recover, чтобы паника в горутине

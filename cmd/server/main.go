@@ -75,6 +75,9 @@ func main() {
 		logger.Warn("redis not configured", "reason", "REDIS_URL not set")
 	}
 
+	// Retry loop для failed фото (работает без Redis)
+	handlers.StartFailedRetryLoop(ctx)
+
 	r := gin.New()
 	// В Docker-среде доверяем только localhost; при Nginx reverse proxy — добавить IP прокси
 	r.SetTrustedProxies([]string{"127.0.0.1", "::1"})
@@ -225,6 +228,7 @@ func main() {
 		protected.POST("/documents/:id/delete", handlers.PostDeleteDocument)
 		protected.POST("/defects/:id/photos", handlers.PostUploadPhoto)
 		protected.POST("/photos/:id/delete", handlers.DeletePhoto)
+		protected.GET("/photos/:id/download", handlers.GetPhotoDownload)
 
 		admin := protected.Group("/admin")
 		admin.Use(auth.RequireAdmin())

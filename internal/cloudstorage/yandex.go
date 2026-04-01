@@ -15,10 +15,10 @@ var yadiskAPI = "https://cloud-api.yandex.net/v1/disk" //nolint:gochecknoglobals
 // YandexDisk реализует FileStorage через REST API Яндекс Диска.
 // Документация: https://yandex.ru/dev/disk-api/doc/ru/
 type YandexDisk struct {
-	token   string // OAuth-токен (YADISK_TOKEN)
-	rootDir string // Корневая папка, например "disk:/inspection-app"
-	client  *http.Client
-	sem     chan struct{} // семафор: ограничивает одновременные запросы к API
+	token      string       // OAuth-токен (YADISK_TOKEN)
+	rootDir    string       // Корневая папка, например "disk:/inspection-app"
+	metaClient *http.Client // короткий timeout для метаданных (mkdir, publish, getUploadURL)
+	dataClient *http.Client // длинный timeout для загрузки файлов (PUT)
 }
 
 // NewYandexDisk создаёт адаптер.
@@ -29,16 +29,12 @@ func NewYandexDisk(token, rootDir string) *YandexDisk {
 		rootDir = "disk:/inspection-app"
 	}
 	return &YandexDisk{
-		token:   token,
-		rootDir: strings.TrimRight(rootDir, "/"),
-		client:  &http.Client{Timeout: 30 * time.Second},
-		sem:     make(chan struct{}, 3), // макс 3 одновременных запроса
+		token:      token,
+		rootDir:    strings.TrimRight(rootDir, "/"),
+		metaClient: &http.Client{Timeout: 15 * time.Second},
+		dataClient: &http.Client{Timeout: 3 * time.Minute},
 	}
 }
-
-// acquire/release — управление семафором для throttling API-запросов
-func (y *YandexDisk) acquire() { y.sem <- struct{}{} }
-func (y *YandexDisk) release() { <-y.sem }
 
 // fullPath собирает полный путь Яндекс Диска из относительного.
 func (y *YandexDisk) fullPath(relPath string) string {
@@ -70,9 +66,6 @@ func (y *YandexDisk) EnsurePath(relPath string) error {
 
 // mkdir создаёт одну папку. Ответ 409 (ConflictError — уже существует) не является ошибкой.
 func (y *YandexDisk) mkdir(fullPath string) error {
-	y.acquire()
-	defer y.release()
-
 	endpoint := yadiskAPI + "/resources?path=" + url.QueryEscape(fullPath)
 	req, err := http.NewRequest(http.MethodPut, endpoint, nil)
 	if err != nil {
@@ -80,7 +73,7 @@ func (y *YandexDisk) mkdir(fullPath string) error {
 	}
 	req.Header.Set("Authorization", "OAuth "+y.token)
 
-	resp, err := y.client.Do(req)
+	resp, err := y.metaClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -96,24 +89,21 @@ func (y *YandexDisk) mkdir(fullPath string) error {
 
 // UploadFile загружает файл по относительному пути.
 func (y *YandexDisk) UploadFile(relPath string, r io.Reader) error {
-	y.acquire()
-	defer y.release()
-
 	path := y.fullPath(relPath)
 
-	// Шаг 1: получаем URL для загрузки
+	// Шаг 1: получаем URL для загрузки (метаданные — короткий timeout)
 	uploadURL, err := y.getUploadURL(path)
 	if err != nil {
 		return fmt.Errorf("get upload URL: %w", err)
 	}
 
-	// Шаг 2: загружаем файл методом PUT
+	// Шаг 2: загружаем файл методом PUT (данные — длинный timeout)
 	req, err := http.NewRequest(http.MethodPut, uploadURL, r)
 	if err != nil {
 		return err
 	}
 
-	resp, err := y.client.Do(req)
+	resp, err := y.dataClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -136,7 +126,7 @@ func (y *YandexDisk) getUploadURL(fullPath string) (string, error) {
 	}
 	req.Header.Set("Authorization", "OAuth "+y.token)
 
-	resp, err := y.client.Do(req)
+	resp, err := y.metaClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -171,9 +161,6 @@ func (y *YandexDisk) PublishFile(relPath string) (string, error) {
 
 // publish публикует ресурс (файл или папку) и возвращает его public_url.
 func (y *YandexDisk) publish(fullPath string) (string, error) {
-	y.acquire()
-	defer y.release()
-
 	// Шаг 1: публикуем ресурс
 	endpoint := yadiskAPI + "/resources/publish?path=" + url.QueryEscape(fullPath)
 	req, err := http.NewRequest(http.MethodPut, endpoint, nil)
@@ -182,7 +169,7 @@ func (y *YandexDisk) publish(fullPath string) (string, error) {
 	}
 	req.Header.Set("Authorization", "OAuth "+y.token)
 
-	resp, err := y.client.Do(req)
+	resp, err := y.metaClient.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -208,7 +195,7 @@ func (y *YandexDisk) FolderExists(relPath string) (bool, error) {
 	}
 	req.Header.Set("Authorization", "OAuth "+y.token)
 
-	resp, err := y.client.Do(req)
+	resp, err := y.metaClient.Do(req)
 	if err != nil {
 		return false, err
 	}
@@ -238,7 +225,7 @@ func (y *YandexDisk) MoveFolder(oldRelPath, newRelPath string) error {
 	}
 	req.Header.Set("Authorization", "OAuth "+y.token)
 
-	resp, err := y.client.Do(req)
+	resp, err := y.metaClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -252,6 +239,37 @@ func (y *YandexDisk) MoveFolder(oldRelPath, newRelPath string) error {
 	return fmt.Errorf("MoveFolder %q → %q: HTTP %d: %s", from, to, resp.StatusCode, body)
 }
 
+// GetDownloadURL возвращает временный URL для скачивания файла из облака.
+// Используется для проксирования фото, загруженных на Яндекс Диск.
+func (y *YandexDisk) GetDownloadURL(relPath string) (string, error) {
+	path := y.fullPath(relPath)
+	endpoint := yadiskAPI + "/resources/download?path=" + url.QueryEscape(path)
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "OAuth "+y.token)
+
+	resp, err := y.metaClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("get download URL %q: HTTP %d: %s", path, resp.StatusCode, body)
+	}
+
+	var result struct {
+		Href string `json:"href"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return "", fmt.Errorf("decode download URL: %w", err)
+	}
+	return result.Href, nil
+}
+
 // getPublicURL запрашивает метаданные ресурса и возвращает поле public_url.
 func (y *YandexDisk) getPublicURL(fullPath string) (string, error) {
 	endpoint := yadiskAPI + "/resources?path=" + url.QueryEscape(fullPath) + "&fields=public_url"
@@ -261,7 +279,7 @@ func (y *YandexDisk) getPublicURL(fullPath string) (string, error) {
 	}
 	req.Header.Set("Authorization", "OAuth "+y.token)
 
-	resp, err := y.client.Do(req)
+	resp, err := y.metaClient.Do(req)
 	if err != nil {
 		return "", err
 	}

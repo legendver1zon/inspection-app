@@ -158,12 +158,10 @@
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
                     <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
-                        {{ if .FilePath }}
-                        <a href="{{ .FileURL }}" target="_blank">
-                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        {{ if or .FilePath .FileURL }}
+                        <a href="/photos/{{ .ID }}/download" target="_blank">
+                            <img src="/photos/{{ .ID }}/download" alt="{{ .FileName }}" class="defect-photo-thumb" loading="lazy">
                         </a>
-                        {{ else if .FileURL }}
-                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
                         {{ else }}
                         <span class="photo-filename-label">📎 {{ .FileName }}</span>
                         {{ end }}
@@ -187,12 +185,10 @@
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
                     <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
-                        {{ if .FilePath }}
-                        <a href="{{ .FileURL }}" target="_blank">
-                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        {{ if or .FilePath .FileURL }}
+                        <a href="/photos/{{ .ID }}/download" target="_blank">
+                            <img src="/photos/{{ .ID }}/download" alt="{{ .FileName }}" class="defect-photo-thumb" loading="lazy">
                         </a>
-                        {{ else if .FileURL }}
-                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
                         {{ else }}
                         <span class="photo-filename-label">📎 {{ .FileName }}</span>
                         {{ end }}
@@ -224,12 +220,10 @@
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
                     <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
-                        {{ if .FilePath }}
-                        <a href="{{ .FileURL }}" target="_blank">
-                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        {{ if or .FilePath .FileURL }}
+                        <a href="/photos/{{ .ID }}/download" target="_blank">
+                            <img src="/photos/{{ .ID }}/download" alt="{{ .FileName }}" class="defect-photo-thumb" loading="lazy">
                         </a>
-                        {{ else if .FileURL }}
-                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
                         {{ else }}
                         <span class="photo-filename-label">📎 {{ .FileName }}</span>
                         {{ end }}
@@ -253,12 +247,10 @@
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
                     <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
-                        {{ if .FilePath }}
-                        <a href="{{ .FileURL }}" target="_blank">
-                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        {{ if or .FilePath .FileURL }}
+                        <a href="/photos/{{ .ID }}/download" target="_blank">
+                            <img src="/photos/{{ .ID }}/download" alt="{{ .FileName }}" class="defect-photo-thumb" loading="lazy">
                         </a>
-                        {{ else if .FileURL }}
-                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
                         {{ else }}
                         <span class="photo-filename-label">📎 {{ .FileName }}</span>
                         {{ end }}
@@ -298,12 +290,10 @@
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
                     <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
-                        {{ if .FilePath }}
-                        <a href="{{ .FileURL }}" target="_blank">
-                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        {{ if or .FilePath .FileURL }}
+                        <a href="/photos/{{ .ID }}/download" target="_blank">
+                            <img src="/photos/{{ .ID }}/download" alt="{{ .FileName }}" class="defect-photo-thumb" loading="lazy">
                         </a>
-                        {{ else if .FileURL }}
-                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
                         {{ else }}
                         <span class="photo-filename-label">📎 {{ .FileName }}</span>
                         {{ end }}
@@ -327,12 +317,10 @@
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
                     <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
-                        {{ if .FilePath }}
-                        <a href="{{ .FileURL }}" target="_blank">
-                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        {{ if or .FilePath .FileURL }}
+                        <a href="/photos/{{ .ID }}/download" target="_blank">
+                            <img src="/photos/{{ .ID }}/download" alt="{{ .FileName }}" class="defect-photo-thumb" loading="lazy">
                         </a>
-                        {{ else if .FileURL }}
-                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
                         {{ else }}
                         <span class="photo-filename-label">📎 {{ .FileName }}</span>
                         {{ end }}
@@ -364,12 +352,10 @@
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
                     <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
-                        {{ if .FilePath }}
-                        <a href="{{ .FileURL }}" target="_blank">
-                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        {{ if or .FilePath .FileURL }}
+                        <a href="/photos/{{ .ID }}/download" target="_blank">
+                            <img src="/photos/{{ .ID }}/download" alt="{{ .FileName }}" class="defect-photo-thumb" loading="lazy">
                         </a>
-                        {{ else if .FileURL }}
-                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
                         {{ else }}
                         <span class="photo-filename-label">📎 {{ .FileName }}</span>
                         {{ end }}
@@ -393,12 +379,10 @@
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
                     <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
-                        {{ if .FilePath }}
-                        <a href="{{ .FileURL }}" target="_blank">
-                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        {{ if or .FilePath .FileURL }}
+                        <a href="/photos/{{ .ID }}/download" target="_blank">
+                            <img src="/photos/{{ .ID }}/download" alt="{{ .FileName }}" class="defect-photo-thumb" loading="lazy">
                         </a>
-                        {{ else if .FileURL }}
-                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
                         {{ else }}
                         <span class="photo-filename-label">📎 {{ .FileName }}</span>
                         {{ end }}
@@ -430,12 +414,10 @@
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
                     <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
-                        {{ if .FilePath }}
-                        <a href="{{ .FileURL }}" target="_blank">
-                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        {{ if or .FilePath .FileURL }}
+                        <a href="/photos/{{ .ID }}/download" target="_blank">
+                            <img src="/photos/{{ .ID }}/download" alt="{{ .FileName }}" class="defect-photo-thumb" loading="lazy">
                         </a>
-                        {{ else if .FileURL }}
-                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
                         {{ else }}
                         <span class="photo-filename-label">📎 {{ .FileName }}</span>
                         {{ end }}
@@ -459,12 +441,10 @@
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
                     <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
-                        {{ if .FilePath }}
-                        <a href="{{ .FileURL }}" target="_blank">
-                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        {{ if or .FilePath .FileURL }}
+                        <a href="/photos/{{ .ID }}/download" target="_blank">
+                            <img src="/photos/{{ .ID }}/download" alt="{{ .FileName }}" class="defect-photo-thumb" loading="lazy">
                         </a>
-                        {{ else if .FileURL }}
-                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
                         {{ else }}
                         <span class="photo-filename-label">📎 {{ .FileName }}</span>
                         {{ end }}
@@ -496,12 +476,10 @@
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
                     <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
-                        {{ if .FilePath }}
-                        <a href="{{ .FileURL }}" target="_blank">
-                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        {{ if or .FilePath .FileURL }}
+                        <a href="/photos/{{ .ID }}/download" target="_blank">
+                            <img src="/photos/{{ .ID }}/download" alt="{{ .FileName }}" class="defect-photo-thumb" loading="lazy">
                         </a>
-                        {{ else if .FileURL }}
-                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
                         {{ else }}
                         <span class="photo-filename-label">📎 {{ .FileName }}</span>
                         {{ end }}
@@ -525,12 +503,10 @@
                 <div class="defect-photos-row" data-defect="{{ .ID }}">
                     {{ range .Photos }}
                     <div class="photo-wrap" data-photo-id="{{ .ID }}" data-upload-status="{{ .UploadStatus }}">
-                        {{ if .FilePath }}
-                        <a href="{{ .FileURL }}" target="_blank">
-                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                        {{ if or .FilePath .FileURL }}
+                        <a href="/photos/{{ .ID }}/download" target="_blank">
+                            <img src="/photos/{{ .ID }}/download" alt="{{ .FileName }}" class="defect-photo-thumb" loading="lazy">
                         </a>
-                        {{ else if .FileURL }}
-                        <a href="{{ .FileURL }}" target="_blank" class="photo-cloud-link" title="{{ .FileName }}">☁ {{ .FileName }}</a>
                         {{ else }}
                         <span class="photo-filename-label">📎 {{ .FileName }}</span>
                         {{ end }}
@@ -613,11 +589,9 @@
                     <div style="display:flex;flex-wrap:wrap;gap:8px">
                         {{ range .Defect.Photos }}
                         <div style="position:relative;display:inline-flex">
-                            {{ if .FilePath }}
-                            <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
-                            {{ else if .FileURL }}
-                            <a href="{{ .FileURL }}" target="_blank">
-                                <img src="{{ .FileURL }}" alt="{{ .FileName }}" class="defect-photo-thumb">
+                            {{ if or .FilePath .FileURL }}
+                            <a href="/photos/{{ .ID }}/download" target="_blank">
+                                <img src="/photos/{{ .ID }}/download" alt="{{ .FileName }}" class="defect-photo-thumb" loading="lazy">
                             </a>
                             {{ else }}
                             <span class="photo-filename-label">📎 {{ .FileName }}</span>

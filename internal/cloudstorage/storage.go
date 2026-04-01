@@ -25,4 +25,7 @@ type FileStorage interface {
 
 	// MoveFolder переименовывает (перемещает) папку на облаке.
 	MoveFolder(oldRelPath, newRelPath string) error
+
+	// GetDownloadURL возвращает временный URL для скачивания файла.
+	GetDownloadURL(relPath string) (string, error)
 }

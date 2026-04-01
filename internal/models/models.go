@@ -63,6 +63,7 @@ type Photo struct {
 	FilePath     string // локальный путь до файла (до синхронизации)
 	FileName     string
 	UploadStatus string `gorm:"not null;default:'done';index"` // pending | uploading | done | failed
+	RetryCount   int    `gorm:"not null;default:0"`
 }
 
 // InspectionRoom — помещение (основная единица, содержит замеры и дефекты)
