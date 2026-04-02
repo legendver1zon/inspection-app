@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"inspection-app/internal/cloudstorage"
+	"inspection-app/internal/locker"
 	"inspection-app/internal/logger"
 	"inspection-app/internal/models"
 	"inspection-app/internal/storage"
@@ -31,9 +32,18 @@ const (
 // cloudStore — глобальный экземпляр облачного хранилища.
 var cloudStore cloudstorage.FileStorage
 
+// uploadLocker — блокировка параллельной обработки одной инспекции.
+var uploadLocker locker.Locker = locker.NewMemory()
+
 // SetCloudStorage инициализирует облачное хранилище для обработчиков фото.
 func SetCloudStorage(s cloudstorage.FileStorage) {
 	cloudStore = s
+}
+
+// SetUploadLocker заменяет реализацию блокировки (по умолчанию MemoryLocker).
+// Вызывать в main.go для замены на RedisLocker при масштабировании.
+func SetUploadLocker(l locker.Locker) {
+	uploadLocker = l
 }
 
 // PostUploadPhoto обрабатывает POST /defects/:id/photos
@@ -362,45 +372,67 @@ func EnsureInspectionFolder(inspectionID uint) (string, error) {
 
 // UploadInspectionPhotos загружает фото с upload_status = "pending" на Яндекс Диск.
 // Вызывается асинхронно из фонового воркера.
+// Блокировка по inspectionID гарантирует, что два воркера не обработают одну инспекцию одновременно.
 func UploadInspectionPhotos(inspectionID uint) {
 	if cloudStore == nil {
 		return
 	}
 
-	// Собираем только фото со статусом "pending"
+	// Блокируем инспекцию — второй воркер подождёт
+	lockKey := fmt.Sprintf("upload:inspection:%d", inspectionID)
+	unlock, err := uploadLocker.Lock(lockKey)
+	if err != nil {
+		logger.Warn("upload lock busy, will retry later", "inspection_id", inspectionID, "error", err)
+		return
+	}
+	defer unlock()
+
+	startTime := time.Now()
+
+	// Идемпотентность: берём только pending (не done, не uploading)
 	var photos []models.Photo
 	storage.DB.
 		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
 		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
-		Where("inspection_rooms.inspection_id = ? AND photos.upload_status = 'pending'", inspectionID).
+		Where("inspection_rooms.inspection_id = ? AND photos.upload_status IN ('pending','failed')", inspectionID).
+		Where("photos.retry_count < ?", maxFailRetries).
 		Find(&photos)
 
 	if len(photos) == 0 {
 		return
 	}
 
-	// Помечаем как "uploading"
+	logger.Info("upload start", "inspection_id", inspectionID, "photos", len(photos))
+
+	// Помечаем как "uploading" (только pending/failed → uploading, никогда done → uploading)
 	ids := make([]uint, len(photos))
 	for i, p := range photos {
 		ids[i] = p.ID
 	}
-	storage.DB.Model(&models.Photo{}).Where("id IN ?", ids).Update("upload_status", "uploading")
+	now := time.Now()
+	storage.DB.Model(&models.Photo{}).
+		Where("id IN ? AND upload_status IN ('pending','failed')", ids).
+		Updates(map[string]interface{}{
+			"upload_status":   "uploading",
+			"last_attempt_at": now,
+		})
 
 	// Собираем данные дефектов для построения путей
 	infoMap := buildDefectInfoMap(inspectionID)
 
-	// Считаем уже загруженные фото per defect, чтобы не перезаписать файлы на Яндекс Диске
+	// Считаем уже загруженные фото per defect (done + uploading), чтобы не перезаписать файлы
 	defectPhotoCount := map[uint]int{}
-	var donePhotos []models.Photo
+	var existingPhotos []models.Photo
 	storage.DB.
 		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
 		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
-		Where("inspection_rooms.inspection_id = ? AND photos.upload_status = 'done'", inspectionID).
-		Find(&donePhotos)
-	for _, dp := range donePhotos {
+		Where("inspection_rooms.inspection_id = ? AND photos.upload_status IN ('done','uploading') AND photos.id NOT IN ?", inspectionID, ids).
+		Find(&existingPhotos)
+	for _, dp := range existingPhotos {
 		defectPhotoCount[dp.DefectID]++
 	}
 
+	// Фильтруем: пропускаем фото без локального файла
 	var tasks []uploadTask
 	for i := range photos {
 		p := &photos[i]
@@ -408,25 +440,76 @@ func UploadInspectionPhotos(inspectionID uint) {
 		if !ok {
 			continue
 		}
+
+		// Защита от потери файлов: если файл отсутствует — не пытаемся upload
+		if p.FilePath == "" {
+			logger.Error("upload skip: file_path empty", "photo_id", p.ID, "inspection_id", inspectionID)
+			storage.DB.Model(p).
+				Where("upload_status != 'done'").
+				Updates(map[string]interface{}{
+					"upload_status": "failed",
+					"last_error":    "file_path empty — файл потерян",
+				})
+			continue
+		}
+		if _, statErr := os.Stat(p.FilePath); os.IsNotExist(statErr) {
+			logger.Error("upload skip: local file missing", "photo_id", p.ID, "path", p.FilePath)
+			storage.DB.Model(p).
+				Where("upload_status != 'done'").
+				Updates(map[string]interface{}{
+					"upload_status": "failed",
+					"last_error":    "local file not found: " + p.FilePath,
+				})
+			continue
+		}
+
 		defectPhotoCount[p.DefectID]++
 		n := defectPhotoCount[p.DefectID]
 		tasks = append(tasks, buildUploadTask(p, info, n))
 	}
 
-	uploadTasksParallel(tasks, func(t uploadTask, success bool, publicURL string) {
+	if len(tasks) == 0 {
+		return
+	}
+
+	uploadTasksParallel(tasks, func(t uploadTask, success bool, uploadErr error) {
+		now := time.Now()
 		if success {
-			// K3: Сначала обновляем БД, потом удаляем файл.
-			// Если DB упадёт — файл останется (безвредно). Обратный порядок = потеря фото.
-			storage.DB.Model(t.photo).Updates(map[string]interface{}{
-				"file_url":      publicURL,
-				"file_path":     "",
-				"upload_status": "done",
-			})
-			os.Remove(t.filePath)
+			// Идемпотентность: обновляем только если статус ещё не done
+			res := storage.DB.Model(t.photo).
+				Where("upload_status != 'done'").
+				Updates(map[string]interface{}{
+					"file_url":        t.relFile,
+					"file_path":       "",
+					"upload_status":   "done",
+					"last_error":      "",
+					"last_attempt_at": now,
+				})
+			if res.RowsAffected > 0 {
+				os.Remove(t.filePath)
+			}
 		} else {
-			storage.DB.Model(t.photo).Update("upload_status", "failed")
+			errMsg := ""
+			if uploadErr != nil {
+				errMsg = uploadErr.Error()
+				// Обрезаем слишком длинные сообщения (тело ответа API)
+				if len(errMsg) > 500 {
+					errMsg = errMsg[:500]
+				}
+			}
+			// Не перезаписываем done → failed
+			storage.DB.Model(t.photo).
+				Where("upload_status != 'done'").
+				Updates(map[string]interface{}{
+					"upload_status":   "failed",
+					"last_error":      errMsg,
+					"last_attempt_at": now,
+				})
 		}
 	})
+
+	elapsed := time.Since(startTime)
+	logger.Info("upload complete", "inspection_id", inspectionID, "photos", len(tasks), "duration", elapsed.Round(time.Millisecond))
 
 	// Push обновление через WebSocket
 	notifyUploadProgress(inspectionID)
@@ -574,7 +657,7 @@ func buildUploadTask(p *models.Photo, info defectInfo, n int) uploadTask {
 	if defectName == "" {
 		defectName = "фото"
 	}
-	cloudFileName := fmt.Sprintf("%s_%d%s", defectName, n, ext)
+	cloudFileName := fmt.Sprintf("%s_%d_id%d%s", defectName, n, p.ID, ext)
 	return uploadTask{
 		photo:     p,
 		relFolder: relFolder,
@@ -584,8 +667,8 @@ func buildUploadTask(p *models.Photo, info defectInfo, n int) uploadTask {
 }
 
 // uploadTasksParallel выполняет загрузку задач параллельно (до syncWorkers горутин).
-// callback вызывается для каждой задачи с результатом (success, publicURL).
-func uploadTasksParallel(tasks []uploadTask, callback func(uploadTask, bool, string)) {
+// callback вызывается для каждой задачи с результатом (success, error).
+func uploadTasksParallel(tasks []uploadTask, callback func(uploadTask, bool, error)) {
 	// Фаза 1: создаём ВСЕ папки последовательно (Яндекс Диск блокирует при параллельных mkdir)
 	createdFolders := map[string]bool{}
 	for _, t := range tasks {
@@ -609,10 +692,12 @@ func uploadTasksParallel(tasks []uploadTask, callback func(uploadTask, bool, str
 			sem <- struct{}{}
 			defer func() { <-sem }()
 
+			fileStart := time.Now()
+
 			data, err := os.ReadFile(t.filePath)
 			if err != nil {
-				logger.Error("upload read file", "path", t.filePath, "error", err)
-				callback(t, false, "")
+				logger.Error("upload read file", "photo_id", t.photo.ID, "path", t.filePath, "error", err)
+				callback(t, false, fmt.Errorf("read local file: %w", err))
 				return
 			}
 
@@ -622,21 +707,46 @@ func uploadTasksParallel(tasks []uploadTask, callback func(uploadTask, bool, str
 				if uploadErr == nil {
 					break
 				}
-				logger.Warn("upload attempt failed", "attempt", attempt+1, "max", uploadRetries, "file", t.relFile, "error", uploadErr)
+
+				retryable := cloudstorage.IsRetryable(uploadErr)
+				logger.Warn("upload attempt failed",
+					"photo_id", t.photo.ID,
+					"attempt", attempt+1,
+					"max", uploadRetries,
+					"file", t.relFile,
+					"retryable", retryable,
+					"error", uploadErr,
+				)
+
+				// Permanent ошибка (4xx кроме 429) — не повторяем
+				if !retryable {
+					break
+				}
+
 				if attempt < uploadRetries-1 {
-					time.Sleep(time.Duration(attempt+1) * 2 * time.Second)
+					// Exponential backoff: 2s, 4s, 8s
+					time.Sleep(time.Duration(1<<uint(attempt+1)) * time.Second)
 				}
 			}
 			if uploadErr != nil {
-				logger.Error("upload failed permanently", "file", t.relFile, "error", uploadErr)
-				callback(t, false, "")
+				logger.Error("upload failed permanently",
+					"photo_id", t.photo.ID,
+					"file", t.relFile,
+					"retryable", cloudstorage.IsRetryable(uploadErr),
+					"error", uploadErr,
+				)
+				callback(t, false, uploadErr)
 				return
 			}
 
-			// Файл загружен. Папка осмотра уже публикуется через EnsureInspectionFolder,
-			// поэтому отдельный PublishFile не нужен — файлы внутри публичной папки доступны.
-			// Сохраняем относительный путь как URL (отображается как "☁ имя" в UI).
-			callback(t, true, t.relFile)
+			elapsed := time.Since(fileStart)
+			logger.Info("upload file ok",
+				"photo_id", t.photo.ID,
+				"file", t.relFile,
+				"size_kb", len(data)/1024,
+				"duration", elapsed.Round(time.Millisecond),
+			)
+			callback(t, true, nil)
 		}(task)
 	}
 	wg.Wait()

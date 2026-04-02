@@ -71,6 +71,9 @@ func (m *mockCloudStore) MoveFolder(old, new string) error {
 	m.mu.Unlock()
 	return m.moveFolderErr
 }
+func (m *mockCloudStore) GetDownloadURL(_ string) (string, error) {
+	return "", nil
+}
 
 // --- Router with photo routes ---
 
@@ -549,8 +552,8 @@ func TestSyncInspectionPhotos_UploadAndCleanup(t *testing.T) {
 	if updated.FilePath != "" {
 		t.Errorf("FilePath should be empty after sync, got %q", updated.FilePath)
 	}
-	if updated.FileURL != "https://disk.yandex.ru/i/testfile" {
-		t.Errorf("FileURL should be cloud URL, got %q", updated.FileURL)
+	if updated.FileURL == "" || updated.FileURL == "/static/uploads/photos/1/1/photo_1.jpg" {
+		t.Errorf("FileURL should be cloud relative path after sync, got %q", updated.FileURL)
 	}
 
 	// CloudPath должен содержать читаемые имена
@@ -616,6 +619,173 @@ func TestSyncInspectionPhotos_WallDefectPath(t *testing.T) {
 	}
 	if !strings.Contains(path, "Гостиная") {
 		t.Errorf("wall path should contain 'Гостиная', got %q", path)
+	}
+
+	os.Remove(tmp.Name())
+}
+
+// --- Идемпотентность: done не перезаписывается ---
+
+func TestUploadInspectionPhotos_SkipsDonePhotos(t *testing.T) {
+	setupTestDB(t)
+	mock := &mockCloudStore{}
+	cloudStore = mock
+	defer func() { cloudStore = nil }()
+
+	user := newUser(t, "idem@test.com", "pass1234", "Тест", models.RoleInspector)
+	insp := newInspection(t, user.ID, "ул. Идем, 1", "Тест", "draft", time.Now())
+
+	room := models.InspectionRoom{InspectionID: insp.ID, RoomNumber: 1}
+	storage.DB.Create(&room)
+	tmpl := newDefectTemplate(t, "floor", "Тест идем")
+	defect := models.RoomDefect{RoomID: room.ID, DefectTemplateID: &tmpl.ID, Section: "floor", Value: "да"}
+	storage.DB.Create(&defect)
+
+	// Фото уже done — не должно перезагружаться
+	photo := models.Photo{DefectID: defect.ID, UploadStatus: "done", FileURL: "inspections/test/photo.jpg"}
+	storage.DB.Create(&photo)
+
+	UploadInspectionPhotos(insp.ID)
+
+	if len(mock.uploadedPaths) != 0 {
+		t.Errorf("done фото не должны перезагружаться, got %d uploads", len(mock.uploadedPaths))
+	}
+}
+
+// --- Защита от потери файлов: пустой file_path ---
+
+func TestUploadInspectionPhotos_MissingFilePath(t *testing.T) {
+	setupTestDB(t)
+	mock := &mockCloudStore{}
+	cloudStore = mock
+	defer func() { cloudStore = nil }()
+
+	user := newUser(t, "miss@test.com", "pass1234", "Тест", models.RoleInspector)
+	insp := newInspection(t, user.ID, "ул. Мисс, 1", "Тест", "draft", time.Now())
+
+	room := models.InspectionRoom{InspectionID: insp.ID, RoomNumber: 1}
+	storage.DB.Create(&room)
+	tmpl := newDefectTemplate(t, "floor", "Тест мисс")
+	defect := models.RoomDefect{RoomID: room.ID, DefectTemplateID: &tmpl.ID, Section: "floor", Value: "да"}
+	storage.DB.Create(&defect)
+
+	// pending фото с пустым FilePath — файл потерян
+	photo := models.Photo{DefectID: defect.ID, UploadStatus: "pending", FilePath: "", FileName: "lost.jpg"}
+	storage.DB.Create(&photo)
+
+	UploadInspectionPhotos(insp.ID)
+
+	// Должен пометить как failed, не пытаться upload
+	var updated models.Photo
+	storage.DB.First(&updated, photo.ID)
+	if updated.UploadStatus != "failed" {
+		t.Errorf("фото без file_path должно стать failed, got %q", updated.UploadStatus)
+	}
+	if updated.LastError == "" {
+		t.Error("LastError должен содержать причину")
+	}
+	if len(mock.uploadedPaths) != 0 {
+		t.Errorf("upload не должен вызываться для потерянных файлов, got %d", len(mock.uploadedPaths))
+	}
+}
+
+// --- Защита от потери файлов: файл не существует на диске ---
+
+func TestUploadInspectionPhotos_FileNotExistsOnDisk(t *testing.T) {
+	setupTestDB(t)
+	mock := &mockCloudStore{}
+	cloudStore = mock
+	defer func() { cloudStore = nil }()
+
+	user := newUser(t, "nofile@test.com", "pass1234", "Тест", models.RoleInspector)
+	insp := newInspection(t, user.ID, "ул. НетФайла, 1", "Тест", "draft", time.Now())
+
+	room := models.InspectionRoom{InspectionID: insp.ID, RoomNumber: 1}
+	storage.DB.Create(&room)
+	tmpl := newDefectTemplate(t, "floor", "Тест нетфайл")
+	defect := models.RoomDefect{RoomID: room.ID, DefectTemplateID: &tmpl.ID, Section: "floor", Value: "да"}
+	storage.DB.Create(&defect)
+
+	// pending фото, но файл не существует
+	photo := models.Photo{DefectID: defect.ID, UploadStatus: "pending", FilePath: "/tmp/nonexistent_photo.jpg", FileName: "nonexistent.jpg"}
+	storage.DB.Create(&photo)
+
+	UploadInspectionPhotos(insp.ID)
+
+	var updated models.Photo
+	storage.DB.First(&updated, photo.ID)
+	if updated.UploadStatus != "failed" {
+		t.Errorf("фото с несуществующим файлом должно стать failed, got %q", updated.UploadStatus)
+	}
+	if updated.LastError == "" {
+		t.Error("LastError должен содержать причину")
+	}
+}
+
+// --- Max retries: фото с retry_count >= maxFailRetries не обрабатывается ---
+
+func TestUploadInspectionPhotos_MaxRetriesExceeded(t *testing.T) {
+	setupTestDB(t)
+	mock := &mockCloudStore{}
+	cloudStore = mock
+	defer func() { cloudStore = nil }()
+
+	user := newUser(t, "maxr@test.com", "pass1234", "Тест", models.RoleInspector)
+	insp := newInspection(t, user.ID, "ул. Макс, 1", "Тест", "draft", time.Now())
+
+	room := models.InspectionRoom{InspectionID: insp.ID, RoomNumber: 1}
+	storage.DB.Create(&room)
+	tmpl := newDefectTemplate(t, "floor", "Тест макс")
+	defect := models.RoomDefect{RoomID: room.ID, DefectTemplateID: &tmpl.ID, Section: "floor", Value: "да"}
+	storage.DB.Create(&defect)
+
+	// Фото с исчерпанными попытками
+	photo := models.Photo{DefectID: defect.ID, UploadStatus: "failed", FilePath: "/tmp/max.jpg", FileName: "max.jpg", RetryCount: maxFailRetries}
+	storage.DB.Create(&photo)
+
+	UploadInspectionPhotos(insp.ID)
+
+	if len(mock.uploadedPaths) != 0 {
+		t.Errorf("фото с исчерпанными попытками не должно обрабатываться, got %d", len(mock.uploadedPaths))
+	}
+}
+
+// --- Upload ошибка сохраняет LastError ---
+
+func TestUploadInspectionPhotos_SavesLastError(t *testing.T) {
+	setupTestDB(t)
+	mock := &mockCloudStore{uploadFileErr: fmt.Errorf("disk full")}
+	cloudStore = mock
+	defer func() { cloudStore = nil }()
+
+	user := newUser(t, "lasterr@test.com", "pass1234", "Тест", models.RoleInspector)
+	insp := newInspection(t, user.ID, "ул. Ошибка, 1", "Тест", "draft", time.Now())
+
+	room := models.InspectionRoom{InspectionID: insp.ID, RoomNumber: 1}
+	storage.DB.Create(&room)
+	tmpl := newDefectTemplate(t, "floor", "Тест ошибка")
+	defect := models.RoomDefect{RoomID: room.ID, DefectTemplateID: &tmpl.ID, Section: "floor", Value: "да"}
+	storage.DB.Create(&defect)
+
+	tmp, _ := os.CreateTemp("", "photo_err_*.jpg")
+	tmp.WriteString("fake")
+	tmp.Close()
+
+	photo := models.Photo{DefectID: defect.ID, UploadStatus: "pending", FilePath: tmp.Name(), FileName: "err.jpg"}
+	storage.DB.Create(&photo)
+
+	UploadInspectionPhotos(insp.ID)
+
+	var updated models.Photo
+	storage.DB.First(&updated, photo.ID)
+	if updated.UploadStatus != "failed" {
+		t.Errorf("ожидали failed, got %q", updated.UploadStatus)
+	}
+	if updated.LastError == "" {
+		t.Error("LastError должен быть заполнен")
+	}
+	if updated.LastAttemptAt == nil {
+		t.Error("LastAttemptAt должен быть заполнен")
 	}
 
 	os.Remove(tmp.Name())

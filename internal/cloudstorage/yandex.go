@@ -100,19 +100,24 @@ func (y *YandexDisk) UploadFile(relPath string, r io.Reader) error {
 	// Шаг 2: загружаем файл методом PUT (данные — длинный timeout)
 	req, err := http.NewRequest(http.MethodPut, uploadURL, r)
 	if err != nil {
-		return err
+		return &UploadError{Err: err, Message: "create request"}
 	}
 
 	resp, err := y.dataClient.Do(req)
 	if err != nil {
-		return err
+		// Сетевая ошибка / таймаут — StatusCode=0, retryable
+		return &UploadError{Err: err, Message: "network/timeout"}
 	}
 	defer resp.Body.Close()
 
 	// Яндекс Диск возвращает 201 Created при успешной загрузке
 	if resp.StatusCode != http.StatusCreated && resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("upload %q: HTTP %d: %s", path, resp.StatusCode, body)
+		return &UploadError{
+			StatusCode: resp.StatusCode,
+			Message:    string(body),
+			Err:        fmt.Errorf("upload %q: HTTP %d", path, resp.StatusCode),
+		}
 	}
 	return nil
 }

@@ -340,8 +340,8 @@ func TestPostUploadPhoto_MaxSizeConstant(t *testing.T) {
 	if maxPhotosPerDefect != 30 {
 		t.Errorf("maxPhotosPerDefect = %d, ожидали 30", maxPhotosPerDefect)
 	}
-	if syncWorkers != 5 {
-		t.Errorf("syncWorkers = %d, ожидали 5", syncWorkers)
+	if syncWorkers != 3 {
+		t.Errorf("syncWorkers = %d, ожидали 3", syncWorkers)
 	}
 	if uploadRetries != 3 {
 		t.Errorf("uploadRetries = %d, ожидали 3", uploadRetries)

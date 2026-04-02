@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"html/template"
 	"inspection-app/internal/auth"
+	"inspection-app/internal/logger"
 	"inspection-app/internal/models"
 	"inspection-app/internal/security"
 	"inspection-app/internal/storage"
@@ -36,6 +37,7 @@ func setupTestDB(t *testing.T) {
 	// Подключаемся к БД только один раз для всего тестового прогона,
 	// чтобы не исчерпать лимит соединений PostgreSQL при большом числе тестов.
 	testDBOnce.Do(func() {
+		logger.Init()
 		storage.Connect(dsn)
 		security.Init()
 	})

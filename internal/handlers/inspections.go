@@ -305,6 +305,9 @@ func GetInspection(c *gin.Context) {
 		}
 	}
 
+	// Soft retry: если есть failed фото с оставшимися попытками — перезапускаем загрузку
+	go TriggerRetryForInspection(inspection.ID)
+
 	userID := c.GetUint("userID")
 	var user models.User
 	storage.DB.First(&user, userID)

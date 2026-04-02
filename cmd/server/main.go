@@ -75,8 +75,8 @@ func main() {
 		logger.Warn("redis not configured", "reason", "REDIS_URL not set")
 	}
 
-	// Retry loop для failed фото (работает без Redis)
-	handlers.StartFailedRetryLoop(ctx)
+	// Self-heal loop: retry failed + восстановление зависших uploading (работает без Redis)
+	handlers.StartSelfHealLoop(ctx)
 
 	r := gin.New()
 	// В Docker-среде доверяем только localhost; при Nginx reverse proxy — добавить IP прокси
