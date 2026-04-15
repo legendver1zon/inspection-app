@@ -44,6 +44,9 @@ func RequestLogger() gin.HandlerFunc {
 		if userID > 0 {
 			attrs = append(attrs, "user_id", userID)
 		}
+		if c.Request.Method == "POST" || c.Request.Method == "PUT" {
+			attrs = append(attrs, "content_length", c.Request.ContentLength)
+		}
 
 		switch {
 		case status >= 500:

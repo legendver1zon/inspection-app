@@ -366,6 +366,7 @@ func GetEditInspection(c *gin.Context) {
 		"templates_floor":    templates["floor"],
 		"templates_door":     templates["door"],
 		"templates_plumbing": templates["plumbing"],
+		"error":              c.Query("error"),
 	})
 }
 
@@ -376,12 +377,51 @@ func PostEditInspection(c *gin.Context) {
 		return
 	}
 
-	c.Request.ParseMultipartForm(32 << 20)
+	if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
+		logger.Ctx(c.Request.Context()).Error("ParseMultipartForm failed",
+			"inspection_id", inspection.ID,
+			"error", err,
+			"content_length", c.Request.ContentLength,
+		)
+		editURL := "/inspections/" + strconv.FormatUint(uint64(inspection.ID), 10) + "/edit?error=" +
+			url.QueryEscape("Ошибка при получении данных формы. Попробуйте сохранить ещё раз.")
+		c.Redirect(http.StatusFound, editURL)
+		return
+	}
 
 	activeRooms, _ := strconv.Atoi(c.PostForm("active_rooms"))
 	if activeRooms < 1 {
 		activeRooms = 3
 	}
+
+	// Защита от пустых данных: если ВСЕ ключевые поля формы пустые,
+	// значит данные не были переданы (обрыв соединения, ошибка браузера и т.д.)
+	// В этом случае НЕ удаляем старые данные.
+	address := c.PostForm("address")
+	ownerName := c.PostForm("owner_name")
+	room1Name := c.PostForm("room_name_1")
+	if address == "" && ownerName == "" && room1Name == "" && c.PostForm("active_rooms") == "" {
+		logger.Ctx(c.Request.Context()).Error("empty form data detected — aborting save to protect existing data",
+			"inspection_id", inspection.ID,
+			"active_rooms_raw", c.PostForm("active_rooms"),
+			"content_length", c.Request.ContentLength,
+		)
+		editURL := "/inspections/" + strconv.FormatUint(uint64(inspection.ID), 10) + "/edit?error=" +
+			url.QueryEscape("Данные формы не были получены сервером. Ваши предыдущие данные сохранены. Попробуйте ещё раз.")
+		c.Redirect(http.StatusFound, editURL)
+		return
+	}
+
+	// Диагностика: логируем ключевые поля формы для отладки проблем с потерей данных
+	logger.Ctx(c.Request.Context()).Info("PostEditInspection form received",
+		"inspection_id", inspection.ID,
+		"content_length", c.Request.ContentLength,
+		"active_rooms", activeRooms,
+		"address", address,
+		"owner_name", ownerName,
+		"room_1_name", room1Name,
+		"form_keys_count", len(c.Request.PostForm),
+	)
 
 	// Собираем данные шапки акта ДО транзакции (парсинг формы не требует БД)
 	roomsCount, _ := strconv.Atoi(c.PostForm("rooms_count"))
@@ -394,14 +434,14 @@ func PostEditInspection(c *gin.Context) {
 	updates := map[string]interface{}{
 		"act_number":         c.PostForm("act_number"),
 		"inspection_time":    c.PostForm("inspection_time"),
-		"address":            c.PostForm("address"),
+		"address":            address,
 		"rooms_count":        roomsCount,
 		"floor":              floor,
 		"total_area":         totalArea,
 		"temp_outside":       tempOut,
 		"temp_inside":        tempIn,
 		"humidity":           humidity,
-		"owner_name":         c.PostForm("owner_name"),
+		"owner_name":         ownerName,
 		"developer_rep_name": c.PostForm("developer_rep_name"),
 		"electricity":        c.PostForm("electricity"),
 		"ventilation":        c.PostForm("ventilation"),
@@ -495,6 +535,18 @@ func PostEditInspection(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения"})
 		return
 	}
+
+	// Диагностика: считаем что фактически сохранилось
+	var savedRoomCount int64
+	var savedDefectCount int64
+	storage.DB.Model(&models.InspectionRoom{}).Where("inspection_id = ?", inspection.ID).Count(&savedRoomCount)
+	savedRoomIDs := storage.DB.Model(&models.InspectionRoom{}).Select("id").Where("inspection_id = ?", inspection.ID)
+	storage.DB.Model(&models.RoomDefect{}).Where("room_id IN (?)", savedRoomIDs).Count(&savedDefectCount)
+	logger.Ctx(c.Request.Context()).Info("PostEditInspection saved",
+		"inspection_id", inspection.ID,
+		"rooms_saved", savedRoomCount,
+		"defects_saved", savedDefectCount,
+	)
 
 	// Создаём/переименовываем папку на Яндекс Диске в фоне — не блокируем ответ.
 	if cloudStore != nil {

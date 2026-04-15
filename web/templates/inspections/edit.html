@@ -14,6 +14,9 @@
 {{ template "navbar" . }}
 
 <main class="container">
+    {{ if .error }}
+    <div class="alert alert-error">{{ .error }}</div>
+    {{ end }}
     <div class="page-header">
         <h1>{{ .title }}</h1>
         <a href="/inspections/{{ .inspection.ID }}" class="btn btn-secondary">← К осмотру</a>
@@ -352,6 +355,7 @@
 </main>
 
 <script src="/static/js/edit-rooms.js"></script>
+<script src="/static/js/autosave.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
 <script src="/static/js/edit-plan.js"></script>
 <script src="/static/js/ui.js"></script>

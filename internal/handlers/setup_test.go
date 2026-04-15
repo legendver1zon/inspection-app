@@ -8,6 +8,7 @@ import (
 	"inspection-app/internal/models"
 	"inspection-app/internal/security"
 	"inspection-app/internal/storage"
+	"inspection-app/internal/templatefuncs"
 	"net/http"
 	"os"
 	"strings"
@@ -113,7 +114,7 @@ func setupRouter(t *testing.T) *gin.Engine {
 
 func loadTemplates(t *testing.T) *template.Template {
 	t.Helper()
-	tmpl := template.New("").Funcs(testFuncMap())
+	tmpl := template.New("").Funcs(testFuncMap()).Funcs(templatefuncs.FuncMap())
 	tmpl = template.Must(tmpl.ParseGlob("../../web/templates/partials/*.html"))
 	tmpl = template.Must(tmpl.ParseGlob("../../web/templates/auth/*.html"))
 	tmpl = template.Must(tmpl.ParseGlob("../../web/templates/inspections/*.html"))
