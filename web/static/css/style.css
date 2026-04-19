@@ -473,6 +473,27 @@ a:hover { color: var(--brand-dark); text-decoration: underline; }
 .form-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; }
 .form-hint { font-size: 11px; color: var(--text-faint); }
 .input-readonly { background: var(--bg) !important; color: var(--text-muted); }
+.hint-icon {
+    display: inline-block;
+    margin-left: 4px;
+    color: var(--text-faint);
+    cursor: help;
+    font-size: 12px;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+}
+.input-warning {
+    color: var(--danger);
+    font-size: 12px;
+    margin-top: 4px;
+    line-height: 1.4;
+}
+.form-group input.input-invalid,
+.form-group input.input-invalid:focus {
+    border-color: var(--danger);
+    box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.12);
+}
 .form-actions { margin-top: 24px; display: flex; gap: 12px; justify-content: flex-end; }
 
 .form-card {

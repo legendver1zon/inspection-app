@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"errors"
+	"fmt"
 	"inspection-app/internal/logger"
 	"inspection-app/internal/models"
 	"inspection-app/internal/security"
@@ -16,6 +18,30 @@ import (
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
+
+// errActNumberTaken — sentinel-ошибка, которую транзакция возвращает при
+// обнаружении гонки по уникальному индексу act_number. Handler превращает её
+// в человеко-читаемый редирект, чтобы не потерять данные инспектора.
+var errActNumberTaken = errors.New("act_number already taken (race)")
+
+// redirectWithError — редирект на страницу редактирования с сообщением об ошибке.
+// Используется, когда валидация до транзакции не прошла — данные в БД не трогаем.
+func redirectWithError(c *gin.Context, inspectionID uint, msg string) {
+	editURL := "/inspections/" + strconv.FormatUint(uint64(inspectionID), 10) +
+		"/edit?error=" + url.QueryEscape(msg)
+	c.Redirect(http.StatusFound, editURL)
+}
+
+// isActNumberConflict возвращает true, если ошибка GORM — это нарушение
+// уникального индекса по act_number (PostgreSQL SQLSTATE 23505).
+// Строковая проверка выбрана, чтобы не тянуть pgx/pgconn как прямую зависимость.
+func isActNumberConflict(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "23505") && strings.Contains(s, "act_number")
+}
 
 const pageSize = 20
 
@@ -423,6 +449,29 @@ func PostEditInspection(c *gin.Context) {
 		"form_keys_count", len(c.Request.PostForm),
 	)
 
+	// Валидация номера акта ДО транзакции: предотвращаем потерю данных
+	// из-за конфликта по уникальному индексу act_number.
+	submittedActNumber := strings.TrimSpace(c.PostForm("act_number"))
+	if submittedActNumber == "" {
+		redirectWithError(c, inspection.ID, "Номер акта не может быть пустым")
+		return
+	}
+	if submittedActNumber != inspection.ActNumber {
+		var conflict models.Inspection
+		err := storage.DB.Where("act_number = ? AND id != ?", submittedActNumber, inspection.ID).First(&conflict).Error
+		if err == nil {
+			redirectWithError(c, inspection.ID,
+				fmt.Sprintf("Номер %q уже используется в осмотре #%d", submittedActNumber, conflict.ID))
+			return
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			// Проверка уникальности упала по нетипичной причине — не блокируем,
+			// defensive catch внутри транзакции перехватит 23505 в крайнем случае.
+			logger.Ctx(c.Request.Context()).Error("act_number uniqueness check failed",
+				"inspection_id", inspection.ID, "error", err)
+		}
+	}
+
 	// Собираем данные шапки акта ДО транзакции (парсинг формы не требует БД)
 	roomsCount, _ := strconv.Atoi(c.PostForm("rooms_count"))
 	floor, _ := strconv.Atoi(c.PostForm("floor"))
@@ -432,7 +481,7 @@ func PostEditInspection(c *gin.Context) {
 	humidity, _ := strconv.ParseFloat(c.PostForm("humidity"), 64)
 
 	updates := map[string]interface{}{
-		"act_number":         c.PostForm("act_number"),
+		"act_number":         submittedActNumber,
 		"inspection_time":    c.PostForm("inspection_time"),
 		"address":            address,
 		"rooms_count":        roomsCount,
@@ -454,8 +503,20 @@ func PostEditInspection(c *gin.Context) {
 	}
 
 	// Всё сохранение — в одной транзакции (атомарность: или всё, или ничего).
+	// Порядок операций важен: UPDATE шапки с act_number идёт ПЕРВЫМ. Если
+	// случится гонка по уникальному индексу (23505), транзакция откатится
+	// ДО удаления комнат — данные инспектора останутся целыми.
 	txErr := storage.DB.Transaction(func(tx *gorm.DB) error {
-		// Удаляем старые данные (P12: subquery вместо N+1 цикла)
+		// 1. Обновляем шапку акта (включая act_number). Ошибка уникальности
+		//    ловится здесь и превращается в sentinel для понятного редиректа.
+		if err := tx.Model(inspection).Updates(updates).Error; err != nil {
+			if isActNumberConflict(err) {
+				return errActNumberTaken
+			}
+			return err
+		}
+
+		// 2. Удаляем старые комнаты и дефекты (P12: subquery вместо N+1 цикла)
 		roomIDs := tx.Model(&models.InspectionRoom{}).Select("id").Where("inspection_id = ?", inspection.ID)
 		tx.Where("room_id IN (?)", roomIDs).Delete(&models.RoomDefect{})
 		tx.Where("inspection_id = ?", inspection.ID).Delete(&models.InspectionRoom{})
@@ -523,14 +584,19 @@ func PostEditInspection(c *gin.Context) {
 			}
 		}
 
-		// Обновляем поля шапки акта
-		if err := tx.Model(inspection).Updates(updates).Error; err != nil {
-			return err
-		}
 		return nil
 	})
 
 	if txErr != nil {
+		// Конфликт по act_number из-за гонки: показываем баннер и не теряем данные
+		// (транзакция откатилась до удаления комнат).
+		if errors.Is(txErr, errActNumberTaken) {
+			logger.Ctx(c.Request.Context()).Warn("act_number conflict during save (race)",
+				"inspection_id", inspection.ID, "submitted", submittedActNumber)
+			redirectWithError(c, inspection.ID,
+				fmt.Sprintf("Номер %q уже используется. Выберите другой.", submittedActNumber))
+			return
+		}
 		logger.Ctx(c.Request.Context()).Error("edit inspection transaction failed", "inspection_id", inspection.ID, "error", txErr)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения"})
 		return
@@ -563,6 +629,43 @@ func PostEditInspection(c *gin.Context) {
 	}
 
 	c.Redirect(http.StatusFound, "/inspections/"+strconv.FormatUint(uint64(inspection.ID), 10))
+}
+
+// GetCheckActNumber — AJAX-проверка уникальности номера акта.
+// GET /api/inspections/:id/check-act-number?value=X
+// Отвечает {"taken": bool, "other_id": N}. Auth такой же, как на редактирование:
+// инспектор-владелец или админ.
+func GetCheckActNumber(c *gin.Context) {
+	inspection, ok := loadInspection(c)
+	if !ok {
+		return
+	}
+
+	value := strings.TrimSpace(c.Query("value"))
+	if value == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "value не указан"})
+		return
+	}
+
+	// Своё же значение — не считается занятым
+	if value == inspection.ActNumber {
+		c.JSON(http.StatusOK, gin.H{"taken": false})
+		return
+	}
+
+	var conflict models.Inspection
+	err := storage.DB.Where("act_number = ? AND id != ?", value, inspection.ID).First(&conflict).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		c.JSON(http.StatusOK, gin.H{"taken": false})
+		return
+	}
+	if err != nil {
+		logger.Ctx(c.Request.Context()).Error("check-act-number query failed", "error", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка проверки"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"taken": true, "other_id": conflict.ID})
 }
 
 // PostUploadPlan — загрузка фото плана

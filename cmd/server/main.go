@@ -212,6 +212,7 @@ func main() {
 		protected.GET("/inspections/:id", handlers.GetInspection)
 		protected.GET("/inspections/:id/edit", handlers.GetEditInspection)
 		protected.POST("/inspections/:id/edit", handlers.PostEditInspection)
+		protected.GET("/api/inspections/:id/check-act-number", handlers.GetCheckActNumber)
 		protected.POST("/inspections/:id/status", handlers.PostUpdateStatus)
 		protected.GET("/inspections/:id/upload-status", handlers.GetUploadStatus)
 		protected.GET("/inspections/:id/ws", handlers.WsUploadStatus)

@@ -27,8 +27,15 @@
         <h2>Шапка акта</h2>
         <div class="form-row">
             <div class="form-group">
-                <label>Акт осмотра объекта №</label>
-                <input type="text" name="act_number" form="main-form" value="{{ .inspection.ActNumber }}" required>
+                <label>
+                    Акт осмотра объекта №
+                    <span class="hint-icon" title="Номер генерируется автоматически при создании. Меняйте только при необходимости — если номер уже занят другим осмотром, сохранение будет заблокировано.">ⓘ</span>
+                </label>
+                <input type="text" id="act_number_input" name="act_number" form="main-form"
+                       value="{{ .inspection.ActNumber }}"
+                       data-original="{{ .inspection.ActNumber }}"
+                       data-inspection-id="{{ .inspection.ID }}" required>
+                <span id="act_number_warning" class="input-warning" style="display:none"></span>
             </div>
             <div class="form-group">
                 <label>Дата</label>
@@ -356,6 +363,7 @@
 
 <script src="/static/js/edit-rooms.js"></script>
 <script src="/static/js/autosave.js"></script>
+<script src="/static/js/act-number-check.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js"></script>
 <script src="/static/js/edit-plan.js"></script>
 <script src="/static/js/ui.js"></script>

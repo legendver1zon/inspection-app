@@ -29,7 +29,7 @@ type User struct {
 // Inspection — акт осмотра объекта
 type Inspection struct {
 	gorm.Model
-	ActNumber        string `gorm:"uniqueIndex;not null"`
+	ActNumber        string `gorm:"uniqueIndex:idx_inspections_act_number,where:deleted_at IS NULL;not null"`
 	UserID           uint   `gorm:"not null"`
 	User             User
 	Date             time.Time `gorm:"not null"`

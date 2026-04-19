@@ -8,6 +8,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 )
@@ -20,6 +21,8 @@ func writeField(w *multipart.Writer, name, value string) {
 }
 
 // buildEditForm создаёт валидное тело multipart-формы для PostEditInspection.
+// По умолчанию подставляет act_number="ACT-TEST", т.к. pre-validation теперь
+// требует непустой номер акта. Тесты могут переопределить через fields.
 func buildEditForm(activeRooms int, fields map[string]string) (*bytes.Buffer, string) {
 	body := &bytes.Buffer{}
 	w := multipart.NewWriter(body)
@@ -27,6 +30,10 @@ func buildEditForm(activeRooms int, fields map[string]string) (*bytes.Buffer, st
 	writeField(w, "active_rooms", fmt.Sprintf("%d", activeRooms))
 	writeField(w, "address", fields["address"])
 	writeField(w, "owner_name", fields["owner_name"])
+
+	if _, ok := fields["act_number"]; !ok {
+		writeField(w, "act_number", "ACT-TEST")
+	}
 
 	for key, val := range fields {
 		if key == "address" || key == "owner_name" {
@@ -376,6 +383,238 @@ func TestPostEditInspection_Unauthorized_Redirect(t *testing.T) {
 	}
 }
 
+// --- Тест: конфликт act_number — данные не теряются ---
+// Был инцидент: инспектор случайно ввёл уже занятый номер → транзакция падала
+// на unique-индексе → весь POST откатывался и терялись 10 комнат.
+// Новое поведение: pre-validation ловит конфликт ДО удаления комнат и редиректит
+// на /edit?error=... с понятным сообщением.
+
+func TestPostEditInspection_ActNumber_ConflictKeepsData(t *testing.T) {
+	setupTestDB(t)
+	router := setupRouter(t)
+
+	user := newUser(t, "edit-actnum-conflict@test.com", "pass", "Конфликтов Акт", models.RoleInspector)
+	tok := tokenFor(t, user.ID, "inspector")
+
+	insp := newInspection(t, user.ID, "ул. Первая, 1", "Один", "draft", time.Now())
+	insp.ActNumber = "99-010126"
+	storage.DB.Save(&insp)
+
+	neighbour := newInspection(t, user.ID, "ул. Вторая, 2", "Два", "draft", time.Now())
+	neighbour.ActNumber = "42-010126"
+	storage.DB.Save(&neighbour)
+
+	// Сохраняем старую комнату, чтобы проверить, что она уцелеет.
+	oldRoom := models.InspectionRoom{
+		InspectionID: insp.ID,
+		RoomNumber:   1,
+		RoomName:     "Старая кухня",
+		Length:       5, Width: 4, Height: 2.7,
+	}
+	storage.DB.Create(&oldRoom)
+
+	body, ct := buildEditForm(2, map[string]string{
+		"act_number":  "42-010126", // конфликт с neighbour
+		"address":     "ул. Первая, 1",
+		"owner_name":  "Один",
+		"room_name_1": "Новая 1",
+		"room_name_2": "Новая 2",
+	})
+
+	w := doEditPost(router, insp.ID, body, ct, tok)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("want 302 redirect, got %d: %s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	expectedPrefix := fmt.Sprintf("/inspections/%d/edit?error=", insp.ID)
+	if len(loc) < len(expectedPrefix) || loc[:len(expectedPrefix)] != expectedPrefix {
+		t.Fatalf("redirect: want prefix %q, got %q", expectedPrefix, loc)
+	}
+
+	// ActNumber не должен измениться
+	var updated models.Inspection
+	storage.DB.First(&updated, insp.ID)
+	if updated.ActNumber != "99-010126" {
+		t.Errorf("ActNumber должен остаться неизменным, got %q", updated.ActNumber)
+	}
+
+	// Старые комнаты НЕ должны быть удалены (в этом суть фикса)
+	var rooms []models.InspectionRoom
+	storage.DB.Where("inspection_id = ?", insp.ID).Find(&rooms)
+	if len(rooms) != 1 {
+		t.Fatalf("rooms: want 1 (сохранённая), got %d — данные потеряны!", len(rooms))
+	}
+	if rooms[0].RoomName != "Старая кухня" {
+		t.Errorf("room name: want 'Старая кухня', got %q", rooms[0].RoomName)
+	}
+
+	// Neighbour не пострадал
+	var neighCheck models.Inspection
+	storage.DB.First(&neighCheck, neighbour.ID)
+	if neighCheck.ActNumber != "42-010126" {
+		t.Errorf("соседний ActNumber не должен меняться, got %q", neighCheck.ActNumber)
+	}
+}
+
+// --- Тест: пустой act_number — редирект с ошибкой, данные целы ---
+
+func TestPostEditInspection_ActNumber_Empty(t *testing.T) {
+	setupTestDB(t)
+	router := setupRouter(t)
+
+	user := newUser(t, "edit-actnum-empty@test.com", "pass", "Пустой Акт", models.RoleInspector)
+	tok := tokenFor(t, user.ID, "inspector")
+
+	insp := newInspection(t, user.ID, "ул. Пустая, 0", "Никто", "draft", time.Now())
+	insp.ActNumber = "55-010126"
+	storage.DB.Save(&insp)
+
+	oldRoom := models.InspectionRoom{
+		InspectionID: insp.ID, RoomNumber: 1, RoomName: "Гостиная",
+		Length: 6, Width: 5, Height: 3,
+	}
+	storage.DB.Create(&oldRoom)
+
+	body, ct := buildEditForm(1, map[string]string{
+		"act_number":  "   ", // только пробелы — пустое значение после trim
+		"address":     "ул. Пустая, 0",
+		"owner_name":  "Никто",
+		"room_name_1": "Гостиная-2",
+	})
+
+	w := doEditPost(router, insp.ID, body, ct, tok)
+
+	if w.Code != http.StatusFound {
+		t.Fatalf("want 302 redirect, got %d", w.Code)
+	}
+
+	// Act_number не затёрт
+	var updated models.Inspection
+	storage.DB.First(&updated, insp.ID)
+	if updated.ActNumber != "55-010126" {
+		t.Errorf("ActNumber должен остаться неизменным, got %q", updated.ActNumber)
+	}
+	// Комнаты целы
+	var rooms []models.InspectionRoom
+	storage.DB.Where("inspection_id = ?", insp.ID).Find(&rooms)
+	if len(rooms) != 1 || rooms[0].RoomName != "Гостиная" {
+		t.Errorf("комнаты должны уцелеть, got %+v", rooms)
+	}
+}
+
+// --- Тест: тот же act_number, что и был — сохранение проходит нормально ---
+
+func TestPostEditInspection_ActNumber_SameValue(t *testing.T) {
+	setupTestDB(t)
+	router := setupRouter(t)
+
+	user := newUser(t, "edit-actnum-same@test.com", "pass", "Тот Же", models.RoleInspector)
+	tok := tokenFor(t, user.ID, "inspector")
+
+	insp := newInspection(t, user.ID, "ул. Такая, 7", "Владелец", "draft", time.Now())
+	insp.ActNumber = "77-010126"
+	storage.DB.Save(&insp)
+
+	body, ct := buildEditForm(1, map[string]string{
+		"act_number":  "77-010126", // тот же номер
+		"address":     "ул. Такая, 7",
+		"owner_name":  "Владелец",
+		"room_name_1": "Кухня",
+	})
+
+	w := doEditPost(router, insp.ID, body, ct, tok)
+	if w.Code != http.StatusFound {
+		t.Fatalf("want 302, got %d: %s", w.Code, w.Body.String())
+	}
+	// Должно быть редирект на /inspections/:id (сохранение), а не на /edit?error=...
+	loc := w.Header().Get("Location")
+	expectView := fmt.Sprintf("/inspections/%d", insp.ID)
+	if loc != expectView {
+		t.Errorf("redirect: want %q (успешный view), got %q", expectView, loc)
+	}
+
+	var updated models.Inspection
+	storage.DB.First(&updated, insp.ID)
+	if updated.ActNumber != "77-010126" {
+		t.Errorf("ActNumber: want '77-010126', got %q", updated.ActNumber)
+	}
+}
+
+// --- Тест: уникальный новый act_number — меняется и сохраняется ---
+
+func TestPostEditInspection_ActNumber_Unique(t *testing.T) {
+	setupTestDB(t)
+	router := setupRouter(t)
+
+	user := newUser(t, "edit-actnum-unique@test.com", "pass", "Уникум Актов", models.RoleInspector)
+	tok := tokenFor(t, user.ID, "inspector")
+
+	insp := newInspection(t, user.ID, "ул. Уникум, 1", "Владелец", "draft", time.Now())
+	insp.ActNumber = "10-010126"
+	storage.DB.Save(&insp)
+
+	body, ct := buildEditForm(1, map[string]string{
+		"act_number":  "100-010126", // новый уникальный номер
+		"address":     "ул. Уникум, 1",
+		"owner_name":  "Владелец",
+		"room_name_1": "Кухня",
+	})
+
+	w := doEditPost(router, insp.ID, body, ct, tok)
+	if w.Code != http.StatusFound {
+		t.Fatalf("want 302, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var updated models.Inspection
+	storage.DB.First(&updated, insp.ID)
+	if updated.ActNumber != "100-010126" {
+		t.Errorf("ActNumber: want '100-010126', got %q", updated.ActNumber)
+	}
+}
+
+// --- Тест: act_number soft-deleted осмотра свободен для переиспользования ---
+
+func TestPostEditInspection_ActNumber_SoftDeletedFree(t *testing.T) {
+	setupTestDB(t)
+	router := setupRouter(t)
+
+	user := newUser(t, "edit-actnum-soft@test.com", "pass", "Архивов Акт", models.RoleInspector)
+	tok := tokenFor(t, user.ID, "inspector")
+
+	// Создаём осмотр и удаляем его (soft-delete)
+	trashed := newInspection(t, user.ID, "ул. Архив, 1", "Удалёнов", "draft", time.Now())
+	trashed.ActNumber = "FREE-010126"
+	storage.DB.Save(&trashed)
+	if err := storage.DB.Delete(&trashed).Error; err != nil {
+		t.Fatalf("soft-delete: %v", err)
+	}
+
+	// Новый осмотр пытается взять тот же номер — partial unique index должен это позволить
+	insp := newInspection(t, user.ID, "ул. Живая, 2", "Живов", "draft", time.Now())
+	body, ct := buildEditForm(1, map[string]string{
+		"act_number":  "FREE-010126",
+		"address":     "ул. Живая, 2",
+		"owner_name":  "Живов",
+		"room_name_1": "Спальня",
+	})
+
+	w := doEditPost(router, insp.ID, body, ct, tok)
+	if w.Code != http.StatusFound {
+		t.Fatalf("want 302, got %d: %s", w.Code, w.Body.String())
+	}
+	loc := w.Header().Get("Location")
+	if strings.Contains(loc, "error=") {
+		t.Fatalf("не должно быть конфликта с soft-deleted, got redirect %q", loc)
+	}
+
+	var updated models.Inspection
+	storage.DB.First(&updated, insp.ID)
+	if updated.ActNumber != "FREE-010126" {
+		t.Errorf("ActNumber: want 'FREE-010126', got %q", updated.ActNumber)
+	}
+}
+
 // --- Тест: частичные данные (address есть, active_rooms есть) — сохранение работает ---
 
 func TestPostEditInspection_PartialData_SavesNormally(t *testing.T) {
@@ -409,5 +648,75 @@ func TestPostEditInspection_PartialData_SavesNormally(t *testing.T) {
 	storage.DB.Where("inspection_id = ?", insp.ID).Find(&rooms)
 	if len(rooms) != 1 {
 		t.Fatalf("rooms: want 1, got %d", len(rooms))
+	}
+}
+
+// --- AJAX: /api/inspections/:id/check-act-number ---
+
+func doCheckActNumber(r http.Handler, inspID uint, value, token string) *httptest.ResponseRecorder {
+	path := fmt.Sprintf("/api/inspections/%d/check-act-number?value=%s", inspID, value)
+	req := httptest.NewRequest(http.MethodGet, path, nil)
+	req.AddCookie(&http.Cookie{Name: "token", Value: token})
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	return w
+}
+
+func TestCheckActNumber_Taken(t *testing.T) {
+	setupTestDB(t)
+	router := setupRouter(t)
+
+	user := newUser(t, "check-taken@test.com", "pass", "Проверов", models.RoleInspector)
+	tok := tokenFor(t, user.ID, "inspector")
+
+	insp := newInspection(t, user.ID, "ул. Моя, 1", "Я", "draft", time.Now())
+	insp.ActNumber = "A-010126"
+	storage.DB.Save(&insp)
+
+	other := newInspection(t, user.ID, "ул. Другая, 2", "Другой", "draft", time.Now())
+	other.ActNumber = "B-010126"
+	storage.DB.Save(&other)
+
+	w := doCheckActNumber(router, insp.ID, "B-010126", tok)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d: %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `"taken":true`) {
+		t.Errorf("ожидался taken:true, got %s", body)
+	}
+	if !strings.Contains(body, fmt.Sprintf(`"other_id":%d`, other.ID)) {
+		t.Errorf("ожидался other_id=%d, got %s", other.ID, body)
+	}
+}
+
+func TestCheckActNumber_Free(t *testing.T) {
+	setupTestDB(t)
+	router := setupRouter(t)
+
+	user := newUser(t, "check-free@test.com", "pass", "Свободов", models.RoleInspector)
+	tok := tokenFor(t, user.ID, "inspector")
+
+	insp := newInspection(t, user.ID, "ул. Свободная, 1", "Свободов", "draft", time.Now())
+	insp.ActNumber = "C-010126"
+	storage.DB.Save(&insp)
+
+	// Свободный номер
+	w := doCheckActNumber(router, insp.ID, "NEW-010126", tok)
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d", w.Code)
+	}
+	body := w.Body.String()
+	if !strings.Contains(body, `"taken":false`) {
+		t.Errorf("ожидался taken:false, got %s", body)
+	}
+
+	// Свой же номер тоже должен вернуть taken:false
+	wSame := doCheckActNumber(router, insp.ID, "C-010126", tok)
+	if wSame.Code != http.StatusOK {
+		t.Fatalf("same value: want 200, got %d", wSame.Code)
+	}
+	if !strings.Contains(wSame.Body.String(), `"taken":false`) {
+		t.Errorf("свой же номер: want taken:false, got %s", wSame.Body.String())
 	}
 }
