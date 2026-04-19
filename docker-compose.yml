@@ -43,6 +43,10 @@ services:
       DATABASE_URL: postgres://inspection:${POSTGRES_PASSWORD:-secret}@postgres:5432/inspection_db?sslmode=disable
       REDIS_URL: redis://redis:6379
       GIN_MODE: release
+      # Go 1.23+ ограничивает multipart-формы до 1000 частей. Форма редактирования
+      # 10+ комнат × десятки полей на каждую легко превышает этот лимит и валится
+      # с ошибкой "multipart: message too large". Поднимаем запас в 10x.
+      GODEBUG: multipartmaxparts=10000
     ports:
       - "8080:8080"
     volumes:
