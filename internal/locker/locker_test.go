@@ -109,3 +109,57 @@ func TestMemoryLocker_ReusableAfterUnlock(t *testing.T) {
 		unlock()
 	}
 }
+
+// TestMemoryLocker_MutualExclusion_NonAtomicCounter — обычная (неатомарная)
+// переменная под локом: нарушение взаимного исключения ловится go test -race.
+// После завершения все записи должны быть удалены из map (refcount-очистка).
+func TestMemoryLocker_MutualExclusion_NonAtomicCounter(t *testing.T) {
+	m := NewMemory()
+	const goroutines = 50
+	var wg sync.WaitGroup
+	counter := 0
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			unlock, err := m.Lock("shared-key")
+			if err != nil {
+				t.Errorf("Lock() error: %v", err)
+				return
+			}
+			counter++
+			unlock()
+		}()
+	}
+	wg.Wait()
+
+	if counter != goroutines {
+		t.Errorf("counter = %d, ожидали %d (нарушено взаимное исключение)", counter, goroutines)
+	}
+
+	m.mu.Lock()
+	remaining := len(m.locks)
+	m.mu.Unlock()
+	if remaining != 0 {
+		t.Errorf("map не очищена после освобождения всех ключей: %d записей", remaining)
+	}
+}
+
+// TestMemoryLocker_CleanupPerKey — каждый уникальный ключ удаляется после unlock.
+func TestMemoryLocker_CleanupPerKey(t *testing.T) {
+	m := NewMemory()
+	for i := 0; i < 100; i++ {
+		unlock, err := m.Lock(string(rune('a'+i%26)) + "-key")
+		if err != nil {
+			t.Fatalf("Lock() error: %v", err)
+		}
+		unlock()
+	}
+	m.mu.Lock()
+	remaining := len(m.locks)
+	m.mu.Unlock()
+	if remaining != 0 {
+		t.Errorf("утечка записей: %d ключей осталось в map", remaining)
+	}
+}

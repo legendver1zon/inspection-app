@@ -50,8 +50,7 @@ func GetDashboard(c *gin.Context) {
 	userID := c.GetUint("userID")
 	role := c.GetString("userRole")
 
-	var user models.User
-	storage.DB.First(&user, userID)
+	user := CurrentUser(c)
 
 	base := storage.DB.Model(&models.Inspection{})
 	if role != "admin" {
@@ -190,8 +189,7 @@ func GetInspections(c *gin.Context) {
 	var inspections []models.Inspection
 	listQ.Limit(pageSize).Offset(offset).Find(&inspections)
 
-	var user models.User
-	storage.DB.First(&user, userID)
+	user := CurrentUser(c)
 
 	hasFilters := actFilter != "" || ownerFilter != "" || inspectorFilter != "" || addressFilter != "" || dateFrom != "" || dateTo != ""
 
@@ -334,9 +332,7 @@ func GetInspection(c *gin.Context) {
 	// Soft retry: если есть failed фото с оставшимися попытками — перезапускаем загрузку
 	go TriggerRetryForInspection(inspection.ID)
 
-	userID := c.GetUint("userID")
-	var user models.User
-	storage.DB.First(&user, userID)
+	user := CurrentUser(c)
 
 	c.HTML(http.StatusOK, "view.html", gin.H{
 		"title":          "Акт №" + inspection.ActNumber,
@@ -373,9 +369,7 @@ func GetEditInspection(c *gin.Context) {
 
 	templates := loadTemplatesBySection()
 
-	userID := c.GetUint("userID")
-	var user models.User
-	storage.DB.First(&user, userID)
+	user := CurrentUser(c)
 
 	c.HTML(http.StatusOK, "edit.html", gin.H{
 		"title":              "Редактировать акт №" + inspection.ActNumber,
@@ -457,6 +451,12 @@ func PostEditInspection(c *gin.Context) {
 		return
 	}
 	if submittedActNumber != inspection.ActNumber {
+		// Валидируем только ИЗМЕНЁННЫЙ номер: legacy-номера, введённые до появления
+		// валидации, не должны блокировать сохранение остальных полей акта
+		if err := security.ValidateActNumber(submittedActNumber); err != nil {
+			redirectWithError(c, inspection.ID, "Недопустимый "+err.Error())
+			return
+		}
 		var conflict models.Inspection
 		err := storage.DB.Where("act_number = ? AND id != ?", submittedActNumber, inspection.ID).First(&conflict).Error
 		if err == nil {
@@ -646,10 +646,14 @@ func GetCheckActNumber(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "value не указан"})
 		return
 	}
-
-	// Своё же значение — не считается занятым
+	// Своё же значение — не считается занятым (и не валидируется: legacy-номер
+	// может не соответствовать текущим правилам, но менять его не обязаны)
 	if value == inspection.ActNumber {
 		c.JSON(http.StatusOK, gin.H{"taken": false})
+		return
+	}
+	if err := security.ValidateActNumber(value); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 

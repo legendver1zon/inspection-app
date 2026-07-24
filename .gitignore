@@ -16,6 +16,12 @@ web/static/uploads/
 web/static/documents/*.pdf
 web/static/documents/*.docx
 
+# Артефакты тестов (CWD тестов — internal/handlers)
+internal/handlers/web/
+
+# macOS
+.DS_Store
+
 # Переменные окружения
 .env
 .env.*

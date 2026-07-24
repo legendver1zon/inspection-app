@@ -120,6 +120,8 @@ var (
 	LoginLimiter          RateLimiter
 	RegisterLimiter       RateLimiter
 	ForgotPasswordLimiter RateLimiter
+	ResetPasswordLimiter  RateLimiter
+	AdminLimiter          RateLimiter
 	InspectionLimiter     RateLimiter
 )
 
@@ -128,6 +130,8 @@ func Init() {
 	LoginLimiter          = NewMemoryRateLimiter(5, 15*time.Minute)
 	RegisterLimiter       = NewMemoryRateLimiter(3, time.Hour)
 	ForgotPasswordLimiter = NewMemoryRateLimiter(3, time.Hour)
+	ResetPasswordLimiter  = NewMemoryRateLimiter(5, 15*time.Minute)
+	AdminLimiter          = NewMemoryRateLimiter(60, time.Minute)
 	InspectionLimiter     = NewMemoryRateLimiter(20, time.Hour)
 }
 
@@ -148,6 +152,8 @@ func InitWithRedis(redisURL string) {
 	LoginLimiter          = NewRedisRateLimiter(client, "login", 5, 15*time.Minute)
 	RegisterLimiter       = NewRedisRateLimiter(client, "register", 3, time.Hour)
 	ForgotPasswordLimiter = NewRedisRateLimiter(client, "forgot", 3, time.Hour)
+	ResetPasswordLimiter  = NewRedisRateLimiter(client, "reset", 5, 15*time.Minute)
+	AdminLimiter          = NewRedisRateLimiter(client, "admin", 60, time.Minute)
 	InspectionLimiter     = NewRedisRateLimiter(client, "inspection", 20, time.Hour)
 }
 
@@ -179,6 +185,16 @@ func forgotPasswordBlockedMsg(retryAfter time.Duration) string {
 		"Слишком много запросов на сброс пароля с вашего IP-адреса.\n"+
 			"Что произошло: защита от перебора — 3 запроса в час.\n"+
 			"Что делать: подождите %d мин или обратитесь к администратору.",
+		mins,
+	)
+}
+
+func resetPasswordBlockedMsg(retryAfter time.Duration) string {
+	mins := int(retryAfter.Minutes()) + 1
+	return fmt.Sprintf(
+		"Слишком много попыток ввода кода с вашего IP-адреса.\n"+
+			"Что произошло: защита от перебора кода сброса пароля.\n"+
+			"Что делать: подождите %d мин и запросите новый код.",
 		mins,
 	)
 }
@@ -237,6 +253,41 @@ func RateLimitRegister() gin.HandlerFunc {
 				"title": "Регистрация",
 				"error": registerBlockedMsg(retryAfter),
 			})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+// RateLimitResetPassword — middleware для POST /reset-password.
+// Проверяет лимит ПЕРЕД проверкой кода. Счётчик инкрементируется в PostResetPassword при неудаче.
+func RateLimitResetPassword() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		allowed, retryAfter := ResetPasswordLimiter.Check(c.ClientIP())
+		if !allowed {
+			Log(EventPasswordResetBlocked, c.ClientIP(), "")
+			c.HTML(http.StatusTooManyRequests, "reset_password.html", gin.H{
+				"title": "Новый пароль",
+				"email": c.PostForm("email"),
+				"error": resetPasswordBlockedMsg(retryAfter),
+			})
+			c.Abort()
+			return
+		}
+		c.Next()
+	}
+}
+
+// RateLimitAdmin — middleware для группы /admin/*.
+// Общий лимит операций с одного IP; защищает от скриптового перебора admin-эндпоинтов.
+func RateLimitAdmin() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		allowed, retryAfter := AdminLimiter.CheckAndIncrement(c.ClientIP())
+		if !allowed {
+			Log(EventAdminBlocked, c.ClientIP(), c.Request.URL.Path)
+			c.String(http.StatusTooManyRequests,
+				"Слишком много запросов. Попробуйте через %d сек.", int(retryAfter.Seconds())+1)
 			c.Abort()
 			return
 		}

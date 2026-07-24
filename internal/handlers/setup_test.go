@@ -9,6 +9,7 @@ import (
 	"inspection-app/internal/security"
 	"inspection-app/internal/storage"
 	"inspection-app/internal/templatefuncs"
+	"inspection-app/internal/textutil"
 	"net/http"
 	"os"
 	"strings"
@@ -75,6 +76,7 @@ func setupRouter(t *testing.T) *gin.Engine {
 			c.Abort()
 			return
 		}
+		c.Set("currentUser", u)
 		c.Next()
 	})
 	{
@@ -88,6 +90,9 @@ func setupRouter(t *testing.T) *gin.Engine {
 
 		protected.POST("/documents/:id/delete", PostDeleteDocument)
 		protected.GET("/documents/:id/download", GetDownloadDocument)
+
+		protected.GET("/photos/:id/download", GetPhotoDownload)
+		protected.POST("/photos/:id/delete", DeletePhoto)
 
 		protected.GET("/profile", GetProfile)
 		protected.POST("/profile", PostProfile)
@@ -280,7 +285,7 @@ func newUser(t *testing.T, email, password, fullName string, role models.Role) m
 		Email:        email,
 		PasswordHash: hash,
 		FullName:     fullName,
-		Initials:     buildInitials(fullName),
+		Initials:     textutil.Initials(fullName),
 		Role:         role,
 	}
 	if err := storage.DB.Create(&user).Error; err != nil {

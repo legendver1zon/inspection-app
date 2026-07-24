@@ -13,6 +13,8 @@ const (
 	EventPasswordChange        = "PASSWORD_CHANGE"
 	EventForgotPassword        = "FORGOT_PASSWORD"
 	EventForgotPasswordBlocked = "FORGOT_PASSWORD_BLOCKED"
+	EventPasswordResetBlocked  = "PASSWORD_RESET_BLOCKED"
+	EventAdminBlocked          = "ADMIN_RATE_LIMITED"
 	EventFileRejected          = "FILE_REJECTED"
 	EventInspectionBlocked     = "INSPECTION_BLOCKED"
 )

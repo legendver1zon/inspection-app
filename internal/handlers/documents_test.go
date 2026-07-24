@@ -203,11 +203,12 @@ func TestGetDownloadDocument_FileMissing_DeletesRecord(t *testing.T) {
 	owner := newUser(t, "owner@test.com", "pass123", "Владелец Владелец Владелец", models.RoleInspector)
 	insp := newInspection(t, owner.ID, "ул. Ленина, 1", "Собственник", "draft", time.Now())
 
-	// Указываем несуществующий путь к файлу
+	// Несуществующий файл ВНУТРИ разрешённой директории:
+	// путь вне web/static/documents отсекается проверкой path traversal (403)
 	doc := models.Document{
 		InspectionID: insp.ID,
 		Format:       "pdf",
-		FilePath:     "/nonexistent/path/file.pdf",
+		FilePath:     "web/static/documents/nonexistent_file_12345.pdf",
 		GeneratedBy:  owner.ID,
 	}
 	storage.DB.Create(&doc)
@@ -248,5 +249,43 @@ func TestGetDownloadDocument_NoFilePath(t *testing.T) {
 
 	if w.Code != http.StatusNotFound {
 		t.Errorf("GET /documents/:id/download no filepath: got %d, want 404", w.Code)
+	}
+}
+
+// TestGetDownloadDocument_PathTraversal_Returns403AndKeepsRecord — пути вне
+// web/static/documents дают 403, запись НЕ удаляется (в отличие от ветки
+// «файл потерян», которая чистит устаревшие записи).
+func TestGetDownloadDocument_PathTraversal_Returns403AndKeepsRecord(t *testing.T) {
+	setupTestDB(t)
+	r := setupRouter(t)
+
+	owner := newUser(t, "traversal@test.com", "pass123", "Владелец Тест Тестов", models.RoleInspector)
+	insp := newInspection(t, owner.ID, "ул. Ленина, 2", "Собственник", "draft", time.Now())
+	token := tokenFor(t, owner.ID, "inspector")
+
+	// /etc/passwd — классический traversal; documents_evil — boundary-кейс
+	// (HasPrefix без разделителя пропустил бы его)
+	for _, fp := range []string{"/etc/passwd", "web/static/documents_evil/act.pdf"} {
+		doc := models.Document{
+			InspectionID: insp.ID,
+			Format:       "pdf",
+			FilePath:     fp,
+			GeneratedBy:  owner.ID,
+		}
+		storage.DB.Create(&doc)
+
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest("GET", "/documents/"+itoa(doc.ID)+"/download", nil)
+		req.AddCookie(&http.Cookie{Name: "token", Value: token})
+		r.ServeHTTP(w, req)
+
+		if w.Code != http.StatusForbidden {
+			t.Errorf("FilePath=%q: got %d, want 403", fp, w.Code)
+		}
+		var count int64
+		storage.DB.Model(&models.Document{}).Where("id = ?", doc.ID).Count(&count)
+		if count != 1 {
+			t.Errorf("FilePath=%q: запись удалена при traversal-пути", fp)
+		}
 	}
 }

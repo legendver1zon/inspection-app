@@ -105,11 +105,22 @@ func PostResetPassword(c *gin.Context) {
 
 	var user models.User
 	if err := storage.DB.Where("email = ?", email).First(&user).Error; err != nil {
+		security.ResetPasswordLimiter.Increment(c.ClientIP())
 		renderErr("Пользователь не найден")
 		return
 	}
 
+	// Лимит и на аккаунт (не только на IP): распределённый перебор кода
+	// с многих IP упирается в счётчик по email
+	if allowed, _ := security.ResetPasswordLimiter.Check("email:" + email); !allowed {
+		security.Log(security.EventPasswordResetBlocked, c.ClientIP(), "email="+email)
+		renderErr("Слишком много попыток для этого аккаунта. Запросите новый код позже.")
+		return
+	}
+
 	if user.ResetToken == "" || user.ResetToken != code {
+		security.ResetPasswordLimiter.Increment(c.ClientIP())
+		security.ResetPasswordLimiter.Increment("email:" + email)
 		renderErr("Неверный код")
 		return
 	}
@@ -130,6 +141,8 @@ func PostResetPassword(c *gin.Context) {
 		"reset_expiry":  nil,
 	})
 
+	security.ResetPasswordLimiter.Reset(c.ClientIP())
+	security.ResetPasswordLimiter.Reset("email:" + email)
 	security.Log(security.EventPasswordReset, c.ClientIP(), "email="+email)
 	c.Redirect(http.StatusFound, "/login?reset=1")
 }

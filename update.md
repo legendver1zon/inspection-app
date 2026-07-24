@@ -1,6 +1,6 @@
 # Inspection App — План развития и технический долг
 
-**Последнее обновление:** 2026-04-19
+**Последнее обновление:** 2026-07-24
 **Текущий статус:** Production (Timeweb Cloud, 5.42.105.93:8080)
 **Версия:** Go 1.25 / Gin / GORM / PostgreSQL 16 / Redis 7
 
@@ -32,8 +32,8 @@ pre-validation в `PostEditInspection`, чтобы конфликт ловилс
 
 | Метрика | Значение |
 |---------|----------|
-| Go-файлов | 51 |
-| Строк Go-кода | 11,051 |
+| Go-файлов | 60 |
+| Строк Go-кода | 13,566 |
 | HTML-шаблонов | 14 |
 | Строк HTML | 2,428 |
 | Строк CSS | 1,761 |
@@ -63,6 +63,66 @@ pre-validation в `PostEditInspection`, чтобы конфликт ловилс
 ---
 
 ## Что было сделано
+
+### Сессия 4 — Аудит качества и безопасности (2026-07-24)
+
+**Безопасность:**
+- [x] `act_number`: серверная валидация (`security.ValidateActNumber`, ≤64 символа,
+      буквы/цифры/пробел/`._/-`, запрет `..`) в PostEditInspection и check-act-number API.
+      Раньше редактируемый номер попадал в пути Яндекс.Диска без ограничений — path
+      traversal / коллизии папок
+- [x] `sanitizeFolderName` применён к ActNumber в EnsureInspectionFolder и
+      buildDefectInfoMap (защита в глубину для уже существующих записей);
+      имена из одних точек → fallback на ID
+- [x] Rate limit на `POST /reset-password` (5/15мин, инкремент при неверном коде) —
+      6-значный код перебирался без ограничений; вектор захвата аккаунта
+- [x] Rate limit на `/admin/*` (60/мин на IP)
+- [x] Content-Security-Policy (пока с `unsafe-inline` — в шаблонах inline-скрипты)
+- [x] Лимит тела запроса: 10 МБ формы, 200 МБ маршруты загрузки фото/плана/аватара
+- [x] `GetPhotoDownload`: `c.File` только из каталога `web/static/uploads`
+- [x] `GetDownloadDocument`: `HasPrefix` с разделителем (не пропускает `documents-evil`)
+- [x] `strconv.Atoi` для `:id` в admin.go и documents.go
+- [x] `COOKIE_SECURE` задокументирован в `.env.example`
+
+**Техдолг:**
+- [x] A4: `buildInitials` → общий пакет `internal/textutil` (две идентичные копии удалены)
+- [x] A6: worker больше не импортирует handlers — `worker.New(q, uploadFn)`, связывает main.go
+- [x] D7: все 17 непроверенных `DB.First()` закрыты:
+      - пользователь для рендера берётся из контекста (`handlers.CurrentUser`,
+        auth-middleware кладёт его туда — минус лишний запрос на каждый запрос)
+      - цепочка авторизации фото → `loadPhotoInspection` c Unscoped и явными 404.
+        Попутно исправлен продовый баг: владелец-неадмин получал 403 при скачивании
+        фото архивных (soft-deleted) дефектов
+- [x] `MemoryLocker`: refcount + удаление записей — map мьютексов рос бесконечно
+- [x] `sync_scheduler`: syncCtx, отмена debounce-таймеров при shutdown,
+      `StartSelfHealLoop` возвращает wait (main дожидается цикла);
+      `TriggerRetryForInspection` через ScheduleSync вместо голой горутины
+
+**По итогам многоагентной ревизии диффа (найдено и исправлено до коммита):**
+- [x] CSP блокировал Cropper.js с cdnjs (кроп плана) и QR-код с api.qrserver.com —
+      добавлены в белый список; вендоринг зависимостей — задача U6
+- [x] Валидация act_number применялась и к неизменённому legacy-номеру —
+      блокировала бы сохранение всего акта; теперь валидируется только изменённый
+- [x] Номер акта с «/» (легитимный формат «15/2026») ронял генерацию PDF —
+      имя файла санитизируется в pdf.Generate
+- [x] Перебор кода сброса лимитировался только по IP — добавлен лимит по email
+      (распределённый перебор с многих IP упирается в счётчик аккаунта)
+- [x] 429-страница reset-password теряла email из формы
+- [x] Фото в `pending` без Redis после рестарта зависали навсегда —
+      self-heal теперь пересинхронизирует stale pending (resyncStalePending)
+
+**Тесты:**
+- [x] Хрупкие тайминг-тесты bcrypt (>50мс wall-clock) → проверка `bcrypt.Cost`
+- [x] Починены 2 давно сломанных интеграционных теста (падали и на HEAD):
+      `TestGetDownloadDocument_FileMissing_DeletesRecord` (путь вне allowedDir → 403),
+      `TestSyncPhotos_30Photos_SingleUser` (устаревшее ожидание publish-URL на файл)
+- [x] Новые тесты: `ValidateActNumber`, `textutil.Initials`, mutual exclusion +
+      очистка map в MemoryLocker (-race), скачивание/удаление фото архивных дефектов,
+      404 для фото удалённого осмотра, отказ отдачи файла вне uploads,
+      path traversal в документах (403 + запись не удаляется), rate limit
+      reset-password (429, сброс при успехе, per-email лимит), cost dummyHash
+- [x] `resetAllLimiters()` дополнен новыми лимитерами (иначе тесты копили счётчики)
+- [x] Полный прогон unit + integration — зелёный
 
 ### Начальный аудит (сессия 1)
 - [x] JWT_SECRET обязателен в production (log.Fatal при GIN_MODE=release)
@@ -142,17 +202,21 @@ pre-validation в `PostEditInspection`, чтобы конфликт ловилс
 - ~~U4: Нет dashboard~~ → /dashboard
 - ~~U5: Форма перегружена~~ → accordion для комнат
 
+### Закрыто в сессии 4 (2026-07-24)
+- ~~A4: Дублирование buildInitials~~ → internal/textutil
+- ~~A6: Worker импортирует handlers~~ → инъекция функции загрузки из main.go
+- ~~D7: DB.First() без проверки ошибки (17 мест)~~ → CurrentUser + loadPhotoInspection
+
 ### Остаётся
 
 | # | Проблема | Где | Приоритет |
 |---|---------|-----|-----------|
-| A1 | handlers — 6000+ строк в одном пакете | internal/handlers/ | Средний |
-| A2 | Глобальные переменные (storage.DB, cloudStore) | handlers, storage | Средний |
-| A4 | Дублирование buildInitials | handlers/auth.go + seed/users.go | Низкий |
-| A6 | Worker импортирует handlers (обратная зависимость) | worker/uploader.go | Средний |
+| A1 | handlers — 6500+ строк в одном пакете; облачная синхронизация фото заслуживает пакета photosync | internal/handlers/ | Средний |
+| A2 | Глобальные переменные (storage.DB, cloudStore, uploadLocker, wsHub) | handlers, storage | Средний |
+| A7 | Дублирование retry-логики: sync_scheduler.retryFailedPhotos ≈ worker.retryFailed | handlers + worker | Низкий |
 | D3 | InspectionRoom — 20+ числовых полей (Window1-5) | models.go | Низкий |
-| D7 | 9 мест с DB.First() без проверки ошибки | handlers/ | Средний |
 | F3 | Локальные файлы без backup | web/static/uploads/ | Средний |
+| U6 | Строгий CSP без unsafe-inline: вынести inline-скрипты и onclick из 14 шаблонов | web/templates/ | Средний |
 
 ---
 
@@ -276,20 +340,29 @@ update.sh делает: pg_dump → git pull → docker pull → docker up → �
 
 ---
 
-## Security Review (2026-03-31)
+## Security Review (обновлён 2026-07-24)
 
-**Оценка: 8.5/10.** Критических уязвимостей нет.
+**Оценка: 9/10.** Критических уязвимостей нет.
 
-### Исправлено
+### Исправлено (2026-05, коммит 546e944)
 - [x] Пароль БД в docker-compose.yml → `${POSTGRES_PASSWORD:-secret}`
 - [x] Trusted Proxies → `SetTrustedProxies(["127.0.0.1", "::1"])`
 - [x] `os.Remove()` ошибки теперь логируются
+- [x] Security-заголовки (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, Permissions-Policy)
+- [x] Path traversal в GetDownloadDocument, WebSocket CheckOrigin, timing attack при логине
+
+### Исправлено (2026-07-24, сессия 4)
+- [x] `act_number` в путях Яндекс.Диска — валидация + санитизация (был path traversal)
+- [x] Rate limit на `/reset-password` (перебор 6-значного кода) и `/admin/*`
+- [x] Content-Security-Policy (базовый, с unsafe-inline)
+- [x] Лимиты размера тела запроса (MaxBytesReader)
+- [x] `c.File` из проверенного каталога, `Atoi` для id-параметров
 
 ### Остаётся (средний/низкий приоритет)
-- [ ] `c.Param("id")` в admin.go без `strconv.Atoi` — GORM prepared statements защищают
-- [ ] `c.File(absPath)` из DB-поля без проверки директории — риск низкий
-- [ ] Нет Content-Security-Policy заголовка — inline JS вынесен, можно добавить CSP
-- [ ] Нет rate limit на admin-endpoints
+- [ ] Строгий CSP — требует выноса inline-скриптов/onclick из шаблонов (U6)
+- [ ] CSRF-токены — сейчас только SameSite=Lax (приемлемо: опасные операции POST)
+- [ ] HTTPS + HSTS + `COOKIE_SECURE=true` — ждёт покупки домена
+- [ ] Redis rate limiter fail-open при недоступности Redis (осознанный компромисс)
 
 ### Что реализовано хорошо
 | Защита | Статус |

@@ -19,11 +19,17 @@ var (
 	syncTimers   = map[uint]*time.Timer{}
 	syncTimersMu sync.Mutex
 	syncDebounce = 500 * time.Millisecond
+	// syncCtx — контекст приложения; выставляется в StartSelfHealLoop.
+	// После его отмены новые синхронизации не планируются и не запускаются.
+	syncCtx context.Context = context.Background()
 )
 
 // ScheduleSync планирует загрузку фото на Яндекс Диск для осмотра.
 // Дедупликация: если вызвано несколько раз за 500ms — выполнится один раз.
 func ScheduleSync(inspectionID uint) {
+	if syncCtx.Err() != nil {
+		return
+	}
 	syncTimersMu.Lock()
 	defer syncTimersMu.Unlock()
 
@@ -36,9 +42,22 @@ func ScheduleSync(inspectionID uint) {
 		delete(syncTimers, inspectionID)
 		syncTimersMu.Unlock()
 
+		if syncCtx.Err() != nil {
+			return
+		}
 		logger.Info("sync scheduled", "inspection_id", inspectionID)
 		safeSync(inspectionID)
 	})
+}
+
+// stopAllSyncTimers отменяет отложенные debounce-синхронизации (при shutdown).
+func stopAllSyncTimers() {
+	syncTimersMu.Lock()
+	defer syncTimersMu.Unlock()
+	for id, t := range syncTimers {
+		t.Stop()
+		delete(syncTimers, id)
+	}
 }
 
 // --- Фоновые циклы самовосстановления ---
@@ -49,8 +68,13 @@ const stuckTimeout = 10 * time.Minute // uploading старше этого — �
 // 1. Retry failed фото (каждые 60 сек)
 // 2. Восстановление зависших uploading (каждые 2 мин)
 // Работает независимо от Redis — всегда запускается в main.go.
-func StartSelfHealLoop(ctx context.Context) {
+// Возвращает wait: main вызывает её при shutdown, чтобы дождаться завершения цикла.
+func StartSelfHealLoop(ctx context.Context) (wait func()) {
+	syncCtx = ctx
+	var wg sync.WaitGroup
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		retryTicker := time.NewTicker(60 * time.Second)
 		stuckTicker := time.NewTicker(2 * time.Minute)
 		defer retryTicker.Stop()
@@ -58,15 +82,18 @@ func StartSelfHealLoop(ctx context.Context) {
 		for {
 			select {
 			case <-ctx.Done():
+				stopAllSyncTimers()
 				return
 			case <-retryTicker.C:
 				retryFailedPhotos()
 			case <-stuckTicker.C:
 				requeueStuckUploads()
+				resyncStalePending()
 			}
 		}
 	}()
 	logger.Info("self-heal loop started", "retry_interval", "60s", "stuck_interval", "2m", "max_retries", maxFailRetries)
+	return wg.Wait
 }
 
 // requeueStuckUploads переводит uploading → pending для фото, зависших дольше stuckTimeout.
@@ -104,6 +131,32 @@ func requeueStuckUploads() {
 		Where("photos.id IN ?", stuckIDs).
 		Scan(&inspectionIDs)
 
+	for _, id := range inspectionIDs {
+		ScheduleSync(id)
+	}
+}
+
+// resyncStalePending досинхронизирует фото, застрявшие в pending дольше stuckTimeout.
+// Без Redis такое случается после рестарта/шатдауна: некому было запустить sync.
+// С Redis это подстраховка на случай потерянной задачи в очереди.
+func resyncStalePending() {
+	if cloudStore == nil {
+		return
+	}
+
+	cutoff := time.Now().Add(-stuckTimeout)
+	var inspectionIDs []uint
+	storage.DB.Model(&models.Photo{}).
+		Select("DISTINCT inspection_rooms.inspection_id").
+		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
+		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+		Where("photos.upload_status = 'pending' AND photos.updated_at < ? AND photos.deleted_at IS NULL", cutoff).
+		Scan(&inspectionIDs)
+
+	if len(inspectionIDs) == 0 {
+		return
+	}
+	logger.Warn("self-heal: resync stale pending", "inspections", len(inspectionIDs))
 	for _, id := range inspectionIDs {
 		ScheduleSync(id)
 	}
@@ -185,5 +238,5 @@ func TriggerRetryForInspection(inspectionID uint) {
 			"retry_count":   gorm.Expr("retry_count + 1"),
 		})
 	logger.Info("soft retry: reset failed→pending on view", "inspection_id", inspectionID, "photos", len(failedIDs))
-	go safeSync(inspectionID)
+	ScheduleSync(inspectionID)
 }

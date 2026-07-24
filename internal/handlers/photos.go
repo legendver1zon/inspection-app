@@ -163,6 +163,30 @@ func PostUploadPhoto(c *gin.Context) {
 	})
 }
 
+// loadPhotoInspection загружает осмотр по цепочке фото → дефект → помещение → осмотр
+// для проверки прав доступа. Дефект и помещение ищутся Unscoped: архивные
+// (soft-deleted) дефекты сохраняют фото, показываемые на странице просмотра.
+// При обрыве цепочки отвечает 404 и возвращает ok=false.
+func loadPhotoInspection(c *gin.Context, photo *models.Photo) (models.Inspection, bool) {
+	var inspection models.Inspection
+
+	var defect models.RoomDefect
+	if err := storage.DB.Unscoped().First(&defect, photo.DefectID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Дефект не найден"})
+		return inspection, false
+	}
+	var room models.InspectionRoom
+	if err := storage.DB.Unscoped().First(&room, defect.RoomID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Помещение не найдено"})
+		return inspection, false
+	}
+	if err := storage.DB.First(&inspection, room.InspectionID).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Осмотр не найден"})
+		return inspection, false
+	}
+	return inspection, true
+}
+
 // DeletePhoto обрабатывает POST /photos/:id/delete
 func DeletePhoto(c *gin.Context) {
 	photoID, err := strconv.Atoi(c.Param("id"))
@@ -177,13 +201,13 @@ func DeletePhoto(c *gin.Context) {
 		return
 	}
 
-	// Проверяем права через дефект → помещение → осмотр
-	var defect models.RoomDefect
-	storage.DB.First(&defect, photo.DefectID)
-	var room models.InspectionRoom
-	storage.DB.First(&room, defect.RoomID)
-	var inspection models.Inspection
-	storage.DB.First(&inspection, room.InspectionID)
+	// Проверяем права через дефект → помещение → осмотр.
+	// Unscoped: дефект/помещение могут быть архивными (soft-deleted),
+	// их фото по-прежнему принадлежат осмотру и показываются на странице просмотра.
+	inspection, ok := loadPhotoInspection(c, &photo)
+	if !ok {
+		return
+	}
 
 	userID := c.GetUint("userID")
 	role := c.GetString("userRole")
@@ -220,12 +244,10 @@ func GetPhotoDownload(c *gin.Context) {
 	}
 
 	// Проверяем права: дефект → помещение → осмотр
-	var defect models.RoomDefect
-	storage.DB.First(&defect, photo.DefectID)
-	var room models.InspectionRoom
-	storage.DB.First(&room, defect.RoomID)
-	var inspection models.Inspection
-	storage.DB.First(&inspection, room.InspectionID)
+	inspection, ok := loadPhotoInspection(c, &photo)
+	if !ok {
+		return
+	}
 
 	userID := c.GetUint("userID")
 	role := c.GetString("userRole")
@@ -234,10 +256,14 @@ func GetPhotoDownload(c *gin.Context) {
 		return
 	}
 
-	// 1. Локальный файл — отдаём напрямую
+	// 1. Локальный файл — отдаём напрямую (только из каталога загрузок)
 	if photo.FilePath != "" {
-		if _, err := os.Stat(photo.FilePath); err == nil {
-			c.File(photo.FilePath)
+		absPath, err := filepath.Abs(photo.FilePath)
+		uploadsDir, dirErr := filepath.Abs(filepath.Join("web", "static", "uploads"))
+		if err != nil || dirErr != nil || !strings.HasPrefix(absPath, uploadsDir+string(os.PathSeparator)) {
+			logger.Ctx(c.Request.Context()).Error("photo path outside uploads dir", "photo_id", photo.ID, "path", photo.FilePath)
+		} else if _, err := os.Stat(absPath); err == nil {
+			c.File(absPath)
 			return
 		}
 	}
@@ -324,7 +350,7 @@ func EnsureInspectionFolder(inspectionID uint) (string, error) {
 		return "", err
 	}
 
-	actNumber := inspection.ActNumber
+	actNumber := sanitizeFolderName(inspection.ActNumber)
 	if actNumber == "" {
 		actNumber = fmt.Sprintf("%d", inspectionID) // fallback для старых записей
 	}
@@ -607,8 +633,10 @@ func buildDefectInfoMap(inspectionID uint) map[uint]defectInfo {
 
 	// Получаем номер акта для именования папки
 	var inspection models.Inspection
-	storage.DB.First(&inspection, inspectionID)
-	actNumber := inspection.ActNumber
+	if err := storage.DB.First(&inspection, inspectionID).Error; err != nil {
+		logger.Warn("buildDefectInfoMap: осмотр не найден", "inspection_id", inspectionID, "error", err)
+	}
+	actNumber := sanitizeFolderName(inspection.ActNumber)
 	if actNumber == "" {
 		actNumber = fmt.Sprintf("%d", inspectionID) // fallback для старых записей
 	}
@@ -753,10 +781,16 @@ func uploadTasksParallel(tasks []uploadTask, callback func(uploadTask, bool, err
 }
 
 // sanitizeFolderName заменяет символы, небезопасные для имён папок, на подчёркивание.
+// Имя из одних точек/пробелов (".", "..") — ссылка на родительскую папку, а не имя:
+// возвращаем пустую строку, чтобы сработал fallback вызывающего кода.
 func sanitizeFolderName(name string) string {
 	replacer := strings.NewReplacer(
 		"/", "_", "\\", "_", ":", "_", "*", "_",
 		"?", "_", "\"", "_", "<", "_", ">", "_", "|", "_",
 	)
-	return strings.TrimSpace(replacer.Replace(name))
+	clean := strings.TrimSpace(replacer.Replace(name))
+	if strings.Trim(clean, ". ") == "" {
+		return ""
+	}
+	return clean
 }

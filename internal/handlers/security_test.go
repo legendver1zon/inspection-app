@@ -30,6 +30,8 @@ func setupSecurityRouter(t *testing.T) *gin.Engine {
 	r.POST("/register", security.RateLimitRegister(), PostRegister)
 	r.GET("/forgot-password", GetForgotPassword)
 	r.POST("/forgot-password", security.RateLimitForgotPassword(), PostForgotPassword)
+	r.GET("/reset-password", GetResetPassword)
+	r.POST("/reset-password", security.RateLimitResetPassword(), PostResetPassword)
 
 	protected := r.Group("/")
 	protected.Use(auth.RequireAuth())
@@ -59,6 +61,8 @@ func resetAllLimiters() {
 	security.LoginLimiter = security.NewMemoryRateLimiter(5, 15*time.Minute)
 	security.RegisterLimiter = security.NewMemoryRateLimiter(3, time.Hour)
 	security.ForgotPasswordLimiter = security.NewMemoryRateLimiter(3, time.Hour)
+	security.ResetPasswordLimiter = security.NewMemoryRateLimiter(5, 15*time.Minute)
+	security.AdminLimiter = security.NewMemoryRateLimiter(60, time.Minute)
 	security.InspectionLimiter = security.NewMemoryRateLimiter(20, time.Hour)
 }
 
@@ -379,5 +383,101 @@ func TestGetNewInspection_AdminBypassesLimit(t *testing.T) {
 		if w.Code != http.StatusFound {
 			t.Errorf("создание акта %d: ожидали 302, получили %d", i, w.Code)
 		}
+	}
+}
+
+// TestPostResetPassword_RateLimit — 5 неверных кодов → 6-я попытка даёт 429
+// даже с правильным кодом.
+func TestPostResetPassword_RateLimit(t *testing.T) {
+	setupTestDB(t)
+	resetAllLimiters()
+
+	user := newUser(t, "reset_rl@test.com", "Secret1!", "Тест Тест Тестов", models.RoleInspector)
+	expiry := time.Now().Add(15 * time.Minute)
+	storage.DB.Model(&user).Updates(map[string]interface{}{
+		"reset_token":  "123456",
+		"reset_expiry": expiry,
+	})
+
+	r := setupSecurityRouter(t)
+
+	for i := 1; i <= 5; i++ {
+		w := postForm(r, "/reset-password",
+			"email=reset_rl@test.com&code=000000&password=NewPass1!&confirm=NewPass1!")
+		if w.Code == http.StatusTooManyRequests {
+			t.Fatalf("попытка %d: преждевременный 429", i)
+		}
+	}
+
+	// 6-я попытка с ПРАВИЛЬНЫМ кодом — блокируется по IP
+	w := postForm(r, "/reset-password",
+		"email=reset_rl@test.com&code=123456&password=NewPass1!&confirm=NewPass1!")
+	if w.Code != http.StatusTooManyRequests {
+		t.Errorf("ожидали 429 после 5 неверных кодов, получили %d", w.Code)
+	}
+}
+
+// TestPostResetPassword_ResetOnSuccess — успешный сброс обнуляет счётчик.
+func TestPostResetPassword_ResetOnSuccess(t *testing.T) {
+	setupTestDB(t)
+	resetAllLimiters()
+
+	user := newUser(t, "reset_ok@test.com", "Secret1!", "Тест Тест Тестов", models.RoleInspector)
+	expiry := time.Now().Add(15 * time.Minute)
+	storage.DB.Model(&user).Updates(map[string]interface{}{
+		"reset_token":  "654321",
+		"reset_expiry": expiry,
+	})
+
+	r := setupSecurityRouter(t)
+
+	// 4 неудачи (лимит 5) — ещё не блок
+	for i := 0; i < 4; i++ {
+		postForm(r, "/reset-password",
+			"email=reset_ok@test.com&code=000000&password=NewPass1!&confirm=NewPass1!")
+	}
+
+	// Успех → редирект на /login?reset=1, счётчики сброшены
+	w := postForm(r, "/reset-password",
+		"email=reset_ok@test.com&code=654321&password=NewPass1!&confirm=NewPass1!")
+	if w.Code != http.StatusFound {
+		t.Fatalf("успешный сброс: ожидали 302, получили %d; тело: %s", w.Code, w.Body.String())
+	}
+
+	// После успеха новая попытка не должна быть заблокирована
+	w = postForm(r, "/reset-password",
+		"email=reset_ok@test.com&code=000000&password=NewPass1!&confirm=NewPass1!")
+	if w.Code == http.StatusTooManyRequests {
+		t.Error("счётчик не сброшен после успешного сброса пароля")
+	}
+}
+
+// TestPostResetPassword_PerEmailLimit — перебор кода для одного аккаунта
+// блокируется по email независимо от IP (лимитер инкрементится на "email:<email>").
+func TestPostResetPassword_PerEmailLimit(t *testing.T) {
+	setupTestDB(t)
+	resetAllLimiters()
+
+	user := newUser(t, "reset_email@test.com", "Secret1!", "Тест Тест Тестов", models.RoleInspector)
+	expiry := time.Now().Add(15 * time.Minute)
+	storage.DB.Model(&user).Updates(map[string]interface{}{
+		"reset_token":  "111222",
+		"reset_expiry": expiry,
+	})
+
+	r := setupSecurityRouter(t)
+
+	for i := 0; i < 5; i++ {
+		postForm(r, "/reset-password",
+			"email=reset_email@test.com&code=000000&password=NewPass1!&confirm=NewPass1!")
+	}
+
+	// Имитация другого IP: сбрасываем только IP-ключ, email-ключ остаётся
+	security.ResetPasswordLimiter.Reset("192.0.2.1")
+
+	w := postForm(r, "/reset-password",
+		"email=reset_email@test.com&code=111222&password=NewPass1!&confirm=NewPass1!")
+	if w.Code == http.StatusFound {
+		t.Error("перебор с «другого IP» прошёл: per-email лимит не сработал")
 	}
 }

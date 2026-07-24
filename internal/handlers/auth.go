@@ -5,6 +5,7 @@ import (
 	"inspection-app/internal/models"
 	"inspection-app/internal/security"
 	"inspection-app/internal/storage"
+	"inspection-app/internal/textutil"
 	"net/http"
 	"strings"
 
@@ -78,22 +79,6 @@ func GetRegister(c *gin.Context) {
 	})
 }
 
-// buildInitials генерирует «Фамилия И.О.» из полного ФИО
-func buildInitials(fullName string) string {
-	parts := strings.Fields(fullName)
-	if len(parts) == 0 {
-		return fullName
-	}
-	result := parts[0]
-	for i := 1; i < len(parts) && i <= 2; i++ {
-		runes := []rune(parts[i])
-		if len(runes) > 0 {
-			result += " " + string(runes[0]) + "."
-		}
-	}
-	return result
-}
-
 // PostRegister — обработка формы регистрации
 func PostRegister(c *gin.Context) {
 	email := strings.ToLower(strings.TrimSpace(c.PostForm("email")))
@@ -101,7 +86,7 @@ func PostRegister(c *gin.Context) {
 	confirmPassword := c.PostForm("confirm_password")
 	fullName := strings.TrimSpace(c.PostForm("full_name"))
 	noPatronymic := c.PostForm("no_patronymic") == "1"
-	initials := buildInitials(fullName)
+	initials := textutil.Initials(fullName)
 
 	if email == "" || password == "" || fullName == "" {
 		c.HTML(http.StatusBadRequest, "register.html", gin.H{

@@ -233,3 +233,35 @@ func TestCheckInspectionLimit_UserBlockedAfterLimit(t *testing.T) {
 		t.Errorf("сообщение должно содержать время ожидания, получили: %q", msg)
 	}
 }
+
+func TestValidateActNumber(t *testing.T) {
+	valid := []string{
+		"390-110726",
+		"АКТ 15/2026",
+		"15/2026",
+		"a1.b2_c3-d4",
+	}
+	for _, s := range valid {
+		if err := ValidateActNumber(s); err != nil {
+			t.Errorf("ValidateActNumber(%q) = %v, ожидали nil", s, err)
+		}
+	}
+
+	invalid := []string{
+		"",
+		"../secret",
+		"a/../b",
+		"..",
+		".hidden",
+		"-15",
+		"акт\\2026",
+		"акт:2026",
+		"a\nb",
+		strings.Repeat("1", 65),
+	}
+	for _, s := range invalid {
+		if err := ValidateActNumber(s); err == nil {
+			t.Errorf("ValidateActNumber(%q) = nil, ожидали ошибку", s)
+		}
+	}
+}

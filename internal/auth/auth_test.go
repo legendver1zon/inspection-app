@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // --- HashPassword / CheckPassword ---
@@ -131,27 +132,39 @@ func TestParseToken_Expired(t *testing.T) {
 // --- Timing attack resistance ---
 
 func TestCheckPassword_ConstantTime_ValidHash(t *testing.T) {
-	hash, _ := HashPassword("testpassword")
-	start := time.Now()
-	CheckPassword("wrongpassword", hash)
-	validHashDuration := time.Since(start)
-
-	// bcrypt должен занять минимум 50ms даже для неправильного пароля
-	if validHashDuration < 50*time.Millisecond {
-		t.Errorf("CheckPassword with valid hash too fast: %v (expected >50ms bcrypt)", validHashDuration)
+	hash, err := HashPassword("testpassword")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	// Полная стоимость bcrypt гарантирует, что сравнение не может быть «быстрым»
+	cost, err := bcrypt.Cost([]byte(hash))
+	if err != nil {
+		t.Fatalf("bcrypt.Cost: %v", err)
+	}
+	if cost < bcrypt.DefaultCost {
+		t.Errorf("bcrypt cost = %d, expected >= %d", cost, bcrypt.DefaultCost)
+	}
+	if CheckPassword("wrongpassword", hash) {
+		t.Error("CheckPassword accepted wrong password")
 	}
 }
 
 func TestCheckPassword_ConstantTime_DummyHash(t *testing.T) {
-	// Симулируем dummy hash как в auth handler (anti timing attack)
-	dummyHash, _ := HashPassword("dummy-password")
-	start := time.Now()
-	CheckPassword("anypassword", string(dummyHash))
-	dummyDuration := time.Since(start)
-
-	// dummy hash тоже должен занять >50ms (полный bcrypt)
-	if dummyDuration < 50*time.Millisecond {
-		t.Errorf("CheckPassword with dummy hash too fast: %v (expected >50ms bcrypt)", dummyDuration)
+	// Симулируем dummy hash как в auth handler (anti timing attack):
+	// он должен быть полноценным bcrypt-хэшем той же стоимости
+	dummyHash, err := HashPassword("dummy-password")
+	if err != nil {
+		t.Fatalf("HashPassword: %v", err)
+	}
+	cost, err := bcrypt.Cost([]byte(dummyHash))
+	if err != nil {
+		t.Fatalf("bcrypt.Cost: %v", err)
+	}
+	if cost < bcrypt.DefaultCost {
+		t.Errorf("dummy hash bcrypt cost = %d, expected >= %d", cost, bcrypt.DefaultCost)
+	}
+	if CheckPassword("anypassword", dummyHash) {
+		t.Error("CheckPassword accepted password against dummy hash")
 	}
 }
 

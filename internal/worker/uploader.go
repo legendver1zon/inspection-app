@@ -2,7 +2,6 @@ package worker
 
 import (
 	"context"
-	"inspection-app/internal/handlers"
 	"inspection-app/internal/logger"
 	"inspection-app/internal/models"
 	"inspection-app/internal/queue"
@@ -19,15 +18,18 @@ const (
 )
 
 // Uploader — фоновый воркер, обрабатывающий задачи из Redis-очереди.
+// Сама загрузка фото выполняется функцией upload (инъекция из main.go),
+// чтобы worker не зависел от пакета handlers.
 type Uploader struct {
-	q    *queue.RedisQueue
-	wg   sync.WaitGroup
-	done chan struct{}
+	q      *queue.RedisQueue
+	upload func(inspectionID uint)
+	wg     sync.WaitGroup
+	done   chan struct{}
 }
 
 // New создаёт воркер. q может быть nil — тогда Start() немедленно возвращается.
-func New(q *queue.RedisQueue) *Uploader {
-	return &Uploader{q: q, done: make(chan struct{})}
+func New(q *queue.RedisQueue, upload func(inspectionID uint)) *Uploader {
+	return &Uploader{q: q, upload: upload, done: make(chan struct{})}
 }
 
 // Start запускает n горутин-воркеров и 1 горутину повторной постановки задач.
@@ -95,7 +97,7 @@ func (u *Uploader) processJob(inspectionID uint) {
 		return
 	}
 
-	handlers.UploadInspectionPhotos(inspectionID)
+	u.upload(inspectionID)
 	logger.Info("worker done", "inspection_id", inspectionID)
 }
 

@@ -225,8 +225,19 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 	f.SetY(bottomLine - sigH)
 	drawSignatures(f, inspection)
 
-	// Сохраняем файл
-	filename := fmt.Sprintf("act_%s.pdf", inspection.ActNumber)
+	// Сохраняем файл. Номер акта может содержать «/» (например «15/2026») —
+	// в имени файла такие символы заменяем, иначе путь уйдёт в несуществующую папку
+	safeAct := strings.Map(func(r rune) rune {
+		switch r {
+		case '/', '\\', ':', '*', '?', '"', '<', '>', '|':
+			return '_'
+		}
+		if r < 32 {
+			return '_'
+		}
+		return r
+	}, inspection.ActNumber)
+	filename := fmt.Sprintf("act_%s.pdf", safeAct)
 	outPath := filepath.Join(outputDir, filename)
 	if err := f.OutputFileAndClose(outPath); err != nil {
 		return "", fmt.Errorf("ошибка сохранения PDF: %w", err)

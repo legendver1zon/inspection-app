@@ -6,6 +6,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"unicode"
 )
@@ -56,6 +57,22 @@ func ValidatePassword(password string) error {
 	}
 	if !hasSpecial {
 		return errors.New("пароль должен содержать хотя бы один спецсимвол (!, @, #, $ и т.д.)")
+	}
+	return nil
+}
+
+// actNumberRe: первый символ — буква или цифра, дальше буквы/цифры/пробел/._/-,
+// всего не более 64 символов.
+var actNumberRe = regexp.MustCompile(`^[\p{L}\p{N}][\p{L}\p{N} ._/-]{0,63}$`)
+
+// ValidateActNumber проверяет формат номера акта. Номер попадает в пути
+// облачного хранилища, поэтому набор символов ограничен, а ".." запрещён.
+func ValidateActNumber(s string) error {
+	if !actNumberRe.MatchString(s) {
+		return errors.New("номер акта: до 64 символов — буквы, цифры, пробел и . _ / - (начинается с буквы или цифры)")
+	}
+	if strings.Contains(s, "..") {
+		return errors.New("номер акта не может содержать «..»")
 	}
 	return nil
 }

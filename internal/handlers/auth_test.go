@@ -8,6 +8,8 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // --- GET /login ---
@@ -335,22 +337,18 @@ func TestPostLogin_EmailCaseInsensitive(t *testing.T) {
 	}
 }
 
-// --- buildInitials (внутренняя функция) ---
 
-func TestBuildInitials(t *testing.T) {
-	cases := []struct {
-		input string
-		want  string
-	}{
-		{"Иванов Иван Иванович", "Иванов И. И."},
-		{"Петров Пётр", "Петров П."},
-		{"Сидоров", "Сидоров"},
-		{"", ""},
+// TestDummyHash_FullCost — реальный anti-enumeration хэш из PostLogin
+// должен быть полноценным bcrypt-хэшем полной стоимости.
+func TestDummyHash_FullCost(t *testing.T) {
+	if len(dummyHash) == 0 {
+		t.Fatal("dummyHash пуст — генерация при инициализации пакета не удалась")
 	}
-	for _, tc := range cases {
-		got := buildInitials(tc.input)
-		if got != tc.want {
-			t.Errorf("buildInitials(%q) = %q, want %q", tc.input, got, tc.want)
-		}
+	cost, err := bcrypt.Cost(dummyHash)
+	if err != nil {
+		t.Fatalf("bcrypt.Cost(dummyHash): %v", err)
+	}
+	if cost < bcrypt.DefaultCost {
+		t.Errorf("dummyHash cost = %d, ожидали >= %d", cost, bcrypt.DefaultCost)
 	}
 }

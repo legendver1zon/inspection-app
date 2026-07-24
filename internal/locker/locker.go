@@ -23,28 +23,43 @@ type Locker interface {
 }
 
 // MemoryLocker — потокобезопасная in-memory реализация на sync.Mutex.
-// Подходит для одного инстанса приложения.
+// Подходит для одного инстанса приложения. Записи удаляются из map,
+// когда ключ никем не удерживается (refcount) — иначе map рос бы бесконечно.
 type MemoryLocker struct {
 	mu    sync.Mutex
-	locks map[string]*sync.Mutex
+	locks map[string]*lockEntry
+}
+
+type lockEntry struct {
+	km   sync.Mutex
+	refs int
 }
 
 // NewMemory создаёт MemoryLocker.
 func NewMemory() *MemoryLocker {
-	return &MemoryLocker{locks: make(map[string]*sync.Mutex)}
+	return &MemoryLocker{locks: make(map[string]*lockEntry)}
 }
 
 // Lock блокирует ключ. Если ключ уже заблокирован другим воркером — ждёт.
 // Возвращает unlock, который ОБЯЗАТЕЛЬНО вызвать через defer.
 func (m *MemoryLocker) Lock(key string) (func(), error) {
 	m.mu.Lock()
-	km, ok := m.locks[key]
+	e, ok := m.locks[key]
 	if !ok {
-		km = &sync.Mutex{}
-		m.locks[key] = km
+		e = &lockEntry{}
+		m.locks[key] = e
 	}
+	e.refs++
 	m.mu.Unlock()
 
-	km.Lock()
-	return km.Unlock, nil
+	e.km.Lock()
+	return func() {
+		e.km.Unlock()
+		m.mu.Lock()
+		e.refs--
+		if e.refs == 0 {
+			delete(m.locks, key)
+		}
+		m.mu.Unlock()
+	}, nil
 }

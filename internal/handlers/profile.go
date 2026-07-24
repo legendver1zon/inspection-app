@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"inspection-app/internal/auth"
-	"inspection-app/internal/models"
 	"inspection-app/internal/security"
 	"inspection-app/internal/storage"
 	"net/http"
@@ -15,9 +14,7 @@ import (
 
 // GetProfile — страница профиля
 func GetProfile(c *gin.Context) {
-	userID := c.GetUint("userID")
-	var user models.User
-	storage.DB.First(&user, userID)
+	user := CurrentUser(c)
 
 	c.HTML(http.StatusOK, "profile.html", gin.H{
 		"title":   "Профиль",
@@ -29,8 +26,7 @@ func GetProfile(c *gin.Context) {
 // PostProfile — обновление профиля
 func PostProfile(c *gin.Context) {
 	userID := c.GetUint("userID")
-	var user models.User
-	storage.DB.First(&user, userID)
+	user := CurrentUser(c)
 
 	fullName := strings.TrimSpace(c.PostForm("full_name"))
 	initials := strings.TrimSpace(c.PostForm("initials"))
@@ -101,8 +97,7 @@ func PostProfile(c *gin.Context) {
 // PostUploadAvatar — загрузка аватара пользователя
 func PostUploadAvatar(c *gin.Context) {
 	userID := c.GetUint("userID")
-	var user models.User
-	storage.DB.First(&user, userID)
+	user := CurrentUser(c)
 
 	file, err := c.FormFile("avatar")
 	if err != nil {

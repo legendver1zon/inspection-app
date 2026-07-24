@@ -4,9 +4,9 @@ import (
 	"inspection-app/internal/auth"
 	"inspection-app/internal/models"
 	"inspection-app/internal/storage"
+	"inspection-app/internal/textutil"
 	"log"
 	"os"
-	"strings"
 )
 
 // TestUserEmail — постоянный тестовый аккаунт для ручного и автоматизированного тестирования.
@@ -38,7 +38,7 @@ func SeedTestUser() {
 		Email:        TestUserEmail,
 		PasswordHash: hash,
 		FullName:     fullName,
-		Initials:     buildInitialsLocal(fullName),
+		Initials:     textutil.Initials(fullName),
 		Role:         models.RoleAdmin,
 	}
 
@@ -48,20 +48,4 @@ func SeedTestUser() {
 	}
 
 	log.Printf("SeedTestUser: создан тестовый аккаунт %s (role: admin)", TestUserEmail)
-}
-
-// buildInitialsLocal — локальная копия логики из handlers/auth.go
-func buildInitialsLocal(fullName string) string {
-	parts := strings.Fields(fullName)
-	if len(parts) == 0 {
-		return fullName
-	}
-	result := parts[0]
-	for i := 1; i < len(parts) && i <= 2; i++ {
-		runes := []rune(parts[i])
-		if len(runes) > 0 {
-			result += " " + string(runes[0]) + "."
-		}
-	}
-	return result
 }

@@ -67,7 +67,7 @@ func main() {
 		logger.Warn("redis unavailable, sync photo upload", "error", err)
 	} else if q != nil {
 		handlers.SetUploadQueue(q)
-		uploader := worker.New(q)
+		uploader := worker.New(q, handlers.UploadInspectionPhotos)
 		uploader.Start(ctx, 5)
 		defer uploader.Stop()
 		logger.Info("redis connected, worker started", "goroutines", 5)
@@ -76,7 +76,8 @@ func main() {
 	}
 
 	// Self-heal loop: retry failed + восстановление зависших uploading (работает без Redis)
-	handlers.StartSelfHealLoop(ctx)
+	waitSelfHeal := handlers.StartSelfHealLoop(ctx)
+	defer waitSelfHeal()
 
 	r := gin.New()
 	// В Docker-среде доверяем только localhost; при Nginx reverse proxy — добавить IP прокси
@@ -89,6 +90,27 @@ func main() {
 		c.Header("X-Frame-Options", "DENY")
 		c.Header("Referrer-Policy", "strict-origin-when-cross-origin")
 		c.Header("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+		// unsafe-inline: в шаблонах остаются inline-скрипты и onclick-обработчики;
+		// cdnjs — Cropper.js (edit.html), qrserver — QR-код папки фото (view.html).
+		// При выносе inline-кода и вендоринге зависимостей можно ужесточить до 'self'
+		c.Header("Content-Security-Policy",
+			"default-src 'self'; "+
+				"script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "+
+				"style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "+
+				"img-src 'self' data: blob: https://api.qrserver.com; "+
+				"object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+		c.Next()
+	})
+
+	// Ограничение размера тела запроса (защита от DoS): загрузка фото — до 200 МБ
+	// (множественный выбор файлов), остальные формы — до 10 МБ.
+	r.Use(func(c *gin.Context) {
+		limit := int64(10 << 20)
+		p := c.Request.URL.Path
+		if strings.HasPrefix(p, "/defects/") || strings.HasSuffix(p, "/upload-plan") || p == "/profile/avatar" {
+			limit = 200 << 20
+		}
+		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
 		c.Next()
 	})
 
@@ -190,7 +212,7 @@ func main() {
 	r.GET("/forgot-password", handlers.GetForgotPassword)
 	r.POST("/forgot-password", security.RateLimitForgotPassword(), handlers.PostForgotPassword)
 	r.GET("/reset-password", handlers.GetResetPassword)
-	r.POST("/reset-password", handlers.PostResetPassword)
+	r.POST("/reset-password", security.RateLimitResetPassword(), handlers.PostResetPassword)
 
 	protected := r.Group("/")
 	protected.Use(auth.RequireAuth())
@@ -203,6 +225,8 @@ func main() {
 			c.Abort()
 			return
 		}
+		// Пользователь уже загружен — хэндлеры берут его из контекста (handlers.CurrentUser)
+		c.Set("currentUser", u)
 		c.Next()
 	})
 	{
@@ -232,6 +256,7 @@ func main() {
 		protected.GET("/photos/:id/download", handlers.GetPhotoDownload)
 
 		admin := protected.Group("/admin")
+		admin.Use(security.RateLimitAdmin())
 		admin.Use(auth.RequireAdmin())
 		{
 			admin.GET("/users", handlers.GetAdminUsers)

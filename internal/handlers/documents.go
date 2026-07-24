@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -83,7 +84,11 @@ func PostGenerateDocument(c *gin.Context) {
 
 // PostDeleteDocument — удаление PDF документа
 func PostDeleteDocument(c *gin.Context) {
-	id := c.Param("id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+		return
+	}
 
 	var doc models.Document
 	if err := storage.DB.Preload("Inspection").First(&doc, id).Error; err != nil {
@@ -110,7 +115,11 @@ func PostDeleteDocument(c *gin.Context) {
 
 // GetDownloadDocument — скачивание документа
 func GetDownloadDocument(c *gin.Context) {
-	id := c.Param("id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+		return
+	}
 
 	var doc models.Document
 	if err := storage.DB.Preload("Inspection").First(&doc, id).Error; err != nil {
@@ -136,8 +145,9 @@ func GetDownloadDocument(c *gin.Context) {
 		return
 	}
 	// Проверка path traversal: файл должен быть в ожидаемой директории
+	// (разделитель в конце — чтобы не пропустить "documents-evil" как префикс)
 	allowedDir, _ := filepath.Abs("web/static/documents")
-	if !strings.HasPrefix(absPath, allowedDir) {
+	if !strings.HasPrefix(absPath, allowedDir+string(os.PathSeparator)) {
 		logger.Ctx(c.Request.Context()).Error("path traversal attempt", "path", doc.FilePath)
 		c.JSON(http.StatusForbidden, gin.H{"error": "Недопустимый путь"})
 		return

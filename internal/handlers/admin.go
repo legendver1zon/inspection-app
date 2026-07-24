@@ -5,6 +5,7 @@ import (
 	"inspection-app/internal/models"
 	"inspection-app/internal/security"
 	"inspection-app/internal/storage"
+	"inspection-app/internal/textutil"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,9 +18,7 @@ func GetAdminUsers(c *gin.Context) {
 	var users []models.User
 	storage.DB.Order("created_at desc").Find(&users)
 
-	userID := c.GetUint("userID")
-	var currentUser models.User
-	storage.DB.First(&currentUser, userID)
+	currentUser := CurrentUser(c)
 
 	c.HTML(http.StatusOK, "users.html", gin.H{
 		"title":       "Управление пользователями",
@@ -62,15 +61,17 @@ func PostAdminChangeRole(c *gin.Context) {
 
 // GetAdminEditUser — страница редактирования пользователя
 func GetAdminEditUser(c *gin.Context) {
-	id := c.Param("id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.Redirect(http.StatusFound, "/admin/users")
+		return
+	}
 	var user models.User
 	if err := storage.DB.First(&user, id).Error; err != nil {
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}
-	currentUserID := c.GetUint("userID")
-	var currentUser models.User
-	storage.DB.First(&currentUser, currentUserID)
+	currentUser := CurrentUser(c)
 	c.HTML(http.StatusOK, "edit_user.html", gin.H{
 		"title":       "Редактирование пользователя",
 		"editUser":    user,
@@ -82,16 +83,18 @@ func GetAdminEditUser(c *gin.Context) {
 
 // PostAdminEditUser — сохранение изменений пользователя
 func PostAdminEditUser(c *gin.Context) {
-	id := c.Param("id")
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.Redirect(http.StatusFound, "/admin/users")
+		return
+	}
 	var user models.User
 	if err := storage.DB.First(&user, id).Error; err != nil {
 		c.Redirect(http.StatusFound, "/admin/users")
 		return
 	}
 
-	currentUserID := c.GetUint("userID")
-	var currentUser models.User
-	storage.DB.First(&currentUser, currentUserID)
+	currentUser := CurrentUser(c)
 
 	fullName := strings.TrimSpace(c.PostForm("full_name"))
 	email := strings.ToLower(strings.TrimSpace(c.PostForm("email")))
@@ -124,7 +127,7 @@ func PostAdminEditUser(c *gin.Context) {
 
 	updates := map[string]interface{}{
 		"full_name": fullName,
-		"initials":  buildInitials(fullName),
+		"initials":  textutil.Initials(fullName),
 		"email":     email,
 		"role":      role,
 	}

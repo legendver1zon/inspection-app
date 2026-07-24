@@ -120,8 +120,10 @@ func TestSyncPhotos_30Photos_SingleUser(t *testing.T) {
 		if p.FilePath != "" {
 			t.Errorf("фото %d: FilePath должен быть пустым после sync, получили %q", p.ID, p.FilePath)
 		}
-		if p.FileURL != "https://disk.yandex.ru/i/test" {
-			t.Errorf("фото %d: неверный FileURL: %q", p.ID, p.FileURL)
+		// После ec3a235 файлы не публикуются по одному: FileURL — относительный
+		// облачный путь, ссылка скачивания строится через GetDownloadURL
+		if !strings.HasPrefix(p.FileURL, "inspections/") {
+			t.Errorf("фото %d: FileURL должен быть облачным путём inspections/..., получили %q", p.ID, p.FileURL)
 		}
 	}
 
