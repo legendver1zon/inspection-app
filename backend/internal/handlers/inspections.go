@@ -489,6 +489,43 @@ func PostEditInspection(c *gin.Context) {
 			return err
 		}
 
+		// 2a. Запоминаем старые дефекты по смысловому ключу — чтобы после
+		// пересоздания перепривязать их фото к новым дефектам, а не отправлять
+		// в архив при каждом сохранении.
+		type oldDefectRow struct {
+			ID               uint
+			RoomNumber       int
+			Section          string
+			DefectTemplateID *uint
+			WallNumber       int
+		}
+		var oldDefects []oldDefectRow
+		tx.Table("room_defects").
+			Select("room_defects.id, inspection_rooms.room_number, room_defects.section, room_defects.defect_template_id, room_defects.wall_number").
+			Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+			Where("inspection_rooms.inspection_id = ? AND room_defects.deleted_at IS NULL AND inspection_rooms.deleted_at IS NULL", inspection.ID).
+			Scan(&oldDefects)
+
+		defKey := func(roomNumber int, section string, tmplID *uint, wall int) string {
+			t := "-"
+			if tmplID != nil {
+				t = strconv.FormatUint(uint64(*tmplID), 10)
+			}
+			return strconv.Itoa(roomNumber) + "|" + section + "|" + t + "|" + strconv.Itoa(wall)
+		}
+		oldByKey := make(map[string][]uint, len(oldDefects))
+		for _, d := range oldDefects {
+			k := defKey(d.RoomNumber, d.Section, d.DefectTemplateID, d.WallNumber)
+			oldByKey[k] = append(oldByKey[k], d.ID)
+		}
+		relinkPhotos := func(newDefectID uint, roomNumber int, section string, tmplID *uint, wall int) {
+			k := defKey(roomNumber, section, tmplID, wall)
+			if ids := oldByKey[k]; len(ids) > 0 {
+				tx.Model(&models.Photo{}).Where("defect_id IN ?", ids).Update("defect_id", newDefectID)
+				delete(oldByKey, k)
+			}
+		}
+
 		// 2. Удаляем старые комнаты и дефекты (P12: subquery вместо N+1 цикла)
 		roomIDs := tx.Model(&models.InspectionRoom{}).Select("id").Where("inspection_id = ?", inspection.ID)
 		tx.Where("room_id IN (?)", roomIDs).Delete(&models.RoomDefect{})
@@ -516,12 +553,15 @@ func PostEditInspection(c *gin.Context) {
 				key := "defect_" + strconv.FormatUint(uint64(tmpl.ID), 10) + "_" + iStr
 				if val := c.PostForm(key); val != "" {
 					tid := tmpl.ID
-					tx.Create(&models.RoomDefect{
+					nd := models.RoomDefect{
 						RoomID:           room.ID,
 						DefectTemplateID: &tid,
 						Section:          tmpl.Section,
 						Value:            val,
-					})
+					}
+					if err := tx.Create(&nd).Error; err == nil {
+						relinkPhotos(nd.ID, i, tmpl.Section, &tid, 0)
+					}
 				}
 			}
 
@@ -534,13 +574,16 @@ func PostEditInspection(c *gin.Context) {
 					key := "defect_" + strconv.FormatUint(uint64(tmpl.ID), 10) + "_" + iStr + "_wall" + strconv.Itoa(w)
 					if val := c.PostForm(key); val != "" {
 						tid := tmpl.ID
-						tx.Create(&models.RoomDefect{
+						nd := models.RoomDefect{
 							RoomID:           room.ID,
 							DefectTemplateID: &tid,
 							Section:          "wall",
 							Value:            val,
 							WallNumber:       w,
-						})
+						}
+						if err := tx.Create(&nd).Error; err == nil {
+							relinkPhotos(nd.ID, i, "wall", &tid, w)
+						}
 					}
 				}
 			}
@@ -548,11 +591,14 @@ func PostEditInspection(c *gin.Context) {
 			// Прочее для каждой секции
 			for _, sec := range append(simpleSections, "wall") {
 				if notes := c.PostForm("notes_" + sec + "_" + iStr); notes != "" {
-					tx.Create(&models.RoomDefect{
+					nd := models.RoomDefect{
 						RoomID:  room.ID,
 						Section: sec,
 						Notes:   notes,
-					})
+					}
+					if err := tx.Create(&nd).Error; err == nil {
+						relinkPhotos(nd.ID, i, sec, nil, 0)
+					}
 				}
 			}
 		}

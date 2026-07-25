@@ -134,11 +134,13 @@ export interface DefectTemplate {
 }
 
 export interface EditDefect {
+  id: number
   template_id: number | null
   section: string
   value: string
   wall_number: number
   notes: string
+  photos: PhotoRef[]
 }
 
 export interface EditRoomData {
@@ -177,6 +179,7 @@ export interface EditData {
     electricity: string
     ventilation: string
     general_notes: string
+    plan_image: string
   }
   rooms: EditRoomData[]
   templates: DefectTemplate[]
@@ -214,6 +217,35 @@ export const api = {
     const res = await fetch(`/inspections/${id}/edit`, { method: 'POST', body: fd })
     const url = new URL(res.url, window.location.origin)
     return url.searchParams.get('error')
+  },
+  // Загрузка фото дефекта: XHR ради прогресса отправки (у fetch его нет)
+  uploadPhoto: (defectId: number, file: File, onProgress?: (pct: number) => void) =>
+    new Promise<PhotoRef>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `/defects/${defectId}/photos`)
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+      xhr.onload = () => {
+        try {
+          const body = JSON.parse(xhr.responseText)
+          if (xhr.status === 200) resolve({ id: body.id, status: 'pending' })
+          else reject(new ApiError(xhr.status, body.error ?? 'Ошибка загрузки'))
+        } catch {
+          reject(new ApiError(xhr.status, 'Ошибка загрузки'))
+        }
+      }
+      xhr.onerror = () => reject(new ApiError(0, 'Сеть недоступна'))
+      const fd = new FormData()
+      fd.append('photo', file)
+      xhr.send(fd)
+    }),
+  deletePhoto: (photoId: number) =>
+    request<{ ok: boolean }>(`/photos/${photoId}/delete`, { method: 'POST' }),
+  uploadPlan: async (id: number, blob: Blob) => {
+    const fd = new FormData()
+    fd.append('plan_image', blob, 'plan.jpg')
+    await fetch(`/inspections/${id}/upload-plan`, { method: 'POST', body: fd })
   },
   // Старый обработчик отвечает redirect'ом на HTML-страницу — ответ не читаем,
   // после вызова инвалидируем детали, чтобы подтянулись новые документы

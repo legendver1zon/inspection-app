@@ -1,8 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'framer-motion'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type DefectTemplate, type EditRoomData, type User } from '../lib/api'
+import Cropper from 'cropperjs'
+import 'cropperjs/dist/cropper.css'
+import { api, type DefectTemplate, type EditRoomData, type PhotoRef, type User } from '../lib/api'
 import { C } from '../lib/palette'
 import Header from '../components/Header'
 
@@ -23,6 +25,13 @@ const MEASURES: [keyof RoomForm['m'], string][] = [
   ['length', 'Длина, м'], ['width', 'Ширина, м'], ['height', 'Высота, м'],
 ]
 
+// Привязка сохранённого дефекта (id + фото) к полю формы:
+// ключи "s{tmplId}" | "w{tmplId}_{wall0-3}" | "n{section}"
+interface DefectBind {
+  defectId: number
+  photos: PhotoRef[]
+}
+
 interface RoomForm {
   key: number
   name: string
@@ -34,6 +43,7 @@ interface RoomForm {
   simple: Record<number, string>
   walls: Record<number, [string, string, string, string]>
   notes: Record<string, string>
+  binds: Record<string, DefectBind>
 }
 
 let roomKeySeq = 1
@@ -53,6 +63,7 @@ function emptyRoom(): RoomForm {
     simple: {},
     walls: {},
     notes: {},
+    binds: {},
   }
 }
 
@@ -69,17 +80,22 @@ function roomFromData(r: EditRoomData): RoomForm {
   room.windowType = r.window_type
   room.wallTypes = r.wall_types
   for (const d of r.defects) {
+    let bindKey: string
     if (d.template_id == null) {
       // Запись «Прочее»: текст в notes; value — fallback для легаси-данных
       const txt = d.notes || d.value
       if (txt) room.notes[d.section] = room.notes[d.section] ? `${room.notes[d.section]}; ${txt}` : txt
+      bindKey = `n${d.section}`
     } else if (d.section === 'wall' && d.wall_number >= 1 && d.wall_number <= 4) {
       const arr = room.walls[d.template_id] ?? ['', '', '', '']
       arr[d.wall_number - 1] = d.value
       room.walls[d.template_id] = arr
+      bindKey = `w${d.template_id}_${d.wall_number - 1}`
     } else {
       room.simple[d.template_id] = d.value
+      bindKey = `s${d.template_id}`
     }
+    room.binds[bindKey] = { defectId: d.id, photos: d.photos ?? [] }
   }
   return room
 }
@@ -99,6 +115,7 @@ export default function EditAct({ user }: { user: User }) {
 
   const [header, setHeader] = useState<Record<string, string>>({})
   const [rooms, setRooms] = useState<RoomForm[]>([])
+  const [planUrl, setPlanUrl] = useState('')
   const [numberTaken, setNumberTaken] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -116,6 +133,7 @@ export default function EditAct({ user }: { user: User }) {
       general_notes: a.general_notes,
     })
     setRooms(data.rooms.length > 0 ? data.rooms.map(roomFromData) : [emptyRoom()])
+    setPlanUrl(a.plan_image)
     setLoaded(true)
   }, [data, loaded])
 
@@ -258,6 +276,13 @@ export default function EditAct({ user }: { user: User }) {
                 </Field>
               </div>
             </section>
+
+            {/* ===== План квартиры ===== */}
+            <PlanBlock
+              actId={actId}
+              planUrl={planUrl}
+              onUploaded={() => api.editData(actId).then((d) => setPlanUrl(d.act.plan_image))}
+            />
 
             {/* ===== Помещения ===== */}
             <div className="mb-3 flex items-center gap-3">
@@ -470,37 +495,254 @@ function RoomEditor({ room, index, templatesBySection, onPatch, onRemove }: {
                               />
                             ))}
                           </div>
+                          {[0, 1, 2, 3].map((w) =>
+                            (room.walls[t.id]?.[w] || room.binds[`w${t.id}_${w}`]) ? (
+                              <div key={w} className="mt-1 flex items-start gap-2">
+                                <span className="mt-3 text-[11px] font-bold whitespace-nowrap" style={{ color: C.faint }}>ст. {w + 1}</span>
+                                <PhotoDock
+                                  bind={room.binds[`w${t.id}_${w}`]}
+                                  hasValue={!!room.walls[t.id]?.[w]}
+                                  onBind={(b) => onPatch((r) => ({ ...r, binds: { ...r.binds, [`w${t.id}_${w}`]: b } }))}
+                                />
+                              </div>
+                            ) : null,
+                          )}
                         </div>
                       ))
                     : tpls.map((t) => (
-                        <label key={t.id} className="grid grid-cols-[1fr_130px] items-center gap-3">
-                          <span className="text-[13px]" style={{ color: C.ink }}>
-                            {t.name}
-                            {(t.unit || t.threshold) && (
-                              <span style={{ color: C.faint }}>{t.unit && ` · ${t.unit}`}{t.threshold && ` · норма ${t.threshold}`}</span>
-                            )}
-                          </span>
-                          <input
-                            placeholder="значение"
-                            value={room.simple[t.id] ?? ''}
-                            onChange={(e) => onPatch((r) => ({ ...r, simple: { ...r.simple, [t.id]: e.target.value } }))}
-                            className={inputCls} style={inputStyle()}
+                        <div key={t.id}>
+                          <label className="grid grid-cols-[1fr_130px] items-center gap-3">
+                            <span className="text-[13px]" style={{ color: C.ink }}>
+                              {t.name}
+                              {(t.unit || t.threshold) && (
+                                <span style={{ color: C.faint }}>{t.unit && ` · ${t.unit}`}{t.threshold && ` · норма ${t.threshold}`}</span>
+                              )}
+                            </span>
+                            <input
+                              placeholder="значение"
+                              value={room.simple[t.id] ?? ''}
+                              onChange={(e) => onPatch((r) => ({ ...r, simple: { ...r.simple, [t.id]: e.target.value } }))}
+                              className={inputCls} style={inputStyle()}
+                            />
+                          </label>
+                          <PhotoDock
+                            bind={room.binds[`s${t.id}`]}
+                            hasValue={!!room.simple[t.id]}
+                            onBind={(b) => onPatch((r) => ({ ...r, binds: { ...r.binds, [`s${t.id}`]: b } }))}
                           />
-                        </label>
+                        </div>
                       ))}
-                  <label className="grid gap-1.5">
-                    <span className="text-[12.5px] font-semibold" style={{ color: C.muted }}>Прочее (свободный текст)</span>
-                    <textarea
-                      rows={2}
-                      value={room.notes[sec] ?? ''}
-                      onChange={(e) => onPatch((r) => ({ ...r, notes: { ...r.notes, [sec]: e.target.value } }))}
-                      className={inputCls} style={inputStyle()}
+                  <div>
+                    <label className="grid gap-1.5">
+                      <span className="text-[12.5px] font-semibold" style={{ color: C.muted }}>Прочее (свободный текст)</span>
+                      <textarea
+                        rows={2}
+                        value={room.notes[sec] ?? ''}
+                        onChange={(e) => onPatch((r) => ({ ...r, notes: { ...r.notes, [sec]: e.target.value } }))}
+                        className={inputCls} style={inputStyle()}
+                      />
+                    </label>
+                    <PhotoDock
+                      bind={room.binds[`n${sec}`]}
+                      hasValue={!!room.notes[sec]}
+                      onBind={(b) => onPatch((r) => ({ ...r, binds: { ...r.binds, [`n${sec}`]: b } }))}
                     />
-                  </label>
+                  </div>
                 </div>
               </details>
             )
           })}
+        </div>
+      )}
+    </section>
+  )
+}
+
+/* ===== Фото дефекта ===== */
+
+function PhotoDock({ bind, hasValue, onBind }: {
+  bind?: DefectBind
+  hasValue: boolean
+  onBind: (b: DefectBind) => void
+}) {
+  const [uploads, setUploads] = useState<{ key: string; name: string; pct: number }[]>([])
+  const [err, setErr] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  if (!bind && !hasValue) return null
+
+  async function handleFiles(files: FileList | null) {
+    if (!files || !bind) return
+    setErr('')
+    for (const file of Array.from(files)) {
+      const key = `${file.name}-${file.size}-${Math.random()}`
+      setUploads((u) => [...u, { key, name: file.name, pct: 0 }])
+      try {
+        const ref = await api.uploadPhoto(bind.defectId, file, (pct) =>
+          setUploads((u) => u.map((x) => (x.key === key ? { ...x, pct } : x))),
+        )
+        onBind({ ...bind, photos: [...bind.photos, ref] })
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : 'Ошибка загрузки')
+      } finally {
+        setUploads((u) => u.filter((x) => x.key !== key))
+      }
+    }
+    if (inputRef.current) inputRef.current.value = ''
+  }
+
+  async function removePhoto(photoId: number) {
+    if (!bind) return
+    try {
+      await api.deletePhoto(photoId)
+      onBind({ ...bind, photos: bind.photos.filter((p) => p.id !== photoId) })
+    } catch {
+      setErr('Не удалось удалить фото')
+    }
+  }
+
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-2">
+      {bind?.photos.map((p) => (
+        <span key={p.id} className="group relative block">
+          <img
+            src={`/photos/${p.id}/download`}
+            alt=""
+            loading="lazy"
+            className="size-14 rounded-lg border object-cover"
+            style={{ borderColor: C.line }}
+          />
+          {p.status !== 'done' && (
+            <span className="absolute bottom-0.5 left-0.5 rounded px-1 text-[9px] font-extrabold text-white"
+                  style={{ background: p.status === 'failed' ? C.err : C.warn }}>
+              {p.status === 'failed' ? '!' : '↑'}
+            </span>
+          )}
+          <button
+            type="button"
+            onClick={() => removePhoto(p.id)}
+            aria-label="Удалить фото"
+            className="absolute -top-1.5 -right-1.5 grid size-5 cursor-pointer place-items-center rounded-full text-[10px] font-black text-white opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+            style={{ background: C.err }}
+          >
+            ✕
+          </button>
+        </span>
+      ))}
+
+      {uploads.map((u) => (
+        <span key={u.key} className="grid size-14 place-items-center rounded-lg border text-[10px] font-bold"
+              style={{ borderColor: C.line, color: C.muted }}>
+          {u.pct}%
+        </span>
+      ))}
+
+      {bind ? (
+        <>
+          <button
+            type="button"
+            onClick={() => inputRef.current?.click()}
+            className="grid size-14 cursor-pointer place-items-center rounded-lg border-2 border-dashed text-[18px] transition-colors"
+            style={{ borderColor: C.rail, color: C.faint }}
+            aria-label="Добавить фото"
+          >
+            ＋
+          </button>
+          <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple hidden
+                 onChange={(e) => handleFiles(e.target.files)} />
+        </>
+      ) : (
+        <span className="text-[11.5px]" style={{ color: C.faint }}>
+          фото — после сохранения акта
+        </span>
+      )}
+      {err && <span className="text-[11.5px] font-semibold" style={{ color: C.err }}>{err}</span>}
+    </div>
+  )
+}
+
+/* ===== План квартиры ===== */
+
+function PlanBlock({ actId, planUrl, onUploaded }: { actId: number; planUrl: string; onUploaded: () => void }) {
+  const [cropSrc, setCropSrc] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const imgRef = useRef<HTMLImageElement>(null)
+  const cropperRef = useRef<Cropper | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  function openFile(files: FileList | null) {
+    const file = files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = () => setCropSrc(String(reader.result))
+    reader.readAsDataURL(file)
+    if (inputRef.current) inputRef.current.value = ''
+  }
+
+  useEffect(() => {
+    if (!cropSrc || !imgRef.current) return
+    const cropper = new Cropper(imgRef.current, { viewMode: 1, autoCropArea: 1, background: false })
+    cropperRef.current = cropper
+    return () => cropper.destroy()
+  }, [cropSrc])
+
+  async function confirmCrop() {
+    const canvas = cropperRef.current?.getCroppedCanvas({ maxWidth: 2000, maxHeight: 2000 })
+    if (!canvas) return
+    setBusy(true)
+    canvas.toBlob(
+      async (blob) => {
+        if (blob) {
+          await api.uploadPlan(actId, blob)
+          onUploaded()
+        }
+        setBusy(false)
+        setCropSrc(null)
+      },
+      'image/jpeg',
+      0.9,
+    )
+  }
+
+  return (
+    <section className="mb-5 rounded-2xl border p-5" style={{ background: C.surface, borderColor: C.line }}>
+      <div className="mb-3 flex items-center gap-3">
+        <h2 className="text-[13px] font-extrabold tracking-wide uppercase" style={{ color: C.muted }}>План квартиры</h2>
+        <div className="flex-1" />
+        <button type="button" onClick={() => inputRef.current?.click()}
+                className="cursor-pointer rounded-full border px-4 py-2 text-[13px] font-bold hover:underline"
+                style={{ borderColor: C.line, color: C.accentDark }}>
+          {planUrl ? 'Заменить план' : '＋ Загрузить план'}
+        </button>
+        <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" hidden
+               onChange={(e) => openFile(e.target.files)} />
+      </div>
+
+      {planUrl && !cropSrc && (
+        <img src={planUrl} alt="План квартиры" className="max-h-64 rounded-xl border object-contain"
+             style={{ borderColor: C.line }} />
+      )}
+      {!planUrl && !cropSrc && (
+        <p className="text-sm" style={{ color: C.faint }}>План появится в PDF-акте — загрузите фото или скан.</p>
+      )}
+
+      {cropSrc && (
+        <div className="grid gap-3">
+          <div className="max-h-96 overflow-hidden rounded-xl border" style={{ borderColor: C.line }}>
+            <img ref={imgRef} src={cropSrc} alt="" className="block max-w-full" />
+          </div>
+          <div className="flex gap-2.5">
+            <button type="button" onClick={confirmCrop} disabled={busy}
+                    className="cursor-pointer rounded-full px-5 py-2.5 text-[13.5px] font-extrabold text-white disabled:opacity-50"
+                    style={{ background: C.accent }}>
+              {busy ? 'Загружаем…' : 'Обрезать и сохранить'}
+            </button>
+            <button type="button" onClick={() => setCropSrc(null)}
+                    className="cursor-pointer rounded-full border px-5 py-2.5 text-[13.5px] font-bold"
+                    style={{ borderColor: C.line, color: C.ink }}>
+              Отмена
+            </button>
+          </div>
         </div>
       )}
     </section>

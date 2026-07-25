@@ -396,9 +396,14 @@ func APIGetEditData(c *gin.Context) {
 	for _, r := range inspection.Rooms {
 		defects := make([]gin.H, 0, len(r.Defects))
 		for _, d := range r.Defects {
+			photos := make([]apiPhoto, len(d.Photos))
+			for pi, p := range d.Photos {
+				photos[pi] = apiPhoto{ID: p.ID, Status: p.UploadStatus}
+			}
 			defects = append(defects, gin.H{
-				"template_id": d.DefectTemplateID, "section": d.Section,
+				"id": d.ID, "template_id": d.DefectTemplateID, "section": d.Section,
 				"value": d.Value, "wall_number": d.WallNumber, "notes": d.Notes,
+				"photos": photos,
 			})
 		}
 		wallTypes := []string{}
@@ -447,6 +452,7 @@ func APIGetEditData(c *gin.Context) {
 			"electricity":        inspection.Electricity,
 			"ventilation":        inspection.Ventilation,
 			"general_notes":      inspection.GeneralNotes,
+			"plan_image":         inspection.PlanImage,
 		},
 		"rooms":     rooms,
 		"templates": tpls,
