@@ -242,6 +242,13 @@ export const api = {
     }),
   deletePhoto: (photoId: number) =>
     request<{ ok: boolean }>(`/photos/${photoId}/delete`, { method: 'POST' }),
+  setStatus: async (id: number, status: 'draft' | 'completed') => {
+    await fetch(`/inspections/${id}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: `status=${status}`,
+    })
+  },
   uploadPlan: async (id: number, blob: Blob) => {
     const fd = new FormData()
     fd.append('plan_image', blob, 'plan.jpg')

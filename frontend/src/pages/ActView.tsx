@@ -14,6 +14,7 @@ export default function ActView({ user }: { user: User }) {
   const actId = Number(id)
   const queryClient = useQueryClient()
   const [pdfBusy, setPdfBusy] = useState(false)
+  const [statusBusy, setStatusBusy] = useState(false)
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['inspection', actId],
@@ -30,6 +31,17 @@ export default function ActView({ user }: { user: User }) {
       await queryClient.invalidateQueries({ queryKey: ['inspection', actId] })
     } finally {
       setPdfBusy(false)
+    }
+  }
+
+  async function toggleStatus() {
+    if (!act) return
+    setStatusBusy(true)
+    try {
+      await api.setStatus(actId, act.status === 'draft' ? 'completed' : 'draft')
+      await queryClient.invalidateQueries()
+    } finally {
+      setStatusBusy(false)
     }
   }
 
@@ -122,6 +134,14 @@ export default function ActView({ user }: { user: User }) {
                   style={{ borderColor: C.line, color: C.ink }}
                 >
                   {pdfBusy ? 'Генерируем…' : 'Сформировать PDF'}
+                </button>
+                <button
+                  onClick={toggleStatus}
+                  disabled={statusBusy}
+                  className="cursor-pointer rounded-full px-5 py-2.5 text-[13.5px] font-extrabold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  style={{ background: act.status === 'draft' ? '#3D8B6E' : C.muted }}
+                >
+                  {statusBusy ? '…' : act.status === 'draft' ? '✓ Завершить акт' : 'Вернуть в работу'}
                 </button>
                 {act.photo_folder_url && (
                   <a

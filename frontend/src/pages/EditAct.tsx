@@ -80,24 +80,35 @@ function roomFromData(r: EditRoomData): RoomForm {
   room.windowType = r.window_type
   room.wallTypes = r.wall_types
   for (const d of r.defects) {
-    let bindKey: string
     if (d.template_id == null) {
       // Запись «Прочее»: текст в notes; value — fallback для легаси-данных
       const txt = d.notes || d.value
       if (txt) room.notes[d.section] = room.notes[d.section] ? `${room.notes[d.section]}; ${txt}` : txt
-      bindKey = `n${d.section}`
     } else if (d.section === 'wall' && d.wall_number >= 1 && d.wall_number <= 4) {
       const arr = room.walls[d.template_id] ?? ['', '', '', '']
       arr[d.wall_number - 1] = d.value
       room.walls[d.template_id] = arr
-      bindKey = `w${d.template_id}_${d.wall_number - 1}`
     } else {
       room.simple[d.template_id] = d.value
-      bindKey = `s${d.template_id}`
     }
-    room.binds[bindKey] = { defectId: d.id, photos: d.photos ?? [] }
   }
+  room.binds = bindsFrom(r)
   return room
+}
+
+// bindsFrom строит привязки «поле формы → сохранённый дефект (id + фото)».
+// Используется и при загрузке, и после автосейва (дефекты пересоздаются).
+function bindsFrom(r: EditRoomData): Record<string, DefectBind> {
+  const binds: Record<string, DefectBind> = {}
+  for (const d of r.defects) {
+    let bindKey: string
+    if (d.template_id == null) bindKey = `n${d.section}`
+    else if (d.section === 'wall' && d.wall_number >= 1 && d.wall_number <= 4)
+      bindKey = `w${d.template_id}_${d.wall_number - 1}`
+    else bindKey = `s${d.template_id}`
+    binds[bindKey] = { defectId: d.id, photos: d.photos ?? [] }
+  }
+  return binds
 }
 
 export default function EditAct({ user }: { user: User }) {
@@ -120,6 +131,12 @@ export default function EditAct({ user }: { user: User }) {
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [dirty, setDirty] = useState(false)
+  const [lastSaved, setLastSaved] = useState('')
+  const [uploadsActive, setUploadsActive] = useState(0)
+  // Счётчик правок: автосейв снимает dirty только если за время POST
+  // не появилось новых изменений
+  const changeSeq = useRef(0)
 
   useEffect(() => {
     if (!data || loaded) return
@@ -146,10 +163,20 @@ export default function EditAct({ user }: { user: User }) {
     return m
   }, [data])
 
+  function markDirty() {
+    changeSeq.current++
+    setDirty(true)
+  }
   function setH(k: string, v: string) {
+    markDirty()
     setHeader((h) => ({ ...h, [k]: v }))
   }
   function patchRoom(key: number, patch: (r: RoomForm) => RoomForm) {
+    markDirty()
+    setRooms((rs) => rs.map((r) => (r.key === key ? patch({ ...r }) : r)))
+  }
+  // Фото живут на сервере сразу — их изменения форму «грязной» не делают
+  function patchRoomSilent(key: number, patch: (r: RoomForm) => RoomForm) {
     setRooms((rs) => rs.map((r) => (r.key === key ? patch({ ...r }) : r)))
   }
 
@@ -162,9 +189,7 @@ export default function EditAct({ user }: { user: User }) {
     } catch { /* сеть/валидация — покажет сервер при сохранении */ }
   }
 
-  async function save() {
-    setSaving(true)
-    setError('')
+  function buildParams(): URLSearchParams {
     const p = new URLSearchParams()
     for (const [k, v] of Object.entries(header)) p.set(k, v)
     p.set('active_rooms', String(rooms.length))
@@ -187,19 +212,64 @@ export default function EditAct({ user }: { user: User }) {
       }
       for (const [sec, txt] of Object.entries(room.notes)) if (txt) p.set(`notes_${sec}_${i}`, txt)
     })
+    return p
+  }
+
+  // После сохранения дефекты пересозданы с новыми id — перечитываем
+  // привязки фото, не трогая введённые пользователем значения
+  async function refreshBinds() {
+    const d = await api.editData(actId)
+    setPlanUrl(d.act.plan_image)
+    setRooms((rs) =>
+      rs.map((room, idx) => {
+        const serverRoom = d.rooms.find((r) => r.number === idx + 1)
+        return serverRoom ? { ...room, binds: bindsFrom(serverRoom) } : room
+      }),
+    )
+  }
+
+  async function doSave(auto: boolean) {
+    const seq = changeSeq.current
+    setSaving(true)
+    if (!auto) setError('')
     try {
-      const err = await api.saveAct(actId, p)
-      if (err) { setError(err); window.scrollTo({ top: 0 }) }
-      else {
+      const err = await api.saveAct(actId, buildParams())
+      if (err) {
+        setError(err)
+        if (!auto) window.scrollTo({ top: 0 })
+        return
+      }
+      if (changeSeq.current === seq) setDirty(false)
+      setLastSaved(new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
+      if (auto) {
+        await refreshBinds()
+      } else {
         await queryClient.invalidateQueries()
         navigate(`/inspections/${actId}`)
       }
     } catch {
-      setError('Не удалось сохранить — проверьте соединение и попробуйте ещё раз.')
+      if (!auto) setError('Не удалось сохранить — проверьте соединение и попробуйте ещё раз.')
     } finally {
       setSaving(false)
     }
   }
+
+  // Автосейв: 2.5 сек тишины после правок; пауза, пока грузятся фото
+  // или занят номер акта
+  useEffect(() => {
+    if (!dirty || !loaded || saving || uploadsActive > 0 || numberTaken) return
+    const t = setTimeout(() => doSave(true), 2500)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dirty, loaded, saving, uploadsActive, numberTaken, header, rooms])
+
+  // Предупреждение при уходе с несохранёнными изменениями
+  useEffect(() => {
+    if (!dirty) return
+    const h = (e: BeforeUnloadEvent) => { e.preventDefault() }
+    window.addEventListener('beforeunload', h)
+    return () => window.removeEventListener('beforeunload', h)
+  }, [dirty])
 
   return (
     <div className="min-h-dvh" style={{ background: C.bg, color: C.ink }}>
@@ -292,7 +362,7 @@ export default function EditAct({ user }: { user: User }) {
               <div className="flex-1" />
               <button
                 type="button"
-                onClick={() => setRooms((rs) => [...rs, emptyRoom()])}
+                onClick={() => { markDirty(); setRooms((rs) => [...rs, emptyRoom()]) }}
                 className="cursor-pointer rounded-full border px-4 py-2 text-[13px] font-bold transition-colors hover:underline"
                 style={{ borderColor: C.line, color: C.accentDark }}
               >
@@ -307,7 +377,9 @@ export default function EditAct({ user }: { user: User }) {
                     room={room} index={idx + 1}
                     templatesBySection={templatesBySection}
                     onPatch={(patch) => patchRoom(room.key, patch)}
-                    onRemove={rooms.length > 1 ? () => setRooms((rs) => rs.filter((r) => r.key !== room.key)) : undefined}
+                    onPatchSilent={(patch) => patchRoomSilent(room.key, patch)}
+                    onUploading={(delta) => setUploadsActive((n) => Math.max(0, n + delta))}
+                    onRemove={rooms.length > 1 ? () => { markDirty(); setRooms((rs) => rs.filter((r) => r.key !== room.key)) } : undefined}
                   />
                 </motion.div>
               ))}
@@ -316,21 +388,29 @@ export default function EditAct({ user }: { user: User }) {
             {/* ===== Панель сохранения ===== */}
             <div className="fixed inset-x-0 bottom-0 z-30 border-t px-5 py-3 backdrop-blur-md" style={{ background: 'rgba(248,246,241,.9)', borderColor: C.line }}>
               <div className="mx-auto flex max-w-4xl items-center gap-3">
-                <span className="hidden text-[12.5px] sm:block" style={{ color: C.faint }}>
-                  Фото добавляются после сохранения — на странице помещений
+                <span className="text-[12.5px] font-semibold" style={{ color: saving ? C.accentDark : dirty ? C.warn : C.faint }} aria-live="polite">
+                  {saving
+                    ? 'Сохраняем…'
+                    : uploadsActive > 0
+                      ? 'Загружаются фото…'
+                      : dirty
+                        ? 'Есть несохранённые изменения'
+                        : lastSaved
+                          ? `Сохранено в ${lastSaved}`
+                          : ''}
                 </span>
                 <div className="flex-1" />
                 <a href={`/inspections/${actId}`} className="rounded-full border px-5 py-2.5 text-[13.5px] font-bold" style={{ borderColor: C.line, color: C.ink }}>
-                  Отмена
+                  Закрыть
                 </a>
                 <motion.button
                   whileTap={{ scale: 0.97 }}
-                  onClick={save}
+                  onClick={() => doSave(false)}
                   disabled={saving || !!numberTaken}
                   className="cursor-pointer rounded-full px-6 py-2.5 text-[13.5px] font-extrabold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                   style={{ background: C.accent }}
                 >
-                  {saving ? 'Сохраняем…' : 'Сохранить акт'}
+                  {saving ? 'Сохраняем…' : 'Сохранить и выйти'}
                 </motion.button>
               </div>
             </div>
@@ -343,11 +423,13 @@ export default function EditAct({ user }: { user: User }) {
 
 /* ===== Помещение ===== */
 
-function RoomEditor({ room, index, templatesBySection, onPatch, onRemove }: {
+function RoomEditor({ room, index, templatesBySection, onPatch, onPatchSilent, onUploading, onRemove }: {
   room: RoomForm
   index: number
   templatesBySection: Map<string, DefectTemplate[]>
   onPatch: (patch: (r: RoomForm) => RoomForm) => void
+  onPatchSilent: (patch: (r: RoomForm) => RoomForm) => void
+  onUploading: (delta: number) => void
   onRemove?: () => void
 }) {
   const [open, setOpen] = useState(index === 1)
@@ -502,7 +584,8 @@ function RoomEditor({ room, index, templatesBySection, onPatch, onRemove }: {
                                 <PhotoDock
                                   bind={room.binds[`w${t.id}_${w}`]}
                                   hasValue={!!room.walls[t.id]?.[w]}
-                                  onBind={(b) => onPatch((r) => ({ ...r, binds: { ...r.binds, [`w${t.id}_${w}`]: b } }))}
+                                  onUploading={onUploading}
+                                  onBind={(b) => onPatchSilent((r) => ({ ...r, binds: { ...r.binds, [`w${t.id}_${w}`]: b } }))}
                                 />
                               </div>
                             ) : null,
@@ -528,7 +611,8 @@ function RoomEditor({ room, index, templatesBySection, onPatch, onRemove }: {
                           <PhotoDock
                             bind={room.binds[`s${t.id}`]}
                             hasValue={!!room.simple[t.id]}
-                            onBind={(b) => onPatch((r) => ({ ...r, binds: { ...r.binds, [`s${t.id}`]: b } }))}
+                            onUploading={onUploading}
+                            onBind={(b) => onPatchSilent((r) => ({ ...r, binds: { ...r.binds, [`s${t.id}`]: b } }))}
                           />
                         </div>
                       ))}
@@ -545,7 +629,8 @@ function RoomEditor({ room, index, templatesBySection, onPatch, onRemove }: {
                     <PhotoDock
                       bind={room.binds[`n${sec}`]}
                       hasValue={!!room.notes[sec]}
-                      onBind={(b) => onPatch((r) => ({ ...r, binds: { ...r.binds, [`n${sec}`]: b } }))}
+                      onUploading={onUploading}
+                      onBind={(b) => onPatchSilent((r) => ({ ...r, binds: { ...r.binds, [`n${sec}`]: b } }))}
                     />
                   </div>
                 </div>
@@ -560,10 +645,11 @@ function RoomEditor({ room, index, templatesBySection, onPatch, onRemove }: {
 
 /* ===== Фото дефекта ===== */
 
-function PhotoDock({ bind, hasValue, onBind }: {
+function PhotoDock({ bind, hasValue, onBind, onUploading }: {
   bind?: DefectBind
   hasValue: boolean
   onBind: (b: DefectBind) => void
+  onUploading: (delta: number) => void
 }) {
   const [uploads, setUploads] = useState<{ key: string; name: string; pct: number }[]>([])
   const [err, setErr] = useState('')
@@ -577,6 +663,7 @@ function PhotoDock({ bind, hasValue, onBind }: {
     for (const file of Array.from(files)) {
       const key = `${file.name}-${file.size}-${Math.random()}`
       setUploads((u) => [...u, { key, name: file.name, pct: 0 }])
+      onUploading(1)
       try {
         const ref = await api.uploadPhoto(bind.defectId, file, (pct) =>
           setUploads((u) => u.map((x) => (x.key === key ? { ...x, pct } : x))),
@@ -585,6 +672,7 @@ function PhotoDock({ bind, hasValue, onBind }: {
       } catch (e) {
         setErr(e instanceof Error ? e.message : 'Ошибка загрузки')
       } finally {
+        onUploading(-1)
         setUploads((u) => u.filter((x) => x.key !== key))
       }
     }
