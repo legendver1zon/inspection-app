@@ -1,10 +1,13 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { AnimatePresence } from 'framer-motion'
-import { api, ApiError } from './lib/api'
+import { AnimatePresence, motion } from 'framer-motion'
+import { api, ApiError, type User } from './lib/api'
 import Login from './pages/Login'
 import Inspections from './pages/Inspections'
 import TopBar from './components/TopBar'
+import { VariantProvider, VariantSwitcher, useVariant } from './concepts/VariantContext'
+import V1Inspections from './concepts/V1Inspections'
+import V3Inspections from './concepts/V3Inspections'
 
 function useMe() {
   return useQuery({
@@ -22,27 +25,55 @@ export default function App() {
   const checking = me.isLoading
 
   return (
-    <AnimatePresence mode="wait">
-      <Routes location={location} key={location.pathname}>
-        <Route path="/login" element={authed ? <Navigate to="/inspections" replace /> : <Login />} />
-        <Route
-          path="/inspections"
-          element={
-            checking ? (
-              <PageLoader />
-            ) : authed ? (
-              <>
-                <TopBar user={me.data!.user} />
-                <Inspections user={me.data!.user} />
-              </>
-            ) : (
-              <Navigate to="/login" replace />
-            )
-          }
-        />
-        <Route path="*" element={<Navigate to={authed ? '/inspections' : '/login'} replace />} />
-      </Routes>
-    </AnimatePresence>
+    <VariantProvider>
+      <AnimatePresence mode="wait">
+        <Routes location={location} key={location.pathname}>
+          <Route path="/login" element={authed ? <Navigate to="/inspections" replace /> : <Login />} />
+          <Route
+            path="/inspections"
+            element={
+              checking ? (
+                <PageLoader />
+              ) : authed ? (
+                <InspectionsVariant user={me.data!.user} />
+              ) : (
+                <Navigate to="/login" replace />
+              )
+            }
+          />
+          <Route path="*" element={<Navigate to={authed ? '/inspections' : '/login'} replace />} />
+        </Routes>
+      </AnimatePresence>
+    </VariantProvider>
+  )
+}
+
+// Пока идёт выбор дизайн-направления, экран списка существует в трёх
+// вариантах — переключатель внизу. После решения останется один.
+function InspectionsVariant({ user }: { user: User }) {
+  const { variant } = useVariant()
+  return (
+    <>
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={variant}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          {variant === 'v1' && <V1Inspections user={user} />}
+          {variant === 'v2' && (
+            <>
+              <TopBar user={user} />
+              <Inspections user={user} />
+            </>
+          )}
+          {variant === 'v3' && <V3Inspections user={user} />}
+        </motion.div>
+      </AnimatePresence>
+      <VariantSwitcher />
+    </>
   )
 }
 
