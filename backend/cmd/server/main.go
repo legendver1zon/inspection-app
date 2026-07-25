@@ -214,6 +214,19 @@ func main() {
 	r.GET("/reset-password", handlers.GetResetPassword)
 	r.POST("/reset-password", security.RateLimitResetPassword(), handlers.PostResetPassword)
 
+	// JSON-API для React-фронтенда
+	api := r.Group("/api")
+	{
+		api.POST("/login", handlers.APILogin)
+		api.POST("/logout", handlers.APILogout)
+		apiAuthed := api.Group("/")
+		apiAuthed.Use(handlers.APIAuth())
+		{
+			apiAuthed.GET("/me", handlers.APIMe)
+			apiAuthed.GET("/inspections", handlers.APIListInspections)
+		}
+	}
+
 	protected := r.Group("/")
 	protected.Use(auth.RequireAuth())
 	protected.Use(func(c *gin.Context) {

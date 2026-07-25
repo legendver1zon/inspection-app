@@ -1,0 +1,116 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Палитра v4 «АктОсмотр»: тёплая бумага + сигнальный оранжевый.
+   Токены — runtime-переменные: переключение темы классом .dark на <html>. */
+:root {
+  --paper: #F7F6F2;
+  --surface: #FFFFFF;
+  --inset: #F3F1EB;
+  --ink: #2B2721;
+  --muted: #6B6156;
+  --faint: #A69E90;
+  --line: #E4DFD5;
+  --line-soft: #EEEAE2;
+  --accent: #C2410C;
+  --accent-hover: #9A3412;
+  --accent-bright: #E97817;
+  --on-accent: #FFFFFF;
+  --tonal: #FEE7D6;
+  --tonal-ink: #7C2D12;
+  --ok: #166534;
+  --ok-bg: #DCFCE7;
+  --warn: #92400E;
+  --warn-bg: #FEF3C7;
+  --err: #991B1B;
+  --err-bg: #FEE2E2;
+  --col-draft: #F8F0DE;
+  --col-draft-line: #ECDFC2;
+  --col-draft-ink: #7A5410;
+  --col-done: #EAF2E6;
+  --col-done-line: #D7E6D0;
+  --col-done-ink: #2E5F3B;
+  --track: #ECE8DF;
+}
+.dark {
+  --paper: #161310;
+  --surface: #1F1B16;
+  --inset: #272219;
+  --ink: #F0EAE2;
+  --muted: #B4A996;
+  --faint: #7A7060;
+  --line: #3A332A;
+  --line-soft: #2E2820;
+  --accent: #F08B3E;
+  --accent-hover: #F6A468;
+  --accent-bright: #F08B3E;
+  --on-accent: #2A1505;
+  --tonal: #3D2A18;
+  --tonal-ink: #FFD9B8;
+  --ok: #86EFAC;
+  --ok-bg: #163822;
+  --warn: #FCD34D;
+  --warn-bg: #3B2C10;
+  --err: #FCA5A5;
+  --err-bg: #3F1717;
+  --col-draft: #2A2314;
+  --col-draft-line: #423817;
+  --col-draft-ink: #E5C15E;
+  --col-done: #182517;
+  --col-done-line: #29402A;
+  --col-done-ink: #9ED8A5;
+  --track: #362F26;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-inset: var(--inset);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-line: var(--line);
+  --color-line-soft: var(--line-soft);
+  --color-accent: var(--accent);
+  --color-accent-hover: var(--accent-hover);
+  --color-accent-bright: var(--accent-bright);
+  --color-on-accent: var(--on-accent);
+  --color-tonal: var(--tonal);
+  --color-tonal-ink: var(--tonal-ink);
+  --color-ok: var(--ok);
+  --color-ok-bg: var(--ok-bg);
+  --color-warn: var(--warn);
+  --color-warn-bg: var(--warn-bg);
+  --color-err: var(--err);
+  --color-err-bg: var(--err-bg);
+  --color-col-draft: var(--col-draft);
+  --color-col-draft-line: var(--col-draft-line);
+  --color-col-draft-ink: var(--col-draft-ink);
+  --color-col-done: var(--col-done);
+  --color-col-done-line: var(--col-done-line);
+  --color-col-done-ink: var(--col-done-ink);
+  --color-track: var(--track);
+  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Видимый фокус на всём интерактивном */
+:is(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.dark :is(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline-color: #93c5fd;
+}
+
+/* Номера актов — всегда табличные цифры */
+.tnum { font-variant-numeric: tabular-nums; }

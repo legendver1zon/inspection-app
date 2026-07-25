@@ -12,12 +12,12 @@ inspection-app-bin
 *.db-journal
 *.db-shm
 *.db-wal
-web/static/uploads/
-web/static/documents/*.pdf
-web/static/documents/*.docx
+backend/web/static/uploads/
+backend/web/static/documents/*.pdf
+backend/web/static/documents/*.docx
 
 # Артефакты тестов (CWD тестов — internal/handlers)
-internal/handlers/web/
+backend/internal/handlers/web/
 
 # macOS
 .DS_Store

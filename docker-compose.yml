@@ -47,11 +47,12 @@ services:
       # 10+ комнат × десятки полей на каждую легко превышает этот лимит и валится
       # с ошибкой "multipart: message too large". Поднимаем запас в 10x.
       GODEBUG: multipartmaxparts=10000
+    # Только localhost: наружу приложение отдаёт nginx по HTTPS
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     volumes:
-      - ./web/static/uploads:/app/web/static/uploads
-      - ./web/static/documents:/app/web/static/documents
+      - ./backend/web/static/uploads:/app/web/static/uploads
+      - ./backend/web/static/documents:/app/web/static/documents
 
 volumes:
   pgdata:
