@@ -5,83 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ .title }} — Акты осмотра</title>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/theme.css">
     <link rel="stylesheet" href="/static/css/ui.css">
     <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
     <script>(function(){var t=localStorage.getItem("theme");if(t)document.documentElement.setAttribute("data-theme",t);})()</script>
-    <style>
-        .search-filters {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 16px;
-            margin-bottom: 20px;
-        }
-        .filter-row {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            align-items: flex-end;
-        }
-        .filter-group {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-            flex: 1;
-            min-width: 160px;
-        }
-        .filter-group label {
-            font-size: 0.78rem;
-            font-weight: 600;
-            color: var(--text-muted, #64748b);
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-        }
-        .filter-group input {
-            padding: 7px 10px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            font-size: 0.9rem;
-            background: var(--bg);
-            color: var(--text);
-            width: 100%;
-            box-sizing: border-box;
-        }
-        .filter-group input:focus {
-            outline: none;
-            border-color: var(--primary, #4f46e5);
-            box-shadow: 0 0 0 2px rgba(79,70,229,0.15);
-        }
-        .filter-actions {
-            display: flex;
-            gap: 8px;
-            align-items: flex-end;
-            flex-shrink: 0;
-        }
-        .filter-date { max-width: 150px; }
-        .list-meta {
-            font-size: 0.85rem;
-            color: var(--text-muted, #64748b);
-            margin-bottom: 10px;
-        }
-        .pagination {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-top: 20px;
-            justify-content: center;
-        }
-        .pagination-info {
-            font-size: 0.9rem;
-            color: var(--text-muted, #64748b);
-            min-width: 60px;
-            text-align: center;
-        }
-        .btn.disabled {
-            opacity: 0.4;
-            pointer-events: none;
-            cursor: default;
-        }
-    </style>
 </head>
 <body>
     {{ template "navbar" . }}
@@ -89,150 +16,299 @@
     <main class="container">
         <div class="page-header">
             <h1>Осмотры</h1>
-            <a href="/inspections/new" class="btn btn-primary">+ Новый осмотр</a>
+            <a href="/inspections/new" class="btn btn-primary il-newbtn-desktop">＋ Новый осмотр</a>
         </div>
 
-        <!-- Форма поиска -->
-        <form method="GET" action="/inspections" id="search-form" class="search-filters">
+        <!-- Поиск + расширенные фильтры -->
+        <form method="GET" action="/inspections" id="search-form">
             <input type="hidden" name="tab" id="tab-input" value="{{ .tab }}">
-            <div class="filter-row">
-                <div class="filter-group">
-                    <label>№ акта</label>
-                    <input type="text" name="act_number" value="{{ .filterActNumber }}" placeholder="Например: 42">
+            <div class="il-controls">
+                <div class="il-search">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+                    <input type="search" name="q" value="{{ .filterQ }}"
+                           placeholder="Найти акт: номер, адрес, фамилия" aria-label="Поиск по актам">
                 </div>
-                <div class="filter-group">
-                    <label>Фамилия собственника</label>
-                    <input type="text" name="owner" value="{{ .filterOwner }}" placeholder="Введите фамилию...">
-                </div>
-                {{ if .isAdmin }}
-                <div class="filter-group">
-                    <label>Фамилия инспектора</label>
-                    <input type="text" name="inspector" value="{{ .filterInspector }}" placeholder="Введите фамилию...">
-                </div>
-                {{ end }}
-                <div class="filter-group">
-                    <label>Адрес</label>
-                    <input type="text" name="address" value="{{ .filterAddress }}" placeholder="Введите адрес...">
-                </div>
-                <div class="filter-group filter-date">
-                    <label>Дата с</label>
-                    <input type="date" name="date_from" value="{{ .filterDateFrom }}">
-                </div>
-                <div class="filter-group filter-date">
-                    <label>Дата по</label>
-                    <input type="date" name="date_to" value="{{ .filterDateTo }}">
-                </div>
-                <div class="filter-actions">
-                    <button type="submit" class="btn btn-primary">Найти</button>
-                    {{ if .hasFilters }}
-                    <a href="/inspections?tab={{ .tab }}" class="btn btn-secondary">Сбросить</a>
-                    {{ end }}
-                </div>
+                <details class="il-adv" {{ if .hasFilters }}open{{ end }}>
+                    <summary>Фильтры{{ if .hasFilters }} ·&nbsp;активны{{ end }}</summary>
+                    <div class="il-advpanel">
+                        <div class="il-advgrid">
+                            <label>№ акта
+                                <input type="text" name="act_number" value="{{ .filterActNumber }}" placeholder="Например: 391">
+                            </label>
+                            <label>Собственник
+                                <input type="text" name="owner" value="{{ .filterOwner }}" placeholder="Фамилия">
+                            </label>
+                            {{ if .isAdmin }}
+                            <label>Инспектор
+                                <input type="text" name="inspector" value="{{ .filterInspector }}" placeholder="Фамилия">
+                            </label>
+                            {{ end }}
+                            <label>Адрес
+                                <input type="text" name="address" value="{{ .filterAddress }}" placeholder="Улица, дом">
+                            </label>
+                            <label>Дата с
+                                <input type="date" name="date_from" value="{{ .filterDateFrom }}">
+                            </label>
+                            <label>Дата по
+                                <input type="date" name="date_to" value="{{ .filterDateTo }}">
+                            </label>
+                        </div>
+                        <div class="il-advactions">
+                            {{ if .hasAnyFilter }}
+                            <a class="btn btn-secondary" href="/inspections?tab={{ .tab }}">Сбросить</a>
+                            {{ end }}
+                            <button type="submit" class="btn btn-primary">Применить</button>
+                        </div>
+                    </div>
+                </details>
+            </div>
+
+            <!-- Чипы активных фильтров -->
+            <div class="il-chips" aria-live="polite">
+                {{ if .filterQ }}<span class="il-fchip">Поиск: «{{ .filterQ }}»<a href="#" data-drop="q" aria-label="Очистить поиск">✕</a></span>{{ end }}
+                {{ if .filterActNumber }}<span class="il-fchip">№ {{ .filterActNumber }}<a href="#" data-drop="act_number" aria-label="Убрать фильтр по номеру">✕</a></span>{{ end }}
+                {{ if .filterOwner }}<span class="il-fchip">Собственник: {{ .filterOwner }}<a href="#" data-drop="owner" aria-label="Убрать фильтр по собственнику">✕</a></span>{{ end }}
+                {{ if .filterInspector }}<span class="il-fchip">Инспектор: {{ .filterInspector }}<a href="#" data-drop="inspector" aria-label="Убрать фильтр по инспектору">✕</a></span>{{ end }}
+                {{ if .filterAddress }}<span class="il-fchip">Адрес: {{ .filterAddress }}<a href="#" data-drop="address" aria-label="Убрать фильтр по адресу">✕</a></span>{{ end }}
+                {{ if .filterDateFrom }}<span class="il-fchip">с {{ .filterDateFrom }}<a href="#" data-drop="date_from" aria-label="Убрать дату с">✕</a></span>{{ end }}
+                {{ if .filterDateTo }}<span class="il-fchip">по {{ .filterDateTo }}<a href="#" data-drop="date_to" aria-label="Убрать дату по">✕</a></span>{{ end }}
             </div>
         </form>
 
-        <div class="tabs">
-            <a href="#" class="tab{{ if eq .tab "draft" }} active{{ end }}"
-               onclick="switchTab('draft'); return false;">
-                В работе <span class="tab-count">{{ .draftCount }}</span>
-            </a>
-            <a href="#" class="tab{{ if eq .tab "completed" }} active{{ end }}"
-               onclick="switchTab('completed'); return false;">
-                Завершённые <span class="tab-count">{{ .completedCount }}</span>
-            </a>
+        <!-- Мобильные табы -->
+        <div class="il-tabs" role="tablist" aria-label="Группы актов">
+            <button type="button" role="tab" id="tabBtnDraft" aria-selected="true">В работе · {{ .draftCount }}</button>
+            <button type="button" role="tab" id="tabBtnDone" aria-selected="false">Завершённые · {{ .completedCount }}</button>
         </div>
 
-        {{ if gt .totalCount 0 }}
-        <div class="list-meta">
-            Показано {{ len .inspections }} из {{ .totalCount }}
-            {{ if gt .totalPages 1 }}· Страница {{ .page }} из {{ .totalPages }}{{ end }}
-        </div>
-        {{ end }}
-
-        {{ if .inspections }}
-        <div class="table-wrapper">
-            <table class="table">
-                <thead>
-                    <tr>
-                        <th>Акт №</th>
-                        <th>Дата</th>
-                        <th>Адрес</th>
-                        <th>Собственник</th>
-                        {{ if .isAdmin }}<th>Мастер</th>{{ end }}
-                        <th>Статус</th>
-                        <th>Действия</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {{ range .inspections }}
-                    <tr onclick="window.location='/inspections/{{ .ID }}'" style="cursor:pointer">
-                        <td><strong>{{ .ActNumber }}</strong></td>
-                        <td>{{ .Date.Format "02.01.2006" }}</td>
-                        <td>{{ .Address }}</td>
-                        <td>{{ .OwnerName }}</td>
-                        {{ if $.isAdmin }}<td>{{ .User.Initials }}</td>{{ end }}
-                        <td>
-                            {{ if eq .Status "completed" }}
-                            <span class="badge badge-success">Завершён</span>
-                            {{ else }}
-                            <span class="badge badge-draft">В работе</span>
-                            {{ end }}
-                        </td>
-                        <td class="actions">
-                            <a href="/inspections/{{ .ID }}" class="btn btn-sm">Просмотр</a>
-                            <a href="/inspections/{{ .ID }}/edit" class="btn btn-sm btn-secondary">Редактировать</a>
-                            {{ if $.isAdmin }}
-                            <form method="POST" action="/admin/inspections/{{ .ID }}/delete" style="display:inline"
-                                  onsubmit="return confirm('Удалить акт №{{ .ActNumber }}? Это действие необратимо.')">
-                                <button type="submit" class="btn btn-sm btn-danger">Удалить</button>
-                            </form>
-                            {{ end }}
-                        </td>
-                    </tr>
+        <!-- В работе -->
+        <section class="il-group il-group-draft" id="groupDraft" aria-labelledby="hDraft">
+            <div class="il-grouphead">
+                <span class="dot" aria-hidden="true"></span>
+                <h2 id="hDraft">В работе</h2>
+                <span class="cnt">{{ .draftCount }}</span>
+            </div>
+            {{ if .draftCards }}
+            <div class="il-cards">
+                {{ range .draftCards }}
+                <article class="il-card">
+                    <div class="head">
+                        <span class="il-num"><a href="/inspections/{{ .ID }}">№ {{ .ActNumber }}</a></span>
+                        <span class="il-date">{{ .HumanDate }}</span>
+                    </div>
+                    <div class="il-addr">{{ .Address }}</div>
+                    <div class="il-own">
+                        {{ if .OwnerName }}{{ .OwnerName }}{{ else }}Собственник не указан{{ end }}{{ if gt .TotalRooms 0 }} · {{ .TotalRooms }} пом.{{ end }}{{ if gt .TotalArea 0.0 }} · {{ .TotalArea }} м²{{ end }}{{ if $.isAdmin }} · {{ .User.Initials }}{{ end }}
+                    </div>
+                    {{ if gt .TotalRooms 0 }}
+                    <div class="il-prog">
+                        <div class="lbl">
+                            <span>Заполнено <b>{{ .FilledRooms }} из {{ .TotalRooms }}</b> помещений</span>
+                            <span>{{ .Percent }}%</span>
+                        </div>
+                        <div class="il-bar" role="progressbar" aria-valuenow="{{ .FilledRooms }}" aria-valuemin="0" aria-valuemax="{{ .TotalRooms }}" aria-label="Заполнено {{ .FilledRooms }} из {{ .TotalRooms }} помещений"><i style="width: {{ .Percent }}%"></i></div>
+                    </div>
                     {{ end }}
-                </tbody>
-            </table>
-        </div>
-
-        {{ if gt .totalPages 1 }}
-        <div class="pagination">
-            {{ if gt .page 1 }}
-            <a href="{{ .pageBase }}&page={{ .prevPage }}" class="btn btn-secondary btn-sm">← Назад</a>
+                    <div class="il-facts">
+                        <span class="il-fact" aria-label="{{ .Defects }} дефектов">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M9 6h11M9 12h11M9 18h11"/><path d="m3.5 5.5 1 1L6.5 4.5m-3 7 1 1 2-2m-3 7 1 1 2-2"/></svg>
+                            <b>{{ .Defects }}</b> дефектов
+                        </span>
+                        <span class="il-fact" aria-label="{{ .Photos }} фото">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="m8 7 2-3h4l2 3"/><circle cx="12" cy="13" r="3.5"/></svg>
+                            <b>{{ .Photos }}</b> фото
+                        </span>
+                        {{ if eq .CloudState "queue" }}
+                        <span class="il-fact warn" role="status" aria-label="{{ .CloudN }} фото в очереди на выгрузку">
+                            <span class="il-pulse" aria-hidden="true"></span>{{ .CloudN }} в очереди
+                        </span>
+                        {{ else if eq .CloudState "error" }}
+                        <span class="il-fact err" aria-label="Сбой выгрузки {{ .CloudN }} фото">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="m12 3 10 18H2Z"/><path d="M12 10v5"/><circle cx="12" cy="18" r=".5"/></svg>
+                            сбой выгрузки
+                        </span>
+                        {{ else if eq .CloudState "ok" }}
+                        <span class="il-fact ok" aria-label="Все фото выгружены в облако">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M6 18a5 5 0 0 1 .6-9.97A6.5 6.5 0 0 1 19 10a4 4 0 0 1-1 7.87"/><path d="m8.5 14.5 2.5 2.5 4.5-5"/></svg>
+                            выгружено
+                        </span>
+                        {{ end }}
+                    </div>
+                    <div class="actions">
+                        <a class="btn btn-tonal" href="/inspections/{{ .ID }}/edit">Продолжить</a>
+                        <a class="btn btn-secondary" href="/inspections/{{ .ID }}">Просмотр</a>
+                    </div>
+                </article>
+                {{ end }}
+            </div>
             {{ else }}
-            <span class="btn btn-secondary btn-sm disabled">← Назад</span>
+            <div class="il-empty">
+                {{ if $.hasAnyFilter }}
+                <div class="t">Ничего не найдено{{ if .filterQ }} по запросу «{{ .filterQ }}»{{ end }}</div>
+                <div>Проверьте номер, адрес или фамилию</div>
+                <a class="btn btn-secondary" href="/inspections?tab={{ .tab }}">Сбросить фильтры</a>
+                {{ else }}
+                <div class="t">Пока нет актов в работе</div>
+                <div>Создайте первый осмотр — это займёт минуту</div>
+                <a class="btn btn-primary" href="/inspections/new">＋ Новый осмотр</a>
+                {{ end }}
+            </div>
             {{ end }}
+        </section>
 
-            <span class="pagination-info">{{ .page }} / {{ .totalPages }}</span>
+        <!-- Завершённые -->
+        <section class="il-group il-group-done" id="groupDone" aria-labelledby="hDone">
+            <div class="il-grouphead">
+                <span class="dot" aria-hidden="true"></span>
+                <h2 id="hDone">Завершённые</h2>
+                <span class="cnt">{{ .completedCount }}</span>
+            </div>
 
-            {{ if lt .page .totalPages }}
-            <a href="{{ .pageBase }}&page={{ .nextPage }}" class="btn btn-secondary btn-sm">Вперёд →</a>
+            {{ if .doneCards }}
+            <div class="il-tablewrap">
+                <table class="il-table" aria-describedby="hDone">
+                    <thead>
+                        <tr>
+                            <th scope="col">№</th>
+                            <th scope="col">Дата</th>
+                            <th scope="col">Адрес</th>
+                            <th scope="col">Собственник</th>
+                            {{ if .isAdmin }}<th scope="col">Инспектор</th>{{ end }}
+                            <th scope="col" class="c-n">м²</th>
+                            <th scope="col" class="c-n">Дефекты</th>
+                            <th scope="col" class="c-n">Фото</th>
+                            <th scope="col">Статус</th>
+                            <th scope="col"></th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {{ range .doneCards }}
+                        <tr>
+                            <td class="c-num"><a href="/inspections/{{ .ID }}">{{ .ActNumber }}</a></td>
+                            <td class="c-date">{{ .HumanDate }}</td>
+                            <td>{{ .Address }}</td>
+                            <td class="c-own">{{ .OwnerName }}</td>
+                            {{ if $.isAdmin }}<td class="c-own">{{ .User.Initials }}</td>{{ end }}
+                            <td class="c-n">{{ if gt .TotalArea 0.0 }}{{ .TotalArea }}{{ else }}—{{ end }}</td>
+                            <td class="c-n">{{ .Defects }}</td>
+                            <td class="c-n">{{ .Photos }}</td>
+                            <td><span class="il-tstatus">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5.5"/></svg>
+                                Завершён
+                            </span></td>
+                            <td>
+                                <div class="il-rowact">
+                                    <a href="/inspections/{{ .ID }}">Открыть</a>
+                                    <a href="/inspections/{{ .ID }}/edit">Изменить</a>
+                                    {{ if $.isAdmin }}
+                                    <form method="POST" action="/admin/inspections/{{ .ID }}/delete" style="display:inline"
+                                          onsubmit="return confirm('Удалить акт №{{ .ActNumber }}? Это действие необратимо.')">
+                                        <button type="submit" class="danger">Удалить</button>
+                                    </form>
+                                    {{ end }}
+                                </div>
+                            </td>
+                        </tr>
+                        {{ end }}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Мобильные строки-карточки -->
+            <div class="il-dcards">
+                {{ range .doneCards }}
+                <article class="il-dcard">
+                    <div class="head">
+                        <span class="il-num"><a href="/inspections/{{ .ID }}">№ {{ .ActNumber }}</a></span>
+                        <span class="il-date">{{ .HumanDate }}</span>
+                    </div>
+                    <div class="il-addr">{{ .Address }}</div>
+                    <div class="m">
+                        <span>{{ .OwnerName }}</span>
+                        {{ if gt .TotalArea 0.0 }}<span><b>{{ .TotalArea }}</b> м²</span>{{ end }}
+                        <span><b>{{ .Defects }}</b> дефектов</span>
+                        <span><b>{{ .Photos }}</b> фото</span>
+                    </div>
+                    <div class="foot">
+                        <span class="il-tstatus">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5.5"/></svg>
+                            Завершён
+                        </span>
+                        <a class="btn btn-secondary" href="/inspections/{{ .ID }}">Открыть</a>
+                    </div>
+                </article>
+                {{ end }}
+            </div>
+
+            <div class="il-tfoot">
+                <span>Показано {{ len .doneCards }} из {{ .completedCount }}</span>
+                {{ if gt .totalPages 1 }}
+                <nav class="il-pager" aria-label="Страницы завершённых актов">
+                    {{ if gt .page 1 }}
+                    <a href="{{ .pageBase }}&page={{ .prevPage }}" aria-label="Предыдущая страница">‹</a>
+                    {{ else }}
+                    <span class="off" aria-hidden="true">‹</span>
+                    {{ end }}
+                    <span aria-current="page">{{ .page }}</span>
+                    {{ if lt .page .totalPages }}
+                    <a href="{{ .pageBase }}&page={{ .nextPage }}" aria-label="Следующая страница">›</a>
+                    {{ else }}
+                    <span class="off" aria-hidden="true">›</span>
+                    {{ end }}
+                </nav>
+                {{ end }}
+            </div>
+
             {{ else }}
-            <span class="btn btn-secondary btn-sm disabled">Вперёд →</span>
+            <div class="il-empty">
+                {{ if $.hasAnyFilter }}
+                <div class="t">Ничего не найдено{{ if .filterQ }} по запросу «{{ .filterQ }}»{{ end }}</div>
+                <a class="btn btn-secondary" href="/inspections?tab={{ .tab }}">Сбросить фильтры</a>
+                {{ else }}
+                <div class="t">Завершённых актов пока нет</div>
+                <div>Заполненный и подписанный акт появится здесь</div>
+                {{ end }}
+            </div>
             {{ end }}
-        </div>
-        {{ end }}
-
-        {{ else }}
-        <div class="empty-state">
-            {{ if .hasFilters }}
-            <p>По вашему запросу ничего не найдено.</p>
-            <a href="/inspections?tab={{ .tab }}" class="btn btn-secondary">Сбросить фильтры</a>
-            {{ else if eq .tab "completed" }}
-            <p>Завершённых осмотров пока нет.</p>
-            {{ else }}
-            <p>Осмотров в работе нет.</p>
-            <a href="/inspections/new" class="btn btn-primary">Создать осмотр</a>
-            {{ end }}
-        </div>
-        {{ end }}
+        </section>
     </main>
 
+    <a class="il-fab" href="/inspections/new">＋ Осмотр</a>
+
     <script>
-    function switchTab(tab) {
-        document.getElementById('tab-input').value = tab;
-        document.getElementById('search-form').submit();
-    }
+    (function () {
+        // Мобильные табы: переключают видимость групп, состояние в hidden-поле формы
+        var tabDraft = document.getElementById('tabBtnDraft');
+        var tabDone = document.getElementById('tabBtnDone');
+        var groupDraft = document.getElementById('groupDraft');
+        var groupDone = document.getElementById('groupDone');
+        var tabInput = document.getElementById('tab-input');
+        var mq = window.matchMedia('(max-width: 768px)');
+
+        function apply(tab) {
+            tabInput.value = tab;
+            tabDraft.setAttribute('aria-selected', String(tab === 'draft'));
+            tabDone.setAttribute('aria-selected', String(tab === 'completed'));
+            groupDraft.classList.toggle('m-hidden', mq.matches && tab !== 'draft');
+            groupDone.classList.toggle('m-hidden', mq.matches && tab !== 'completed');
+        }
+        tabDraft.addEventListener('click', function () { apply('draft'); });
+        tabDone.addEventListener('click', function () { apply('completed'); });
+        mq.addEventListener('change', function () { apply(tabInput.value); });
+        apply(tabInput.value === 'completed' ? 'completed' : 'draft');
+
+        // Крестики на чипах фильтров: убирают один параметр и перезагружают
+        document.querySelectorAll('[data-drop]').forEach(function (el) {
+            el.addEventListener('click', function (e) {
+                e.preventDefault();
+                var p = new URLSearchParams(window.location.search);
+                p.delete(el.dataset.drop);
+                p.delete('page');
+                window.location = '/inspections?' + p.toString();
+            });
+        });
+    })();
     </script>
-<script src="/static/js/ui.js"></script>
+    <script src="/static/js/ui.js"></script>
 </body>
 </html>

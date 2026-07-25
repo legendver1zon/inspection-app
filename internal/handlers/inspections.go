@@ -91,7 +91,8 @@ func GetDashboard(c *gin.Context) {
 	})
 }
 
-// GetInspections — список осмотров
+// GetInspections — список осмотров: черновики карточками, завершённые таблицей.
+// Обе группы рендерятся на одной странице; tab задаёт активную вкладку на мобильном.
 func GetInspections(c *gin.Context) {
 	userID := c.GetUint("userID")
 	role := c.GetString("userRole")
@@ -101,7 +102,9 @@ func GetInspections(c *gin.Context) {
 		tab = "draft"
 	}
 
-	// Параметры поиска
+	// Параметры поиска: q — совмещённый (номер/адрес/собственник),
+	// остальные — расширенные фильтры
+	q := strings.TrimSpace(c.Query("q"))
 	actFilter := strings.TrimSpace(c.Query("act_number"))
 	ownerFilter := strings.TrimSpace(c.Query("owner"))
 	inspectorFilter := strings.TrimSpace(c.Query("inspector"))
@@ -109,121 +112,91 @@ func GetInspections(c *gin.Context) {
 	dateFrom := strings.TrimSpace(c.Query("date_from"))
 	dateTo := strings.TrimSpace(c.Query("date_to"))
 
-	// Счётчики по статусам
+	// buildQ — базовый запрос с ролью и всеми фильтрами
+	buildQ := func() *gorm.DB {
+		db := storage.DB.Model(&models.Inspection{})
+		if role != "admin" {
+			db = db.Where("user_id = ?", userID)
+		}
+		if q != "" {
+			like := "%" + escapeLike(q) + "%"
+			db = db.Where("act_number LIKE ? OR address LIKE ? OR owner_name LIKE ?", like, like, like)
+		}
+		if actFilter != "" {
+			db = db.Where("act_number LIKE ?", "%"+escapeLike(actFilter)+"%")
+		}
+		if ownerFilter != "" {
+			db = db.Where("owner_name LIKE ?", "%"+escapeLike(ownerFilter)+"%")
+		}
+		if inspectorFilter != "" {
+			sub := storage.DB.Table("users").Select("id").Where("full_name LIKE ?", "%"+escapeLike(inspectorFilter)+"%")
+			db = db.Where("user_id IN (?)", sub)
+		}
+		if addressFilter != "" {
+			db = db.Where("address LIKE ?", "%"+escapeLike(addressFilter)+"%")
+		}
+		if dateFrom != "" {
+			if t, err := time.Parse("2006-01-02", dateFrom); err == nil {
+				db = db.Where("date >= ?", t)
+			}
+		}
+		if dateTo != "" {
+			if t, err := time.Parse("2006-01-02", dateTo); err == nil {
+				db = db.Where("date <= ?", t.Add(24*time.Hour-time.Nanosecond))
+			}
+		}
+		return db
+	}
+
 	var draftCount, completedCount int64
-	draftQ := storage.DB.Model(&models.Inspection{}).Where("status = ?", "draft")
-	completedQ := storage.DB.Model(&models.Inspection{}).Where("status = ?", "completed")
-	listQ := storage.DB.Model(&models.Inspection{}).Preload("User").Where("status = ?", tab).Order("created_at desc")
+	buildQ().Where("status = ?", "draft").Count(&draftCount)
+	buildQ().Where("status = ?", "completed").Count(&completedCount)
 
-	if role != "admin" {
-		draftQ = draftQ.Where("user_id = ?", userID)
-		completedQ = completedQ.Where("user_id = ?", userID)
-		listQ = listQ.Where("user_id = ?", userID)
-	}
+	// Черновики — карточками, без пагинации (ограничение — защитный предел)
+	var drafts []models.Inspection
+	buildQ().Preload("User").Where("status = ?", "draft").
+		Order("created_at desc").Limit(60).Find(&drafts)
 
-	// Фильтр по номеру акта
-	if actFilter != "" {
-		like := "%" + escapeLike(actFilter) + "%"
-		draftQ = draftQ.Where("act_number LIKE ?", like)
-		completedQ = completedQ.Where("act_number LIKE ?", like)
-		listQ = listQ.Where("act_number LIKE ?", like)
-	}
-
-	// Фильтр по фамилии собственника
-	if ownerFilter != "" {
-		like := "%" + escapeLike(ownerFilter) + "%"
-		draftQ = draftQ.Where("owner_name LIKE ?", like)
-		completedQ = completedQ.Where("owner_name LIKE ?", like)
-		listQ = listQ.Where("owner_name LIKE ?", like)
-	}
-
-	// Фильтр по фамилии инспектора (подзапрос по таблице users)
-	if inspectorFilter != "" {
-		sub := storage.DB.Table("users").Select("id").Where("full_name LIKE ?", "%"+escapeLike(inspectorFilter)+"%")
-		draftQ = draftQ.Where("user_id IN (?)", sub)
-		completedQ = completedQ.Where("user_id IN (?)", sub)
-		listQ = listQ.Where("user_id IN (?)", sub)
-	}
-
-	// Фильтр по адресу
-	if addressFilter != "" {
-		like := "%" + escapeLike(addressFilter) + "%"
-		draftQ = draftQ.Where("address LIKE ?", like)
-		completedQ = completedQ.Where("address LIKE ?", like)
-		listQ = listQ.Where("address LIKE ?", like)
-	}
-
-	// Фильтр по дате
-	if dateFrom != "" {
-		if t, err := time.Parse("2006-01-02", dateFrom); err == nil {
-			draftQ = draftQ.Where("date >= ?", t)
-			completedQ = completedQ.Where("date >= ?", t)
-			listQ = listQ.Where("date >= ?", t)
-		}
-	}
-	if dateTo != "" {
-		if t, err := time.Parse("2006-01-02", dateTo); err == nil {
-			end := t.Add(24*time.Hour - time.Nanosecond)
-			draftQ = draftQ.Where("date <= ?", end)
-			completedQ = completedQ.Where("date <= ?", end)
-			listQ = listQ.Where("date <= ?", end)
-		}
-	}
-
-	draftQ.Count(&draftCount)
-	completedQ.Count(&completedCount)
-
-	// Пагинация — клонируем запрос чтобы Count не затронул Preload в listQ
+	// Завершённые — таблицей с пагинацией, новые сверху
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	if page < 1 {
 		page = 1
 	}
-	var totalCount int64
-	listQ.Session(&gorm.Session{}).Count(&totalCount)
-	totalPages := int((totalCount + int64(pageSize) - 1) / int64(pageSize))
+	totalPages := int((completedCount + int64(pageSize) - 1) / int64(pageSize))
 	if page > totalPages && totalPages > 0 {
 		page = totalPages
 	}
-	offset := (page - 1) * pageSize
-
-	var inspections []models.Inspection
-	listQ.Limit(pageSize).Offset(offset).Find(&inspections)
+	var completed []models.Inspection
+	buildQ().Preload("User").Where("status = ?", "completed").
+		Order("date desc, id desc").Limit(pageSize).Offset((page - 1) * pageSize).Find(&completed)
 
 	user := CurrentUser(c)
-
 	hasFilters := actFilter != "" || ownerFilter != "" || inspectorFilter != "" || addressFilter != "" || dateFrom != "" || dateTo != ""
 
 	// Базовый URL для ссылок пагинации (все текущие фильтры без page)
 	qp := url.Values{}
 	qp.Set("tab", tab)
-	if actFilter != "" {
-		qp.Set("act_number", actFilter)
-	}
-	if ownerFilter != "" {
-		qp.Set("owner", ownerFilter)
-	}
-	if inspectorFilter != "" {
-		qp.Set("inspector", inspectorFilter)
-	}
-	if addressFilter != "" {
-		qp.Set("address", addressFilter)
-	}
-	if dateFrom != "" {
-		qp.Set("date_from", dateFrom)
-	}
-	if dateTo != "" {
-		qp.Set("date_to", dateTo)
+	for k, v := range map[string]string{
+		"q": q, "act_number": actFilter, "owner": ownerFilter,
+		"inspector": inspectorFilter, "address": addressFilter,
+		"date_from": dateFrom, "date_to": dateTo,
+	} {
+		if v != "" {
+			qp.Set(k, v)
+		}
 	}
 	pageBase := "/inspections?" + qp.Encode()
 
 	c.HTML(http.StatusOK, "list.html", gin.H{
 		"title":           "Осмотры",
-		"inspections":     inspections,
+		"draftCards":      buildActCards(drafts),
+		"doneCards":       buildActCards(completed),
 		"user":            user,
 		"isAdmin":         role == "admin",
 		"tab":             tab,
 		"draftCount":      draftCount,
 		"completedCount":  completedCount,
+		"filterQ":         q,
 		"filterActNumber": actFilter,
 		"filterOwner":     ownerFilter,
 		"filterInspector": inspectorFilter,
@@ -231,9 +204,9 @@ func GetInspections(c *gin.Context) {
 		"filterDateFrom":  dateFrom,
 		"filterDateTo":    dateTo,
 		"hasFilters":      hasFilters,
+		"hasAnyFilter":    hasFilters || q != "",
 		"page":            page,
 		"totalPages":      totalPages,
-		"totalCount":      totalCount,
 		"pageBase":        pageBase,
 		"prevPage":        page - 1,
 		"nextPage":        page + 1,

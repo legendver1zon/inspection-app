@@ -269,8 +269,12 @@ func main() {
 		}
 	}
 
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
 	srv := &http.Server{
-		Addr:         ":8080",
+		Addr:         ":" + port,
 		Handler:      r,
 		ReadTimeout:  2 * time.Minute,
 		WriteTimeout: 5 * time.Minute,
@@ -278,7 +282,7 @@ func main() {
 	}
 
 	go func() {
-		logger.Info("server started", "addr", ":8080")
+		logger.Info("server started", "addr", ":"+port)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server start failed: %v", err)
 		}

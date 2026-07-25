@@ -5,6 +5,7 @@ import (
 	"inspection-app/internal/models"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -113,9 +114,11 @@ func TestGetInspections_AdminSeesAll(t *testing.T) {
 	}
 }
 
-// --- Вкладки draft / completed ---
+// --- Группы draft / completed ---
 
-func TestGetInspections_TabDraft_ShowsOnlyDraft(t *testing.T) {
+// С редизайна обе группы рендерятся на одной странице: черновики карточками,
+// завершённые таблицей. Мобильное переключение вкладок — на клиенте.
+func TestGetInspections_ShowsBothGroups(t *testing.T) {
 	setupTestDB(t)
 	r := setupRouter(t)
 
@@ -125,39 +128,40 @@ func TestGetInspections_TabDraft_ShowsOnlyDraft(t *testing.T) {
 
 	tok := tokenFor(t, user.ID, "inspector")
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/inspections?tab=draft", nil)
+	req, _ := http.NewRequest("GET", "/inspections", nil)
 	req.AddCookie(&http.Cookie{Name: "token", Value: tok})
 	r.ServeHTTP(w, req)
 
 	body := w.Body.String()
 	if !strings.Contains(body, "Черновик ул.") {
-		t.Error("вкладка draft: должен показываться черновик")
+		t.Error("страница списка: должен показываться черновик")
 	}
-	if strings.Contains(body, "Завершённая ул.") {
-		t.Error("вкладка draft: завершённый осмотр не должен отображаться")
+	if !strings.Contains(body, "Завершённая ул.") {
+		t.Error("страница списка: должен показываться завершённый осмотр")
 	}
 }
 
-func TestGetInspections_TabCompleted_ShowsOnlyCompleted(t *testing.T) {
+// Совмещённый поиск q ищет по номеру, адресу и собственнику сразу.
+func TestGetInspections_CombinedSearch(t *testing.T) {
 	setupTestDB(t)
 	r := setupRouter(t)
 
 	user := newUser(t, "u@test.com", "pass", "Тестов Тест Тестович", models.RoleInspector)
-	newInspection(t, user.ID, "Черновик ул., 1", "Черновиков", "draft", time.Now())
-	newInspection(t, user.ID, "Готовая ул., 99", "Готовов", "completed", time.Now())
+	newInspection(t, user.ID, "Совпадение ул., 7", "Иванов", "draft", time.Now())
+	newInspection(t, user.ID, "Другая ул., 9", "Петров", "draft", time.Now())
 
 	tok := tokenFor(t, user.ID, "inspector")
 	w := httptest.NewRecorder()
-	req, _ := http.NewRequest("GET", "/inspections?tab=completed", nil)
+	req, _ := http.NewRequest("GET", "/inspections?q="+url.QueryEscape("Совпадение"), nil)
 	req.AddCookie(&http.Cookie{Name: "token", Value: tok})
 	r.ServeHTTP(w, req)
 
 	body := w.Body.String()
-	if strings.Contains(body, "Черновик ул.") {
-		t.Error("вкладка completed: черновик не должен отображаться")
+	if !strings.Contains(body, "Совпадение ул.") {
+		t.Error("поиск q: совпавший акт должен отображаться")
 	}
-	if !strings.Contains(body, "Готовая ул.") {
-		t.Error("вкладка completed: должен показываться завершённый осмотр")
+	if strings.Contains(body, "Другая ул.") {
+		t.Error("поиск q: не совпавший акт не должен отображаться")
 	}
 }
 

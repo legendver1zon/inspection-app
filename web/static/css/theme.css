@@ -1,0 +1,442 @@
+/* ============================================================
+   theme.css — дизайн-система v4 «АктОсмотр» (тёплая светлая + тёмная).
+   Подключается ПОСЛЕ style.css/ui.css: переопределяет токены и скин
+   общих компонентов; несёт компоненты новой страницы списка (.il-*).
+   ============================================================ */
+
+/* ===== Токены: светлая тема ===== */
+:root {
+    --brand:        #C2410C;   /* залитые primary: белый текст, 5.2:1 */
+    --brand-dark:   #9A3412;
+    --brand-light:  #FEE7D6;   /* tonal-фон */
+    --brand-glow:   rgba(194, 65, 12, .16);
+    --brand-bright: #E97817;   /* марка бренда и прогресс-бары (не текст) */
+    --tonal-ink:    #7C2D12;   /* 7.8:1 на brand-light */
+
+    --accent:       #E97817;
+    --success:      #166534;
+    --success-bg:   #DCFCE7;
+    --warning:      #92400E;
+    --warning-bg:   #FEF3C7;
+    --danger:       #B91C1C;
+    --danger-ink:   #991B1B;
+    --danger-bg:    #FEE2E2;
+
+    --bg:           #F7F6F2;
+    --surface:      #FFFFFF;
+    --inset:        #F3F1EB;
+    --border:       #E4DFD5;
+    --border-light: #EEEAE2;
+
+    --text:         #2B2721;
+    --text-muted:   #6B6156;
+    --text-faint:   #A69E90;
+
+    --col-draft:      #F8F0DE;
+    --col-draft-line: #ECDFC2;
+    --col-draft-ink:  #7A5410;
+    --col-done:       #EAF2E6;
+    --col-done-line:  #D7E6D0;
+    --col-done-ink:   #2E5F3B;
+    --track:          #ECE8DF;
+
+    --shadow-sm:    0 1px 2px rgba(43, 39, 33, .05);
+    --shadow:       0 1px 2px rgba(43, 39, 33, .05), 0 10px 26px rgba(43, 39, 33, .06);
+    --shadow-lg:    0 2px 4px rgba(43, 39, 33, .06), 0 14px 34px rgba(43, 39, 33, .1);
+    --shadow-brand: 0 5px 16px rgba(194, 65, 12, .25);
+
+    --table-header-bg: #FBFAF6;
+    --defect-name-color: #4A443B;
+    --focus: #1D4ED8;
+}
+
+/* ===== Токены: тёмная тема ===== */
+[data-theme="dark"] {
+    --brand:        #F08B3E;
+    --brand-dark:   #F6A468;
+    --brand-light:  #3D2A18;
+    --brand-glow:   rgba(240, 139, 62, .22);
+    --brand-bright: #F08B3E;
+    --tonal-ink:    #FFD9B8;
+
+    --accent:       #F08B3E;
+    --success:      #86EFAC;
+    --success-bg:   #163822;
+    --warning:      #FCD34D;
+    --warning-bg:   #3B2C10;
+    --danger:       #F87171;
+    --danger-ink:   #FCA5A5;
+    --danger-bg:    #3F1717;
+
+    --bg:           #161310;
+    --surface:      #1F1B16;
+    --inset:        #272219;
+    --border:       #3A332A;
+    --border-light: #2E2820;
+
+    --text:         #F0EAE2;
+    --text-muted:   #B4A996;
+    --text-faint:   #7A7060;
+
+    --col-draft:      #2A2314;
+    --col-draft-line: #423817;
+    --col-draft-ink:  #E5C15E;
+    --col-done:       #182517;
+    --col-done-line:  #29402A;
+    --col-done-ink:   #9ED8A5;
+    --track:          #362F26;
+
+    --shadow-sm:    none;
+    --shadow:       none;
+    --shadow-lg:    0 8px 28px rgba(0, 0, 0, .5);
+    --shadow-brand: 0 5px 16px rgba(240, 139, 62, .3);
+
+    --table-header-bg: #241F19;
+    --defect-name-color: #C9BFAF;
+    --focus: #93C5FD;
+}
+
+/* Кнопка primary на тёмной: тёмный текст на ярком оранжевом (7.6:1) */
+[data-theme="dark"] .btn-primary,
+[data-theme="dark"] .il-fab { color: #2A1505; }
+
+/* ===== Общий hardening ===== */
+:is(a, button, input, select, textarea, summary, [tabindex]):focus-visible {
+    outline: 2px solid var(--focus);
+    outline-offset: 2px;
+}
+
+/* ===== Navbar: тёплая светлая панель вместо тёмного градиента ===== */
+.navbar {
+    background: color-mix(in srgb, var(--surface) 85%, transparent);
+    -webkit-backdrop-filter: blur(10px);
+    backdrop-filter: blur(10px);
+    color: var(--text);
+    box-shadow: none;
+    border-bottom: 1px solid var(--border-light);
+}
+.navbar::after { display: none; }
+.navbar-brand a { color: var(--text); }
+.navbar-brand a svg { color: var(--brand-bright); opacity: 1; }
+.nav-link { color: var(--text-muted); border-radius: 9px; }
+.nav-link:hover { background: var(--inset); color: var(--text); }
+.theme-toggle { color: var(--text-muted); }
+.theme-toggle:hover { background: var(--inset); color: var(--text); }
+.nav-avatar-btn {
+    border-color: var(--border);
+    background: linear-gradient(135deg, var(--brand-bright), var(--brand));
+    box-shadow: var(--shadow-brand);
+}
+.nav-avatar-btn:hover { border-color: var(--brand-bright); }
+
+/* ===== Drawer: поверхность вместо тёмного градиента ===== */
+.nav-drawer {
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    box-shadow: -8px 0 40px rgba(0, 0, 0, .25);
+}
+.drawer-user-section { border-bottom-color: var(--border-light); }
+.drawer-avatar-lg {
+    background: linear-gradient(135deg, var(--brand-bright), var(--brand));
+    border-color: var(--border);
+    box-shadow: var(--shadow-brand);
+}
+.drawer-user-name { color: var(--text); }
+.drawer-user-meta { color: var(--text-muted); }
+.drawer-close-btn { color: var(--text-muted); }
+.drawer-close-btn:hover { background: var(--inset); color: var(--text); }
+.drawer-link { color: var(--text-muted); }
+.drawer-link:hover { background: var(--inset); color: var(--text); }
+.drawer-link.active {
+    background: var(--brand-light);
+    color: var(--tonal-ink);
+    border-color: transparent;
+}
+.drawer-footer { border-top-color: var(--border-light); }
+
+/* ===== Кнопки: плоский тёплый скин ===== */
+.btn {
+    border-radius: 10px;
+    font-weight: 700;
+    box-shadow: none;
+}
+.btn:hover { box-shadow: none; }
+.btn:active { transform: translateY(1px); }
+.btn-primary {
+    background: var(--brand);
+    border-color: transparent;
+    color: #fff;
+    box-shadow: var(--shadow-brand);
+}
+.btn-primary:hover { background: var(--brand-dark); color: #fff; }
+.btn-tonal {
+    background: var(--brand-light);
+    border-color: transparent;
+    color: var(--tonal-ink);
+}
+.btn-tonal:hover { background: color-mix(in srgb, var(--brand-light) 82%, var(--brand)); color: var(--tonal-ink); }
+.btn-secondary {
+    background: var(--surface);
+    border-color: var(--border);
+    color: var(--text);
+}
+.btn-secondary:hover { border-color: var(--text-muted); background: var(--surface); color: var(--text); }
+[data-theme="dark"] .btn:hover { background: var(--inset); border-color: var(--text-muted); color: var(--text); }
+[data-theme="dark"] .btn-secondary,
+[data-theme="dark"] .btn-secondary:visited { background: var(--surface); border-color: var(--border); color: var(--text); }
+[data-theme="dark"] .btn-secondary:hover { background: var(--inset); border-color: var(--text-muted); color: var(--text); }
+[data-theme="dark"] .btn-primary { background: var(--brand); border-color: transparent; }
+[data-theme="dark"] .btn-primary:hover { background: var(--brand-dark); color: #2A1505; }
+[data-theme="dark"] .btn-tonal { background: var(--brand-light); color: var(--tonal-ink); }
+
+/* ===== Бейджи: семантические пастельные ===== */
+.badge { border: 0; }
+.badge-success { background: var(--success-bg); color: var(--success); }
+.badge-draft { background: var(--warning-bg); color: var(--warning); }
+
+/* ===== Таблицы ===== */
+.table th { background: var(--table-header-bg); }
+.table tbody tr:hover td { background: color-mix(in srgb, var(--inset) 60%, transparent); }
+
+/* ============================================================
+   Компоненты страницы списка (.il-*)
+   ============================================================ */
+
+.il-sub { color: var(--text-muted); font-size: 13.5px; margin: -14px 0 18px; }
+
+/* --- Поиск и фильтры --- */
+.il-controls { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.il-search { flex: 1; min-width: 240px; position: relative; }
+.il-search input {
+    width: 100%; min-height: 46px; box-sizing: border-box;
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border); border-radius: 12px;
+    padding: 12px 16px 12px 44px; font-size: 15px;
+    box-shadow: var(--shadow-sm);
+}
+.il-search input::placeholder { color: var(--text-faint); }
+.il-search input:focus {
+    outline: none; border-color: var(--brand);
+    box-shadow: 0 0 0 3px var(--brand-glow);
+}
+.il-search svg { position: absolute; left: 15px; top: 50%; translate: 0 -50%; color: var(--text-faint); pointer-events: none; }
+
+.il-adv { position: relative; }
+.il-adv > summary {
+    list-style: none; cursor: pointer; user-select: none;
+    display: inline-flex; align-items: center; gap: 8px;
+    min-height: 46px; padding: 0 16px; box-sizing: border-box;
+    border: 1px solid var(--border); border-radius: 11px;
+    background: var(--surface); color: var(--text-muted);
+    font-weight: 600; font-size: 13.5px;
+    box-shadow: var(--shadow-sm);
+}
+.il-adv > summary::-webkit-details-marker { display: none; }
+.il-adv > summary:hover { color: var(--text); border-color: var(--text-muted); }
+.il-adv[open] > summary { color: var(--tonal-ink); background: var(--brand-light); border-color: transparent; }
+.il-advpanel {
+    position: absolute; right: 0; top: calc(100% + 8px); z-index: 40;
+    width: min(520px, calc(100vw - 40px));
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    box-shadow: var(--shadow-lg);
+    padding: 16px; display: grid; gap: 12px;
+}
+.il-advgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.il-advgrid label { display: grid; gap: 4px; font-size: 12px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; }
+.il-advgrid input {
+    min-height: 40px; box-sizing: border-box;
+    border: 1px solid var(--border); border-radius: 9px;
+    background: var(--surface); color: var(--text);
+    padding: 8px 11px; font-size: 14px;
+}
+.il-advgrid input:focus { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--brand-glow); }
+.il-advactions { display: flex; gap: 8px; justify-content: flex-end; }
+
+.il-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.il-chips:empty { margin-bottom: 6px; }
+.il-fchip {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: var(--brand-light); color: var(--tonal-ink);
+    border-radius: 999px; padding: 7px 8px 7px 13px;
+    font-size: 13px; font-weight: 600;
+}
+.il-fchip a {
+    display: grid; place-items: center; width: 22px; height: 22px;
+    border-radius: 50%; background: color-mix(in srgb, var(--tonal-ink) 14%, transparent);
+    color: var(--tonal-ink); font-size: 13px; line-height: 1; text-decoration: none;
+}
+.il-fchip a:hover { background: color-mix(in srgb, var(--tonal-ink) 26%, transparent); text-decoration: none; }
+
+/* --- Мобильные табы --- */
+.il-tabs { display: none; gap: 4px; background: var(--inset); border-radius: 12px; padding: 4px; margin-bottom: 16px; }
+.il-tabs button {
+    flex: 1; min-height: 44px; border: 0; border-radius: 9px; cursor: pointer;
+    background: none; color: var(--text-muted); font-weight: 700; font-size: 14px; font-family: inherit;
+}
+.il-tabs button[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: var(--shadow-sm); }
+
+/* --- Группы --- */
+.il-group { border-radius: 18px; padding: 16px; margin-bottom: 20px; }
+.il-group-draft { background: var(--col-draft); border: 1px solid var(--col-draft-line); }
+.il-group-done  { background: var(--col-done);  border: 1px solid var(--col-done-line); }
+.il-grouphead { display: flex; align-items: center; gap: 9px; padding: 2px 6px 12px; }
+.il-grouphead .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.il-group-draft .dot { background: #C99A25; }
+.il-group-done  .dot { background: #4E9560; }
+.il-grouphead h2 { font-size: 12.5px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; margin: 0; }
+.il-group-draft h2 { color: var(--col-draft-ink); }
+.il-group-done  h2 { color: var(--col-done-ink); }
+.il-grouphead .cnt {
+    margin-left: auto; font-size: 12.5px; font-weight: 800;
+    border-radius: 7px; padding: 3px 9px;
+    background: color-mix(in srgb, var(--surface) 72%, transparent);
+    font-variant-numeric: tabular-nums;
+}
+.il-group-draft .cnt { color: var(--col-draft-ink); }
+.il-group-done  .cnt { color: var(--col-done-ink); }
+
+/* --- Карточки «В работе» --- */
+.il-cards { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.il-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 15px;
+    padding: 16px 16px 12px;
+    display: grid; gap: 10px;
+    box-shadow: var(--shadow);
+    align-content: start;
+}
+.il-card .head { display: flex; align-items: baseline; gap: 10px; }
+.il-num {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace;
+    font-variant-numeric: tabular-nums;
+    font-size: 17.5px; font-weight: 800; letter-spacing: .015em;
+}
+.il-num a { color: var(--text); text-decoration: none; }
+.il-num a:hover { color: var(--brand); text-decoration: none; }
+.il-date { margin-left: auto; color: var(--text-muted); font-size: 13px; white-space: nowrap; }
+.il-addr { font-size: 15.5px; font-weight: 600; line-height: 1.35; color: var(--text); }
+.il-own { color: var(--text-muted); font-size: 13.5px; margin-top: -6px; }
+
+.il-prog { display: grid; gap: 6px; }
+.il-prog .lbl { display: flex; justify-content: space-between; color: var(--text-muted); font-size: 12.5px; }
+.il-prog .lbl b { color: var(--text); font-weight: 600; }
+.il-bar { height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.il-bar i { display: block; height: 100%; border-radius: 3px; background: linear-gradient(90deg, #F79240, var(--brand-bright)); }
+
+.il-facts { display: flex; gap: 7px; flex-wrap: wrap; align-items: center; }
+.il-fact {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--inset); border: 1px solid var(--border-light); border-radius: 8px;
+    color: var(--text-muted); font-size: 12.5px; font-weight: 600; padding: 6px 10px;
+}
+.il-fact svg { color: var(--text-faint); flex: none; }
+.il-fact b { color: var(--text); font-weight: 700; font-variant-numeric: tabular-nums; }
+.il-fact.warn { background: var(--warning-bg); border-color: transparent; color: var(--warning); }
+.il-fact.warn svg { color: var(--warning); }
+.il-fact.ok { background: var(--success-bg); border-color: transparent; color: var(--success); }
+.il-fact.ok svg { color: var(--success); }
+.il-fact.err { background: var(--danger-bg); border-color: transparent; color: var(--danger-ink); }
+.il-fact.err svg { color: var(--danger-ink); }
+
+@keyframes il-pulse { 50% { opacity: .55; } }
+.il-pulse { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: il-pulse 1.6s ease-in-out infinite; flex: none; }
+@media (prefers-reduced-motion: reduce) { .il-pulse { animation: none; } }
+
+.il-card .actions { display: flex; gap: 9px; border-top: 1px solid var(--border-light); padding-top: 12px; }
+.il-card .actions .btn { flex: 1; justify-content: center; min-height: 42px; font-size: 13.5px; }
+
+/* --- Таблица «Завершённые» --- */
+.il-tablewrap {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 13px;
+    box-shadow: var(--shadow-sm); overflow-x: auto;
+}
+.il-table { width: 100%; min-width: 960px; border-collapse: collapse; font-size: 14px; }
+.il-table th {
+    text-align: left; font-size: 11px; font-weight: 700; letter-spacing: .09em; text-transform: uppercase;
+    color: var(--text-muted); padding: 12px 14px; border-bottom: 1px solid var(--border);
+    white-space: nowrap; background: none;
+}
+.il-table td { padding: 12px 14px; border-bottom: 1px solid var(--border-light); vertical-align: middle; }
+.il-table tbody tr:last-child td { border-bottom: 0; }
+.il-table tbody tr:hover { background: color-mix(in srgb, var(--inset) 60%, transparent); }
+.il-table .c-num a {
+    color: var(--text); text-decoration: none; font-weight: 700;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-variant-numeric: tabular-nums;
+}
+.il-table .c-num a:hover { color: var(--brand); }
+.il-table .c-date, .il-table .c-own { color: var(--text-muted); }
+.il-table .c-date { white-space: nowrap; }
+.il-table .c-n { text-align: right; font-variant-numeric: tabular-nums; }
+.il-tstatus {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--success-bg); color: var(--success);
+    font-size: 12.5px; font-weight: 700; border-radius: 8px; padding: 5px 10px; white-space: nowrap;
+}
+.il-rowact { display: flex; gap: 2px; justify-content: flex-end; white-space: nowrap; }
+.il-rowact a, .il-rowact button {
+    color: var(--text-muted); text-decoration: none; font-size: 13.5px; font-weight: 600;
+    padding: 8px 10px; border-radius: 8px; border: 0; background: none; cursor: pointer; font-family: inherit;
+}
+.il-rowact a:hover, .il-rowact button:hover { color: var(--brand); background: var(--inset); text-decoration: none; }
+.il-rowact button.danger:hover { color: var(--danger-ink); background: var(--danger-bg); }
+
+.il-tfoot { display: flex; align-items: center; gap: 14px; padding: 12px 6px 0; color: var(--text-muted); font-size: 13px; }
+.il-pager { margin-left: auto; display: flex; gap: 4px; align-items: center; }
+.il-pager a, .il-pager span {
+    display: grid; place-items: center; min-width: 36px; min-height: 36px;
+    border: 1px solid var(--border); border-radius: 8px;
+    background: var(--surface); color: var(--text);
+    font-weight: 600; font-size: 14px; text-decoration: none;
+}
+.il-pager a:hover { border-color: var(--text-muted); text-decoration: none; }
+.il-pager span[aria-current="page"] { background: var(--brand-light); color: var(--tonal-ink); border-color: transparent; }
+.il-pager span.off { opacity: .4; }
+
+/* --- Мобильные карточки завершённых --- */
+.il-dcards { display: none; gap: 10px; }
+.il-dcard {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 13px;
+    padding: 14px; display: grid; gap: 8px; box-shadow: var(--shadow-sm);
+}
+.il-dcard .head { display: flex; gap: 10px; align-items: baseline; }
+.il-dcard .il-num { font-size: 15.5px; }
+.il-dcard .il-addr { font-size: 14.5px; }
+.il-dcard .m { display: flex; gap: 12px; color: var(--text-muted); font-size: 13px; flex-wrap: wrap; }
+.il-dcard .m b { color: var(--text); font-variant-numeric: tabular-nums; }
+.il-dcard .foot { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--border-light); padding-top: 10px; }
+.il-dcard .foot .btn { flex: 1; justify-content: center; min-height: 40px; font-size: 13px; }
+
+/* --- Пустые состояния --- */
+.il-empty { text-align: center; padding: 30px 16px; color: var(--text-muted); display: grid; gap: 12px; justify-items: center; }
+.il-empty .t { font-size: 15px; font-weight: 600; color: var(--text); }
+
+/* --- FAB --- */
+.il-fab {
+    display: none;
+    position: fixed; right: 18px; bottom: 18px; z-index: 90;
+    min-height: 52px; padding: 14px 20px; align-items: center;
+    background: var(--brand); color: #fff;
+    border: 0; border-radius: 15px; cursor: pointer;
+    font-weight: 800; font-size: 15.5px; text-decoration: none;
+    box-shadow: 0 10px 26px color-mix(in srgb, var(--brand) 40%, transparent);
+}
+.il-fab:hover { background: var(--brand-dark); color: #fff; text-decoration: none; }
+[data-theme="dark"] .il-fab:hover { color: #2A1505; }
+
+/* --- Адаптив --- */
+@media (max-width: 768px) {
+    .container { padding-bottom: 110px; }
+    .il-cards { grid-template-columns: 1fr; }
+    .il-tabs { display: flex; }
+    .il-group.m-hidden { display: none; }
+    .il-newbtn-desktop { display: none; }
+    .il-fab { display: inline-flex; }
+    .il-tablewrap, .il-tfoot .il-shown-label { display: none; }
+    .il-dcards { display: grid; }
+    .il-advpanel { position: fixed; inset: auto 10px 10px 10px; width: auto; }
+}
+@media (max-width: 480px) {
+    .il-card .actions { flex-direction: column; }
+    .il-num { font-size: 16px; }
+}
