@@ -219,3 +219,152 @@ func APIListInspections(c *gin.Context) {
 	c.Header("Cache-Control", "no-store")
 	c.JSON(http.StatusOK, resp)
 }
+
+// ===== Детали акта для React-страницы просмотра =====
+
+var apiSectionNames = map[string]string{
+	"window": "Окна и откосы", "ceiling": "Потолок", "wall": "Стены",
+	"floor": "Пол", "door": "Двери", "plumbing": "Сантехника",
+}
+
+type apiPhoto struct {
+	ID     uint   `json:"id"`
+	Status string `json:"status"`
+}
+
+type apiDefect struct {
+	ID          uint       `json:"id"`
+	Section     string     `json:"section"`
+	SectionName string     `json:"section_name"`
+	Name        string     `json:"name"`
+	Value       string     `json:"value"`
+	WallNumber  int        `json:"wall_number"`
+	Notes       string     `json:"notes"`
+	Photos      []apiPhoto `json:"photos"`
+}
+
+type apiRoom struct {
+	ID      uint        `json:"id"`
+	Number  int         `json:"number"`
+	Name    string      `json:"name"`
+	Defects []apiDefect `json:"defects"`
+}
+
+type apiArchivedDefect struct {
+	RoomName string     `json:"room_name"`
+	Name     string     `json:"name"`
+	Value    string     `json:"value"`
+	Photos   []apiPhoto `json:"photos"`
+}
+
+type apiDocument struct {
+	ID      uint   `json:"id"`
+	Format  string `json:"format"`
+	Created string `json:"created"`
+}
+
+func toAPIDefect(d models.RoomDefect) apiDefect {
+	name := d.DefectTemplate.Name
+	if d.DefectTemplateID == nil || name == "" {
+		name = "Прочее"
+	}
+	photos := make([]apiPhoto, len(d.Photos))
+	for i, p := range d.Photos {
+		photos[i] = apiPhoto{ID: p.ID, Status: p.UploadStatus}
+	}
+	return apiDefect{
+		ID: d.ID, Section: d.Section, SectionName: apiSectionNames[d.Section],
+		Name: name, Value: d.Value, WallNumber: d.WallNumber, Notes: d.Notes,
+		Photos: photos,
+	}
+}
+
+// APIGetInspection — GET /api/inspections/:id
+func APIGetInspection(c *gin.Context) {
+	inspection, ok := loadInspection(c)
+	if !ok {
+		return
+	}
+
+	rooms := make([]apiRoom, 0, len(inspection.Rooms))
+	for _, r := range inspection.Rooms {
+		room := apiRoom{ID: r.ID, Number: r.RoomNumber, Name: r.RoomName, Defects: make([]apiDefect, 0, len(r.Defects))}
+		for _, d := range r.Defects {
+			room.Defects = append(room.Defects, toAPIDefect(d))
+		}
+		rooms = append(rooms, room)
+	}
+
+	// Архив: мягко удалённые дефекты с фото (показываются, но не идут в PDF)
+	var deletedDefects []models.RoomDefect
+	storage.DB.Unscoped().
+		Preload("Photos").
+		Preload("DefectTemplate").
+		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+		Where("inspection_rooms.inspection_id = ? AND room_defects.deleted_at IS NOT NULL", inspection.ID).
+		Find(&deletedDefects)
+
+	archived := make([]apiArchivedDefect, 0)
+	if len(deletedDefects) > 0 {
+		roomIDs := make([]uint, 0, len(deletedDefects))
+		for _, d := range deletedDefects {
+			roomIDs = append(roomIDs, d.RoomID)
+		}
+		var archRooms []models.InspectionRoom
+		storage.DB.Unscoped().Where("id IN ?", roomIDs).Find(&archRooms)
+		roomNames := make(map[uint]string, len(archRooms))
+		for _, r := range archRooms {
+			roomNames[r.ID] = r.RoomName
+		}
+		for _, d := range deletedDefects {
+			if len(d.Photos) == 0 {
+				continue
+			}
+			ad := toAPIDefect(d)
+			archived = append(archived, apiArchivedDefect{
+				RoomName: roomNames[d.RoomID], Name: ad.Name, Value: ad.Value, Photos: ad.Photos,
+			})
+		}
+	}
+
+	var docs []models.Document
+	storage.DB.Where("inspection_id = ?", inspection.ID).Order("created_at desc").Find(&docs)
+	documents := make([]apiDocument, len(docs))
+	for i, d := range docs {
+		documents[i] = apiDocument{ID: d.ID, Format: d.Format, Created: humanDate(d.CreatedAt)}
+	}
+
+	planImage := ""
+	if inspection.PlanImage != "" {
+		planImage = inspection.PlanImage
+	}
+
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, gin.H{
+		"inspection": gin.H{
+			"id":                 inspection.ID,
+			"act_number":         inspection.ActNumber,
+			"status":             inspection.Status,
+			"date":               humanDate(inspection.Date),
+			"time":               inspection.InspectionTime,
+			"address":            inspection.Address,
+			"owner_name":         inspection.OwnerName,
+			"developer_rep_name": inspection.DeveloperRepName,
+			"inspector":          inspection.User.Initials,
+			"rooms_count":        inspection.RoomsCount,
+			"floor":              inspection.Floor,
+			"total_area":         inspection.TotalArea,
+			"temp_outside":       inspection.TempOutside,
+			"temp_inside":        inspection.TempInside,
+			"humidity":           inspection.Humidity,
+			"electricity":        inspection.Electricity,
+			"ventilation":        inspection.Ventilation,
+			"general_notes":      inspection.GeneralNotes,
+			"plan_image":         planImage,
+			"photo_folder_url":   inspection.PhotoFolderURL,
+			"rooms":              rooms,
+			"archived":           archived,
+			"documents":          documents,
+		},
+	})
+}

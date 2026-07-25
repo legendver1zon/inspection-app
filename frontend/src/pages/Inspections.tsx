@@ -1,8 +1,9 @@
 import { useDeferredValue, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
-import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { api, type ActCard, type User } from '../lib/api'
 import { C } from '../lib/palette'
+import Header from '../components/Header'
 
 /* Концепт V1 «Лента»: хронология выездов. Акты сгруппированы по дням
    на вертикальной оси, сверху — сводка большими числами. Светлая бумага,
@@ -15,7 +16,6 @@ export default function V1Inspections({ user }: { user: User }) {
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const deferredQ = useDeferredValue(q)
-  const queryClient = useQueryClient()
 
   const { data, isLoading } = useQuery({
     queryKey: ['inspections', deferredQ, 1],
@@ -42,30 +42,9 @@ export default function V1Inspections({ user }: { user: User }) {
     [data],
   )
 
-  async function logout() {
-    await api.logout()
-    queryClient.clear()
-    window.location.href = '/login'
-  }
-
   return (
     <div className="min-h-dvh" style={{ background: C.bg, color: C.ink }}>
-      {/* Топбар */}
-      <header className="border-b" style={{ background: C.surface, borderColor: C.line }}>
-        <div className="mx-auto flex h-14 max-w-5xl items-center gap-4 px-5">
-          <a href="/inspections" className="flex items-center gap-2.5 font-extrabold">
-            <span className="grid size-8 place-items-center rounded-lg text-sm font-black text-white" style={{ background: C.accent }}>
-              А
-            </span>
-            АктОсмотр
-          </a>
-          <div className="flex-1" />
-          <span className="hidden text-sm font-semibold sm:block" style={{ color: C.muted }}>{user.initials}</span>
-          <button onClick={logout} className="cursor-pointer text-sm font-semibold hover:underline" style={{ color: C.faint }}>
-            Выйти
-          </button>
-        </div>
-      </header>
+      <Header user={user} />
 
       <main className="mx-auto max-w-5xl px-5 pt-8 pb-28">
         {/* Сводка большими числами */}

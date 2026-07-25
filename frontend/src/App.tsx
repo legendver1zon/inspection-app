@@ -4,6 +4,7 @@ import { AnimatePresence } from 'framer-motion'
 import { api, ApiError } from './lib/api'
 import Login from './pages/Login'
 import Inspections from './pages/Inspections'
+import ActView from './pages/ActView'
 
 function useMe() {
   return useQuery({
@@ -31,6 +32,18 @@ export default function App() {
               <PageLoader />
             ) : authed ? (
               <Inspections user={me.data!.user} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route
+          path="/inspections/:id"
+          element={
+            checking ? (
+              <PageLoader />
+            ) : authed ? (
+              <ActView user={me.data!.user} />
             ) : (
               <Navigate to="/login" replace />
             )

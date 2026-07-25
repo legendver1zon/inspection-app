@@ -224,6 +224,7 @@ func main() {
 		{
 			apiAuthed.GET("/me", handlers.APIMe)
 			apiAuthed.GET("/inspections", handlers.APIListInspections)
+			apiAuthed.GET("/inspections/:id", handlers.APIGetInspection)
 		}
 	}
 

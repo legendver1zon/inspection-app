@@ -63,6 +63,68 @@ export interface InspectionsPage {
   total_pages: number
 }
 
+export interface PhotoRef {
+  id: number
+  status: string // pending | uploading | done | failed
+}
+
+export interface Defect {
+  id: number
+  section: string
+  section_name: string
+  name: string
+  value: string
+  wall_number: number
+  notes: string
+  photos: PhotoRef[]
+}
+
+export interface Room {
+  id: number
+  number: number
+  name: string
+  defects: Defect[]
+}
+
+export interface ArchivedDefect {
+  room_name: string
+  name: string
+  value: string
+  photos: PhotoRef[]
+}
+
+export interface DocumentRef {
+  id: number
+  format: string
+  created: string
+}
+
+export interface InspectionDetail {
+  id: number
+  act_number: string
+  status: 'draft' | 'completed'
+  date: string
+  time: string
+  address: string
+  owner_name: string
+  developer_rep_name: string
+  inspector: string
+  rooms_count: number
+  floor: number
+  total_area: number
+  temp_outside: number
+  temp_inside: number
+  humidity: number
+  electricity: string
+  ventilation: string
+  general_notes: string
+  plan_image: string
+  photo_folder_url: string
+  rooms: Room[]
+  archived: ArchivedDefect[]
+  documents: DocumentRef[]
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<{ user: User }>('/api/login', {
@@ -77,5 +139,16 @@ export const api = {
     if (params.page && params.page > 1) search.set('page', String(params.page))
     const qs = search.toString()
     return request<InspectionsPage>(`/api/inspections${qs ? `?${qs}` : ''}`)
+  },
+  inspection: (id: number) =>
+    request<{ inspection: InspectionDetail }>(`/api/inspections/${id}`),
+  // Старый обработчик отвечает redirect'ом на HTML-страницу — ответ не читаем,
+  // после вызова инвалидируем детали, чтобы подтянулись новые документы
+  generatePdf: async (id: number) => {
+    await fetch(`/inspections/${id}/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'format=pdf',
+    })
   },
 }
