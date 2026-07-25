@@ -771,7 +771,9 @@ function PlanBlock({ actId, planUrl, onUploaded }: { actId: number; planUrl: str
     if (!cropSrc || !imgRef.current) return
     const cropper = new Cropper(imgRef.current, { viewMode: 1, autoCropArea: 1, background: false })
     cropperRef.current = cropper
-    return () => cropper.destroy()
+    return () => {
+      cropper.destroy()
+    }
   }, [cropSrc])
 
   async function confirmCrop() {

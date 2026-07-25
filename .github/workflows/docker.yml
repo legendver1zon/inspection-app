@@ -24,6 +24,6 @@ jobs:
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
-          context: ./backend
+          context: .
           push: true
           tags: ghcr.io/${{ github.repository }}:latest

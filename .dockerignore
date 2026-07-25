@@ -1,0 +1,10 @@
+.git
+.github
+frontend/node_modules
+frontend/dist
+backend/web/static/uploads
+backend/web/static/documents/*.pdf
+backend/web/static/documents/*.docx
+**/.DS_Store
+.env
+.env.*

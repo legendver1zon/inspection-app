@@ -20,6 +20,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -192,6 +193,24 @@ func main() {
 
 	r.Static("/static", "./web/static")
 
+	// React SPA: если рядом лежит собранный фронтенд (web/spa или SPA_DIR),
+	// страницы отдаёт он; экшены, скачивания и API остаются на своих маршрутах.
+	// Без сборки (например, в dev с Vite) работают старые HTML-шаблоны.
+	spaDir := os.Getenv("SPA_DIR")
+	if spaDir == "" {
+		spaDir = "./web/spa"
+	}
+	spaIndex := filepath.Join(spaDir, "index.html")
+	_, spaStatErr := os.Stat(spaIndex)
+	spaEnabled := spaStatErr == nil
+	serveSPA := func(c *gin.Context) { c.File(spaIndex) }
+	if spaEnabled {
+		r.Static("/assets", filepath.Join(spaDir, "assets"))
+		logger.Info("SPA frontend enabled", "dir", spaDir)
+	} else {
+		logger.Info("SPA frontend not found, serving HTML templates", "checked", spaIndex)
+	}
+
 	r.GET("/", func(c *gin.Context) {
 		if tok, err := c.Cookie("token"); err == nil {
 			if claims, err := auth.ParseToken(tok); err == nil {
@@ -204,7 +223,11 @@ func main() {
 		}
 		c.Redirect(http.StatusFound, "/login")
 	})
-	r.GET("/login", handlers.GetLogin)
+	if spaEnabled {
+		r.GET("/login", serveSPA)
+	} else {
+		r.GET("/login", handlers.GetLogin)
+	}
 	r.POST("/login", security.RateLimitLogin(), handlers.PostLogin)
 	r.GET("/register", handlers.GetRegister)
 	r.POST("/register", security.RateLimitRegister(), handlers.PostRegister)
@@ -255,11 +278,23 @@ func main() {
 		c.Next()
 	})
 	{
-		protected.GET("/dashboard", handlers.GetDashboard)
-		protected.GET("/inspections", handlers.GetInspections)
+		// Страницы: в SPA-режиме их рендерит React (auth проверяет API),
+		// иначе — старые шаблоны за HTML-авторизацией
+		if spaEnabled {
+			r.GET("/dashboard", serveSPA)
+			r.GET("/inspections", serveSPA)
+			r.GET("/inspections/:id", serveSPA)
+			r.GET("/inspections/:id/edit", serveSPA)
+			r.GET("/profile", serveSPA)
+			r.GET("/admin/users", serveSPA)
+		} else {
+			protected.GET("/dashboard", handlers.GetDashboard)
+			protected.GET("/inspections", handlers.GetInspections)
+			protected.GET("/inspections/:id", handlers.GetInspection)
+			protected.GET("/inspections/:id/edit", handlers.GetEditInspection)
+			protected.GET("/profile", handlers.GetProfile)
+		}
 		protected.GET("/inspections/new", handlers.GetNewInspection)
-		protected.GET("/inspections/:id", handlers.GetInspection)
-		protected.GET("/inspections/:id/edit", handlers.GetEditInspection)
 		protected.POST("/inspections/:id/edit", handlers.PostEditInspection)
 		protected.GET("/api/inspections/:id/check-act-number", handlers.GetCheckActNumber)
 		protected.POST("/inspections/:id/status", handlers.PostUpdateStatus)
@@ -271,7 +306,6 @@ func main() {
 
 		protected.POST("/inspections/:id/upload-plan", handlers.PostUploadPlan)
 
-		protected.GET("/profile", handlers.GetProfile)
 		protected.POST("/profile", handlers.PostProfile)
 		protected.POST("/profile/avatar", handlers.PostUploadAvatar)
 
@@ -284,14 +318,29 @@ func main() {
 		admin.Use(security.RateLimitAdmin())
 		admin.Use(auth.RequireAdmin())
 		{
-			admin.GET("/users", handlers.GetAdminUsers)
-			admin.GET("/users/:id/edit", handlers.GetAdminEditUser)
+			if !spaEnabled {
+				admin.GET("/users", handlers.GetAdminUsers)
+				admin.GET("/users/:id/edit", handlers.GetAdminEditUser)
+			}
 			admin.POST("/users/:id/edit", handlers.PostAdminEditUser)
 			admin.POST("/users/:id/role", handlers.PostAdminChangeRole)
 			admin.POST("/users/:id/delete", handlers.DeleteAdminUser)
 			admin.DELETE("/users/:id", handlers.DeleteAdminUser)
 			admin.POST("/inspections/:id/delete", handlers.PostDeleteInspection)
 		}
+	}
+
+	// SPA-fallback: неизвестные GET-адреса — клиентские маршруты React
+	if spaEnabled {
+		r.NoRoute(func(c *gin.Context) {
+			p := c.Request.URL.Path
+			if c.Request.Method == http.MethodGet &&
+				!strings.HasPrefix(p, "/api") && !strings.HasPrefix(p, "/static") && !strings.HasPrefix(p, "/assets") {
+				serveSPA(c)
+				return
+			}
+			c.JSON(http.StatusNotFound, gin.H{"error": "Не найдено"})
+		})
 	}
 
 	port := os.Getenv("PORT")
