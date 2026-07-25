@@ -32,7 +32,7 @@ export function useVariant() {
   return useContext(VariantContext)
 }
 
-const LABELS: Record<Variant, string> = { v1: '1 · Линия', v2: '2 · Поле', v3: '3 · Студия' }
+const LABELS: Record<Variant, string> = { v1: '1 · Лента', v2: '2 · Поле', v3: '3 · Студия' }
 
 export function VariantSwitcher() {
   const { variant, setVariant } = useVariant()
