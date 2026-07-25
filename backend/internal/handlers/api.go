@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -366,5 +367,88 @@ func APIGetInspection(c *gin.Context) {
 			"archived":           archived,
 			"documents":          documents,
 		},
+	})
+}
+
+// ===== Данные формы редактирования =====
+
+// APIGetEditData — GET /api/inspections/:id/edit-data.
+// Отдаёт сырые значения полей акта, замеры помещений с дефектами
+// и справочник шаблонов. Сохранение идёт в старый POST /inspections/:id/edit —
+// React-форма собирает те же поля, что и HTML-форма.
+func APIGetEditData(c *gin.Context) {
+	inspection, ok := loadInspection(c)
+	if !ok {
+		return
+	}
+
+	var templates []models.DefectTemplate
+	storage.DB.Order("section, order_index").Find(&templates)
+	tpls := make([]gin.H, len(templates))
+	for i, t := range templates {
+		tpls[i] = gin.H{
+			"id": t.ID, "section": t.Section, "name": t.Name,
+			"threshold": t.Threshold, "unit": t.Unit,
+		}
+	}
+
+	rooms := make([]gin.H, 0, len(inspection.Rooms))
+	for _, r := range inspection.Rooms {
+		defects := make([]gin.H, 0, len(r.Defects))
+		for _, d := range r.Defects {
+			defects = append(defects, gin.H{
+				"template_id": d.DefectTemplateID, "section": d.Section,
+				"value": d.Value, "wall_number": d.WallNumber, "notes": d.Notes,
+			})
+		}
+		wallTypes := []string{}
+		if r.WallType != "" {
+			wallTypes = strings.Split(r.WallType, ",")
+		}
+		rooms = append(rooms, gin.H{
+			"number": r.RoomNumber, "name": r.RoomName,
+			"length": r.Length, "width": r.Width, "height": r.Height,
+			"w1h": r.Window1Height, "w1w": r.Window1Width,
+			"w2h": r.Window2Height, "w2w": r.Window2Width,
+			"w3h": r.Window3Height, "w3w": r.Window3Width,
+			"w4h": r.Window4Height, "w4w": r.Window4Width,
+			"w5h": r.Window5Height, "w5w": r.Window5Width,
+			"dh": r.DoorHeight, "dw": r.DoorWidth,
+			"window_type": r.WindowType, "wall_types": wallTypes,
+			"defects": defects,
+		})
+	}
+	sort.Slice(rooms, func(i, j int) bool {
+		return rooms[i]["number"].(int) < rooms[j]["number"].(int)
+	})
+
+	date := ""
+	if !inspection.Date.IsZero() {
+		date = inspection.Date.Format("2006-01-02")
+	}
+
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, gin.H{
+		"act": gin.H{
+			"id":                 inspection.ID,
+			"act_number":         inspection.ActNumber,
+			"status":             inspection.Status,
+			"date":               date,
+			"time":               inspection.InspectionTime,
+			"address":            inspection.Address,
+			"owner_name":         inspection.OwnerName,
+			"developer_rep_name": inspection.DeveloperRepName,
+			"rooms_count":        inspection.RoomsCount,
+			"floor":              inspection.Floor,
+			"total_area":         inspection.TotalArea,
+			"temp_outside":       inspection.TempOutside,
+			"temp_inside":        inspection.TempInside,
+			"humidity":           inspection.Humidity,
+			"electricity":        inspection.Electricity,
+			"ventilation":        inspection.Ventilation,
+			"general_notes":      inspection.GeneralNotes,
+		},
+		"rooms":     rooms,
+		"templates": tpls,
 	})
 }

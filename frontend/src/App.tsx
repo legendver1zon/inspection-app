@@ -5,6 +5,7 @@ import { api, ApiError } from './lib/api'
 import Login from './pages/Login'
 import Inspections from './pages/Inspections'
 import ActView from './pages/ActView'
+import EditAct from './pages/EditAct'
 
 function useMe() {
   return useQuery({
@@ -44,6 +45,18 @@ export default function App() {
               <PageLoader />
             ) : authed ? (
               <ActView user={me.data!.user} />
+            ) : (
+              <Navigate to="/login" replace />
+            )
+          }
+        />
+        <Route
+          path="/inspections/:id/edit"
+          element={
+            checking ? (
+              <PageLoader />
+            ) : authed ? (
+              <EditAct user={me.data!.user} />
             ) : (
               <Navigate to="/login" replace />
             )

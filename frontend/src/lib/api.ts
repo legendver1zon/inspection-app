@@ -125,6 +125,63 @@ export interface InspectionDetail {
   documents: DocumentRef[]
 }
 
+export interface DefectTemplate {
+  id: number
+  section: string
+  name: string
+  threshold: string
+  unit: string
+}
+
+export interface EditDefect {
+  template_id: number | null
+  section: string
+  value: string
+  wall_number: number
+  notes: string
+}
+
+export interface EditRoomData {
+  number: number
+  name: string
+  length: number
+  width: number
+  height: number
+  w1h: number; w1w: number
+  w2h: number; w2w: number
+  w3h: number; w3w: number
+  w4h: number; w4w: number
+  w5h: number; w5w: number
+  dh: number; dw: number
+  window_type: string
+  wall_types: string[]
+  defects: EditDefect[]
+}
+
+export interface EditData {
+  act: {
+    id: number
+    act_number: string
+    status: string
+    date: string
+    time: string
+    address: string
+    owner_name: string
+    developer_rep_name: string
+    rooms_count: number
+    floor: number
+    total_area: number
+    temp_outside: number
+    temp_inside: number
+    humidity: number
+    electricity: string
+    ventilation: string
+    general_notes: string
+  }
+  rooms: EditRoomData[]
+  templates: DefectTemplate[]
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<{ user: User }>('/api/login', {
@@ -142,6 +199,22 @@ export const api = {
   },
   inspection: (id: number) =>
     request<{ inspection: InspectionDetail }>(`/api/inspections/${id}`),
+  editData: (id: number) => request<EditData>(`/api/inspections/${id}/edit-data`),
+  checkActNumber: (id: number, value: string) =>
+    request<{ taken: boolean; other_id?: number }>(
+      `/api/inspections/${id}/check-act-number?value=${encodeURIComponent(value)}`,
+    ),
+  // Сохранение — в проверенный годами обработчик HTML-формы.
+  // Ответ: redirect на просмотр (успех) или на форму с ?error= (валидация).
+  saveAct: async (id: number, fields: URLSearchParams): Promise<string | null> => {
+    // Обработчик ждёт multipart/form-data (ParseMultipartForm) —
+    // boundary выставит браузер, заголовок не задаём
+    const fd = new FormData()
+    fields.forEach((v, k) => fd.append(k, v))
+    const res = await fetch(`/inspections/${id}/edit`, { method: 'POST', body: fd })
+    const url = new URL(res.url, window.location.origin)
+    return url.searchParams.get('error')
+  },
   // Старый обработчик отвечает redirect'ом на HTML-страницу — ответ не читаем,
   // после вызова инвалидируем детали, чтобы подтянулись новые документы
   generatePdf: async (id: number) => {
