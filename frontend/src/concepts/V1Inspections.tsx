@@ -8,22 +8,22 @@ import { api, type ActCard, type User } from '../lib/api'
    чернильный, глубокий тил. Самодостаточная палитра. */
 
 const C = {
-  bg: '#F5F6F4',
+  bg: '#F8F6F1',
   surface: '#FFFFFF',
-  line: '#E3E6E1',
-  ink: '#171B18',
-  muted: '#5F6862',
-  faint: '#9AA39C',
-  accent: '#0F766E',
-  accentDark: '#0B5D57',
-  accentSoft: '#D8EEEB',
-  rail: '#CBD5D0',
-  ok: '#15803D',
-  okBg: '#DCFCE7',
-  warn: '#A16207',
-  warnBg: '#FEF9C3',
-  err: '#B91C1C',
-  errBg: '#FEE2E2',
+  line: '#E9E4D9',
+  ink: '#33302A',
+  muted: '#787264',
+  faint: '#ACA599',
+  accent: '#3D8B6E',
+  accentDark: '#2E6F57',
+  accentSoft: '#E2F1E9',
+  rail: '#DCD6C8',
+  ok: '#2E7D4F',
+  okBg: '#E4F4E9',
+  warn: '#A1741C',
+  warnBg: '#FBF2DC',
+  err: '#B3453C',
+  errBg: '#FBE9E7',
 }
 
 type Filter = 'all' | 'draft' | 'completed'
@@ -143,8 +143,8 @@ export default function V1Inspections({ user }: { user: User }) {
         {/* Лента по дням */}
         {isLoading ? (
           <div className="grid gap-4">
-            <div className="h-28 animate-pulse rounded-2xl motion-reduce:animate-none" style={{ background: '#ECEEEA' }} />
-            <div className="h-28 animate-pulse rounded-2xl motion-reduce:animate-none" style={{ background: '#ECEEEA' }} />
+            <div className="h-28 animate-pulse rounded-2xl motion-reduce:animate-none" style={{ background: '#EFEBE1' }} />
+            <div className="h-28 animate-pulse rounded-2xl motion-reduce:animate-none" style={{ background: '#EFEBE1' }} />
           </div>
         ) : days.length > 0 ? (
           <div className="relative pl-8 sm:pl-36">
@@ -205,7 +205,7 @@ function LentaCard({ act }: { act: ActCard }) {
       whileHover={{ x: 3 }}
       transition={{ type: 'spring', stiffness: 400, damping: 28 }}
       className="rounded-2xl border p-4 sm:p-5"
-      style={{ background: C.surface, borderColor: C.line, boxShadow: '0 1px 2px rgba(23,27,24,.04)' }}
+      style={{ background: C.surface, borderColor: C.line, boxShadow: '0 1px 2px rgba(51,48,42,.05)' }}
     >
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <a href={`/inspections/${act.id}`} className="font-mono text-[17px] font-extrabold hover:underline tnum" style={{ color: C.ink }}>
@@ -244,7 +244,7 @@ function LentaCard({ act }: { act: ActCard }) {
               <span className="tnum">{act.filled}/{act.rooms} помещений</span>
               <span className="font-bold tnum" style={{ color: C.accentDark }}>{act.percent}%</span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full" style={{ background: '#E8EBE7' }}>
+            <div className="h-1.5 overflow-hidden rounded-full" style={{ background: '#EDE8DC' }}>
               <motion.i
                 initial={{ width: 0 }}
                 animate={{ width: `${act.percent}%` }}
