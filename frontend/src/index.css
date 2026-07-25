@@ -2,36 +2,36 @@
 
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* Палитра v4 «АктОсмотр»: тёплая бумага + сигнальный оранжевый.
+/* Палитра «Ленты»: кремовая бумага, тёплый графит, глубокий синий.
    Токены — runtime-переменные: переключение темы классом .dark на <html>. */
 :root {
-  --paper: #F7F6F2;
+  --paper: #F8F6F1;
   --surface: #FFFFFF;
-  --inset: #F3F1EB;
-  --ink: #2B2721;
-  --muted: #6B6156;
-  --faint: #A69E90;
-  --line: #E4DFD5;
-  --line-soft: #EEEAE2;
-  --accent: #C2410C;
-  --accent-hover: #9A3412;
-  --accent-bright: #E97817;
+  --inset: #F1EDE4;
+  --ink: #33302A;
+  --muted: #787264;
+  --faint: #ACA599;
+  --line: #E9E4D9;
+  --line-soft: #F0ECE3;
+  --accent: #3E68A8;
+  --accent-hover: #30528A;
+  --accent-bright: #5B84C4;
   --on-accent: #FFFFFF;
-  --tonal: #FEE7D6;
-  --tonal-ink: #7C2D12;
-  --ok: #166534;
-  --ok-bg: #DCFCE7;
-  --warn: #92400E;
-  --warn-bg: #FEF3C7;
-  --err: #991B1B;
-  --err-bg: #FEE2E2;
+  --tonal: #E3EBF7;
+  --tonal-ink: #2C4A7C;
+  --ok: #2E7D4F;
+  --ok-bg: #E4F4E9;
+  --warn: #A1741C;
+  --warn-bg: #FBF2DC;
+  --err: #B3453C;
+  --err-bg: #FBE9E7;
   --col-draft: #F8F0DE;
   --col-draft-line: #ECDFC2;
   --col-draft-ink: #7A5410;
   --col-done: #EAF2E6;
   --col-done-line: #D7E6D0;
   --col-done-ink: #2E5F3B;
-  --track: #ECE8DF;
+  --track: #EDE8DC;
 }
 .dark {
   --paper: #161310;
@@ -42,12 +42,12 @@
   --faint: #7A7060;
   --line: #3A332A;
   --line-soft: #2E2820;
-  --accent: #F08B3E;
-  --accent-hover: #F6A468;
-  --accent-bright: #F08B3E;
-  --on-accent: #2A1505;
-  --tonal: #3D2A18;
-  --tonal-ink: #FFD9B8;
+  --accent: #7FA3D6;
+  --accent-hover: #9BB8E2;
+  --accent-bright: #7FA3D6;
+  --on-accent: #101B2C;
+  --tonal: #22314A;
+  --tonal-ink: #C4D7F2;
   --ok: #86EFAC;
   --ok-bg: #163822;
   --warn: #FCD34D;

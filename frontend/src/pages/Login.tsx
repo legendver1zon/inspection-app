@@ -45,7 +45,7 @@ export default function Login() {
             initial={{ rotate: -12, scale: 0.8 }}
             animate={{ rotate: 0, scale: 1 }}
             transition={{ type: 'spring', stiffness: 300, damping: 18, delay: 0.05 }}
-            className="grid size-14 place-items-center rounded-2xl bg-gradient-to-br from-accent-bright to-accent text-2xl font-black text-white shadow-[0_8px_24px_rgba(233,120,23,.35)]"
+            className="grid size-14 place-items-center rounded-2xl bg-gradient-to-br from-accent-bright to-accent text-2xl font-black text-white shadow-[0_8px_24px_rgba(62,104,168,.35)]"
           >
             А
           </motion.div>
@@ -66,7 +66,7 @@ export default function Login() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="you@example.com"
-              className="w-full rounded-xl border border-line bg-surface px-4 py-3 text-[15px] text-ink placeholder-faint transition-shadow focus:border-accent focus:shadow-[0_0_0_3px_rgba(194,65,12,.15)] focus:outline-none"
+              className="w-full rounded-xl border border-line bg-surface px-4 py-3 text-[15px] text-ink placeholder-faint transition-shadow focus:border-accent focus:shadow-[0_0_0_3px_rgba(62,104,168,.15)] focus:outline-none"
             />
           </label>
 
@@ -80,7 +80,7 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="••••••••"
-                className="w-full rounded-xl border border-line bg-surface px-4 py-3 pr-12 text-[15px] text-ink placeholder-faint transition-shadow focus:border-accent focus:shadow-[0_0_0_3px_rgba(194,65,12,.15)] focus:outline-none"
+                className="w-full rounded-xl border border-line bg-surface px-4 py-3 pr-12 text-[15px] text-ink placeholder-faint transition-shadow focus:border-accent focus:shadow-[0_0_0_3px_rgba(62,104,168,.15)] focus:outline-none"
               />
               <button
                 type="button"
@@ -108,7 +108,7 @@ export default function Login() {
             type="submit"
             disabled={busy}
             whileTap={{ scale: 0.98 }}
-            className="w-full cursor-pointer rounded-xl bg-accent py-3.5 text-[15px] font-extrabold text-on-accent shadow-[0_5px_16px_rgba(194,65,12,.28)] transition-colors hover:bg-accent-hover disabled:opacity-60"
+            className="w-full cursor-pointer rounded-xl bg-accent py-3.5 text-[15px] font-extrabold text-on-accent shadow-[0_5px_16px_rgba(62,104,168,.28)] transition-colors hover:bg-accent-hover disabled:opacity-60"
           >
             {busy ? 'Входим…' : 'Войти'}
           </motion.button>

@@ -2,29 +2,12 @@ import { useDeferredValue, useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type ActCard, type User } from '../lib/api'
+import { C } from '../lib/palette'
 
 /* Концепт V1 «Лента»: хронология выездов. Акты сгруппированы по дням
    на вертикальной оси, сверху — сводка большими числами. Светлая бумага,
-   чернильный, глубокий тил. Самодостаточная палитра. */
+   чернильный, глубокий тил. Палитра — lib/palette. */
 
-const C = {
-  bg: '#F8F6F1',
-  surface: '#FFFFFF',
-  line: '#E9E4D9',
-  ink: '#33302A',
-  muted: '#787264',
-  faint: '#ACA599',
-  accent: '#3E68A8',
-  accentDark: '#30528A',
-  accentSoft: '#E3EBF7',
-  rail: '#DCD6C8',
-  ok: '#2E7D4F',
-  okBg: '#E4F4E9',
-  warn: '#A1741C',
-  warnBg: '#FBF2DC',
-  err: '#B3453C',
-  errBg: '#FBE9E7',
-}
 
 type Filter = 'all' | 'draft' | 'completed'
 
@@ -143,8 +126,8 @@ export default function V1Inspections({ user }: { user: User }) {
         {/* Лента по дням */}
         {isLoading ? (
           <div className="grid gap-4">
-            <div className="h-28 animate-pulse rounded-2xl motion-reduce:animate-none" style={{ background: '#EFEBE1' }} />
-            <div className="h-28 animate-pulse rounded-2xl motion-reduce:animate-none" style={{ background: '#EFEBE1' }} />
+            <div className="h-28 animate-pulse rounded-2xl motion-reduce:animate-none" style={{ background: C.track }} />
+            <div className="h-28 animate-pulse rounded-2xl motion-reduce:animate-none" style={{ background: C.track }} />
           </div>
         ) : days.length > 0 ? (
           <div className="relative pl-8 sm:pl-36">
@@ -189,11 +172,11 @@ export default function V1Inspections({ user }: { user: User }) {
 function Stat({ n, label, accent, warn }: { n?: number; label: string; accent?: boolean; warn?: boolean }) {
   const color = warn ? C.warn : accent ? C.accent : C.ink
   return (
-    <div className="rounded-2xl border px-5 py-4" style={{ background: C.surface, borderColor: C.line }}>
-      <div className="text-[34px] leading-none font-black tracking-tight tnum sm:text-[40px]" style={{ color }}>
+    <div className="rounded-2xl border px-3.5 py-3 sm:px-5 sm:py-4" style={{ background: C.surface, borderColor: C.line }}>
+      <div className="text-[28px] leading-none font-black tracking-tight tnum sm:text-[40px]" style={{ color }}>
         {n ?? '…'}
       </div>
-      <div className="mt-1.5 text-[12px] font-bold tracking-wider uppercase" style={{ color: C.faint }}>{label}</div>
+      <div className="mt-1.5 text-[10.5px] leading-tight font-bold tracking-wide uppercase sm:text-[12px] sm:tracking-wider" style={{ color: C.faint }}>{label}</div>
     </div>
   )
 }
@@ -237,14 +220,14 @@ function LentaCard({ act }: { act: ActCard }) {
       <div className="mt-2 text-[15.5px] font-semibold">{act.address || 'Адрес не указан'}</div>
       <div className="text-[13.5px]" style={{ color: C.muted }}>{act.owner_name || 'Собственник не указан'}</div>
 
-      <div className="mt-3 flex items-center gap-4">
+      <div className="mt-3 flex flex-wrap items-center gap-3">
         {!done && act.rooms > 0 && (
-          <div className="max-w-72 flex-1">
+          <div className="w-full sm:max-w-72 sm:flex-1">
             <div className="mb-1 flex justify-between text-[11.5px]" style={{ color: C.muted }}>
               <span className="tnum">{act.filled}/{act.rooms} помещений</span>
               <span className="font-bold tnum" style={{ color: C.accentDark }}>{act.percent}%</span>
             </div>
-            <div className="h-1.5 overflow-hidden rounded-full" style={{ background: '#EDE8DC' }}>
+            <div className="h-1.5 overflow-hidden rounded-full" style={{ background: C.track }}>
               <motion.i
                 initial={{ width: 0 }}
                 animate={{ width: `${act.percent}%` }}

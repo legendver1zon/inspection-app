@@ -1,0 +1,21 @@
+// Палитра «Ленты» — утверждённый дизайн: тёплая кремовая бумага,
+// тёплый графит, глубокий синий акцент, пастельные статусы.
+export const C = {
+  bg: '#F8F6F1',
+  surface: '#FFFFFF',
+  line: '#E9E4D9',
+  ink: '#33302A',
+  muted: '#787264',
+  faint: '#ACA599',
+  accent: '#3E68A8',
+  accentDark: '#30528A',
+  accentSoft: '#E3EBF7',
+  rail: '#DCD6C8',
+  track: '#EDE8DC',
+  ok: '#2E7D4F',
+  okBg: '#E4F4E9',
+  warn: '#A1741C',
+  warnBg: '#FBF2DC',
+  err: '#B3453C',
+  errBg: '#FBE9E7',
+} as const
