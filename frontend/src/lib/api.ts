@@ -185,6 +185,21 @@ export interface EditData {
   templates: DefectTemplate[]
 }
 
+export interface DashboardStats {
+  total: number
+  draft: number
+  completed: number
+  today: number
+  week: number
+  photo_pending: number
+  photo_failed: number
+}
+
+export interface AdminUser extends User {
+  created: string
+  acts: number
+}
+
 export const api = {
   login: (email: string, password: string) =>
     request<{ user: User }>('/api/login', {
@@ -242,6 +257,24 @@ export const api = {
     }),
   deletePhoto: (photoId: number) =>
     request<{ ok: boolean }>(`/photos/${photoId}/delete`, { method: 'POST' }),
+  dashboard: () => request<DashboardStats>('/api/dashboard'),
+  updateProfile: (body: {
+    full_name: string
+    initials: string
+    current_password?: string
+    new_password?: string
+    confirm?: string
+  }) => request<{ user: User }>('/api/profile', { method: 'POST', body: JSON.stringify(body) }),
+  uploadAvatar: async (file: File) => {
+    const fd = new FormData()
+    fd.append('avatar', file)
+    await fetch('/profile/avatar', { method: 'POST', body: fd })
+  },
+  users: () => request<{ users: AdminUser[] }>('/api/users'),
+  updateUser: (id: number, body: { full_name: string; email: string; role: string; new_password?: string }) =>
+    request<{ user: User }>(`/api/users/${id}`, { method: 'POST', body: JSON.stringify(body) }),
+  deleteUser: (id: number) =>
+    request<{ ok: boolean }>(`/api/users/${id}/delete`, { method: 'POST' }),
   setStatus: async (id: number, status: 'draft' | 'completed') => {
     await fetch(`/inspections/${id}/status`, {
       method: 'POST',

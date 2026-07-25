@@ -5,11 +5,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"inspection-app/internal/auth"
 	"inspection-app/internal/models"
 	"inspection-app/internal/security"
 	"inspection-app/internal/storage"
+	"inspection-app/internal/textutil"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
@@ -457,4 +459,232 @@ func APIGetEditData(c *gin.Context) {
 		"rooms":     rooms,
 		"templates": tpls,
 	})
+}
+
+// ===== Дашборд, профиль, админка =====
+
+// APIAdminOnly — доступ только администраторам (после APIAuth)
+func APIAdminOnly() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.GetString("userRole") != "admin" {
+			c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "Только для администраторов"})
+			return
+		}
+		c.Next()
+	}
+}
+
+// APIDashboard — GET /api/dashboard
+func APIDashboard(c *gin.Context) {
+	userID := c.GetUint("userID")
+	role := c.GetString("userRole")
+
+	base := func() *gorm.DB {
+		db := storage.DB.Model(&models.Inspection{})
+		if role != "admin" {
+			db = db.Where("user_id = ?", userID)
+		}
+		return db
+	}
+
+	var total, draft, completed, today, week int64
+	base().Count(&total)
+	base().Where("status = ?", "draft").Count(&draft)
+	base().Where("status = ?", "completed").Count(&completed)
+	dayStart := time.Now().Truncate(24 * time.Hour)
+	base().Where("created_at >= ?", dayStart).Count(&today)
+	base().Where("created_at >= ?", dayStart.AddDate(0, 0, -7)).Count(&week)
+
+	var photoPending, photoFailed int64
+	storage.DB.Model(&models.Photo{}).Where("upload_status IN ?", []string{"pending", "uploading"}).Count(&photoPending)
+	storage.DB.Model(&models.Photo{}).Where("upload_status = ?", "failed").Count(&photoFailed)
+
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, gin.H{
+		"total": total, "draft": draft, "completed": completed,
+		"today": today, "week": week,
+		"photo_pending": photoPending, "photo_failed": photoFailed,
+	})
+}
+
+// APIUpdateProfile — POST /api/profile
+func APIUpdateProfile(c *gin.Context) {
+	var req struct {
+		FullName        string `json:"full_name"`
+		Initials        string `json:"initials"`
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
+		Confirm         string `json:"confirm"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный запрос"})
+		return
+	}
+	user := CurrentUser(c)
+	fullName := strings.TrimSpace(req.FullName)
+	initials := strings.TrimSpace(req.Initials)
+	if fullName == "" || initials == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ФИО и инициалы обязательны"})
+		return
+	}
+
+	updates := map[string]interface{}{"full_name": fullName, "initials": initials}
+	if req.NewPassword != "" {
+		if req.CurrentPassword == "" || !auth.CheckPassword(req.CurrentPassword, user.PasswordHash) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный текущий пароль"})
+			return
+		}
+		if req.NewPassword != req.Confirm {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Пароли не совпадают"})
+			return
+		}
+		if err := security.ValidatePassword(req.NewPassword); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		hash, err := auth.HashPassword(req.NewPassword)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сервера"})
+			return
+		}
+		updates["password_hash"] = hash
+		security.Log(security.EventPasswordChange, c.ClientIP(), "userID="+strconv.Itoa(int(user.ID)))
+	}
+
+	if err := storage.DB.Model(&user).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения"})
+		return
+	}
+	var fresh models.User
+	storage.DB.First(&fresh, user.ID)
+	c.JSON(http.StatusOK, gin.H{"user": toAPIUser(fresh)})
+}
+
+type apiAdminUser struct {
+	apiUser
+	Created string `json:"created"`
+	Acts    int64  `json:"acts"`
+}
+
+// APIListUsers — GET /api/users (admin)
+func APIListUsers(c *gin.Context) {
+	var users []models.User
+	storage.DB.Order("created_at desc").Find(&users)
+
+	type idCount struct {
+		UserID uint
+		C      int64
+	}
+	var rows []idCount
+	storage.DB.Model(&models.Inspection{}).
+		Select("user_id, count(*) as c").Group("user_id").Scan(&rows)
+	acts := make(map[uint]int64, len(rows))
+	for _, r := range rows {
+		acts[r.UserID] = r.C
+	}
+
+	out := make([]apiAdminUser, len(users))
+	for i, u := range users {
+		out[i] = apiAdminUser{apiUser: toAPIUser(u), Created: humanDate(u.CreatedAt), Acts: acts[u.ID]}
+	}
+	c.Header("Cache-Control", "no-store")
+	c.JSON(http.StatusOK, gin.H{"users": out})
+}
+
+// APIUpdateUser — POST /api/users/:id (admin)
+func APIUpdateUser(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+		return
+	}
+	var target models.User
+	if err := storage.DB.First(&target, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
+		return
+	}
+
+	var req struct {
+		FullName    string `json:"full_name"`
+		Email       string `json:"email"`
+		Role        string `json:"role"`
+		NewPassword string `json:"new_password"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Некорректный запрос"})
+		return
+	}
+	fullName := strings.TrimSpace(req.FullName)
+	email := strings.ToLower(strings.TrimSpace(req.Email))
+	if fullName == "" || email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "ФИО и email обязательны"})
+		return
+	}
+	if len(strings.Fields(fullName)) < 2 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Введите полное ФИО (минимум Фамилия и Имя)"})
+		return
+	}
+	if req.Role != "admin" && req.Role != "inspector" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверная роль"})
+		return
+	}
+	if target.ID == c.GetUint("userID") && req.Role != string(target.Role) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Нельзя изменить свою роль"})
+		return
+	}
+
+	updates := map[string]interface{}{
+		"full_name": fullName,
+		"initials":  textutil.Initials(fullName),
+		"email":     email,
+		"role":      req.Role,
+	}
+	if req.NewPassword != "" {
+		if err := security.ValidatePassword(req.NewPassword); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		hash, err := auth.HashPassword(req.NewPassword)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сервера"})
+			return
+		}
+		updates["password_hash"] = hash
+	}
+
+	if err := storage.DB.Model(&target).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Не удалось сохранить (email может быть занят)"})
+		return
+	}
+	var fresh models.User
+	storage.DB.First(&fresh, target.ID)
+	c.JSON(http.StatusOK, gin.H{"user": toAPIUser(fresh)})
+}
+
+// APIDeleteUser — POST /api/users/:id/delete (admin)
+func APIDeleteUser(c *gin.Context) {
+	id, err := strconv.Atoi(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
+		return
+	}
+	if uint(id) == c.GetUint("userID") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Нельзя удалить свой аккаунт"})
+		return
+	}
+	var target models.User
+	if err := storage.DB.First(&target, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
+		return
+	}
+	if target.Role == models.RoleAdmin {
+		var admins int64
+		storage.DB.Model(&models.User{}).Where("role = ?", models.RoleAdmin).Count(&admins)
+		if admins <= 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Нельзя удалить единственного администратора"})
+			return
+		}
+	}
+	storage.DB.Delete(&models.User{}, id)
+	c.JSON(http.StatusOK, gin.H{"ok": true})
 }

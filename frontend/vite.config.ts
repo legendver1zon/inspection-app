@@ -23,6 +23,13 @@ export default defineConfig({
           return undefined
         },
       },
+      '/profile': {
+        target: backend,
+        bypass: (req) => {
+          if (req.method === 'GET' || req.method === 'HEAD') return '/index.html'
+          return undefined
+        },
+      },
     },
   },
 })

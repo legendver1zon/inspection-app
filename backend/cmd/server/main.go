@@ -226,6 +226,16 @@ func main() {
 			apiAuthed.GET("/inspections", handlers.APIListInspections)
 			apiAuthed.GET("/inspections/:id", handlers.APIGetInspection)
 			apiAuthed.GET("/inspections/:id/edit-data", handlers.APIGetEditData)
+			apiAuthed.GET("/dashboard", handlers.APIDashboard)
+			apiAuthed.POST("/profile", handlers.APIUpdateProfile)
+
+			apiAdmin := apiAuthed.Group("/")
+			apiAdmin.Use(handlers.APIAdminOnly())
+			{
+				apiAdmin.GET("/users", handlers.APIListUsers)
+				apiAdmin.POST("/users/:id", handlers.APIUpdateUser)
+				apiAdmin.POST("/users/:id/delete", handlers.APIDeleteUser)
+			}
 		}
 	}
 
