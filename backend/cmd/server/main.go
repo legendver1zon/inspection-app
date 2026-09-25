@@ -11,9 +11,9 @@ import (
 	"inspection-app/internal/models"
 	"inspection-app/internal/queue"
 	"inspection-app/internal/security"
-	"inspection-app/internal/templatefuncs"
 	"inspection-app/internal/seed"
 	"inspection-app/internal/storage"
+	"inspection-app/internal/templatefuncs"
 	"inspection-app/internal/worker"
 	"log"
 	"net/http"
@@ -229,12 +229,18 @@ func main() {
 		r.GET("/login", handlers.GetLogin)
 	}
 	r.POST("/login", security.RateLimitLogin(), handlers.PostLogin)
-	r.GET("/register", handlers.GetRegister)
+	if spaEnabled {
+		r.GET("/register", serveSPA)
+		r.GET("/forgot-password", serveSPA)
+		r.GET("/reset-password", serveSPA)
+	} else {
+		r.GET("/register", handlers.GetRegister)
+		r.GET("/forgot-password", handlers.GetForgotPassword)
+		r.GET("/reset-password", handlers.GetResetPassword)
+	}
 	r.POST("/register", security.RateLimitRegister(), handlers.PostRegister)
 	r.POST("/logout", handlers.PostLogout)
-	r.GET("/forgot-password", handlers.GetForgotPassword)
 	r.POST("/forgot-password", security.RateLimitForgotPassword(), handlers.PostForgotPassword)
-	r.GET("/reset-password", handlers.GetResetPassword)
 	r.POST("/reset-password", security.RateLimitResetPassword(), handlers.PostResetPassword)
 
 	// JSON-API для React-фронтенда
@@ -242,6 +248,9 @@ func main() {
 	{
 		api.POST("/login", handlers.APILogin)
 		api.POST("/logout", handlers.APILogout)
+		api.POST("/register", security.RateLimitRegisterJSON(), handlers.APIRegister)
+		api.POST("/forgot-password", security.RateLimitForgotPasswordJSON(), handlers.APIForgotPassword)
+		api.POST("/reset-password", security.RateLimitResetPasswordJSON(), handlers.APIResetPassword)
 		apiAuthed := api.Group("/")
 		apiAuthed.Use(handlers.APIAuth())
 		{
@@ -313,6 +322,7 @@ func main() {
 		protected.POST("/defects/:id/photos", handlers.PostUploadPhoto)
 		protected.POST("/photos/:id/delete", handlers.DeletePhoto)
 		protected.GET("/photos/:id/download", handlers.GetPhotoDownload)
+		protected.GET("/photos/:id/thumb", handlers.GetPhotoThumb)
 
 		admin := protected.Group("/admin")
 		admin.Use(security.RateLimitAdmin())

@@ -9,6 +9,7 @@ import (
 	"inspection-app/internal/logger"
 	"inspection-app/internal/models"
 	"inspection-app/internal/storage"
+	"inspection-app/internal/thumbs"
 	"io"
 	"net/http"
 	"os"
@@ -144,6 +145,8 @@ func PostUploadPhoto(c *gin.Context) {
 		return
 	}
 
+	go makeThumbAsync(photo)
+
 	// Ставим фото в очередь на загрузку
 	if cloudStore != nil {
 		if uploadQueue != nil {
@@ -187,40 +190,64 @@ func loadPhotoInspection(c *gin.Context, photo *models.Photo) (models.Inspection
 	return inspection, true
 }
 
-// DeletePhoto обрабатывает POST /photos/:id/delete
-func DeletePhoto(c *gin.Context) {
+// authorizePhoto загружает фото по :id и проверяет, что запрос делает владелец
+// осмотра или admin. При отказе сам пишет ответ и возвращает ok=false.
+func authorizePhoto(c *gin.Context) (models.Photo, bool) {
+	var photo models.Photo
 	photoID, err := strconv.Atoi(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID фото"})
-		return
+		return photo, false
 	}
-
-	var photo models.Photo
 	if err := storage.DB.First(&photo, photoID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Фото не найдено"})
-		return
+		return photo, false
 	}
-
-	// Проверяем права через дефект → помещение → осмотр.
-	// Unscoped: дефект/помещение могут быть архивными (soft-deleted),
-	// их фото по-прежнему принадлежат осмотру и показываются на странице просмотра.
 	inspection, ok := loadPhotoInspection(c, &photo)
 	if !ok {
-		return
+		return photo, false
 	}
-
 	userID := c.GetUint("userID")
 	role := c.GetString("userRole")
 	if role != "admin" && inspection.UserID != userID {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещён"})
+		return photo, false
+	}
+	return photo, true
+}
+
+// localPhotoPath возвращает абсолютный путь локального оригинала, если он лежит
+// внутри каталога загрузок и существует.
+func localPhotoPath(ctx context.Context, photo *models.Photo) (string, bool) {
+	if photo.FilePath == "" {
+		return "", false
+	}
+	absPath, err := filepath.Abs(photo.FilePath)
+	uploadsDir, dirErr := filepath.Abs(filepath.Join("web", "static", "uploads"))
+	if err != nil || dirErr != nil || !strings.HasPrefix(absPath, uploadsDir+string(os.PathSeparator)) {
+		logger.Ctx(ctx).Error("photo path outside uploads dir", "photo_id", photo.ID, "path", photo.FilePath)
+		return "", false
+	}
+	if _, err := os.Stat(absPath); err != nil {
+		return "", false
+	}
+	return absPath, true
+}
+
+// DeletePhoto обрабатывает POST /photos/:id/delete
+func DeletePhoto(c *gin.Context) {
+	photo, ok := authorizePhoto(c)
+	if !ok {
 		return
 	}
 
-	// Удаляем локальный файл
 	if photo.FilePath != "" {
 		if err := os.Remove(photo.FilePath); err != nil && !os.IsNotExist(err) {
 			logger.Ctx(c.Request.Context()).Warn("не удалось удалить файл фото", "path", photo.FilePath, "error", err)
 		}
+	}
+	if err := os.Remove(thumbs.Path(photo.ID)); err != nil && !os.IsNotExist(err) {
+		logger.Ctx(c.Request.Context()).Warn("не удалось удалить миниатюру", "photo_id", photo.ID, "error", err)
 	}
 
 	storage.DB.Delete(&photo)
@@ -231,41 +258,15 @@ func DeletePhoto(c *gin.Context) {
 // Проксирует скачивание фото: если файл локальный — отдаёт напрямую,
 // если в облаке — редиректит на временный URL скачивания.
 func GetPhotoDownload(c *gin.Context) {
-	photoID, err := strconv.Atoi(c.Param("id"))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный ID"})
-		return
-	}
-
-	var photo models.Photo
-	if err := storage.DB.First(&photo, photoID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Фото не найдено"})
-		return
-	}
-
-	// Проверяем права: дефект → помещение → осмотр
-	inspection, ok := loadPhotoInspection(c, &photo)
+	photo, ok := authorizePhoto(c)
 	if !ok {
 		return
 	}
 
-	userID := c.GetUint("userID")
-	role := c.GetString("userRole")
-	if role != "admin" && inspection.UserID != userID {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Доступ запрещён"})
-		return
-	}
-
 	// 1. Локальный файл — отдаём напрямую (только из каталога загрузок)
-	if photo.FilePath != "" {
-		absPath, err := filepath.Abs(photo.FilePath)
-		uploadsDir, dirErr := filepath.Abs(filepath.Join("web", "static", "uploads"))
-		if err != nil || dirErr != nil || !strings.HasPrefix(absPath, uploadsDir+string(os.PathSeparator)) {
-			logger.Ctx(c.Request.Context()).Error("photo path outside uploads dir", "photo_id", photo.ID, "path", photo.FilePath)
-		} else if _, err := os.Stat(absPath); err == nil {
-			c.File(absPath)
-			return
-		}
+	if absPath, ok := localPhotoPath(c.Request.Context(), &photo); ok {
+		c.File(absPath)
+		return
 	}
 
 	// 2. Облачный файл — URL начинается с http
@@ -278,7 +279,7 @@ func GetPhotoDownload(c *gin.Context) {
 	if cloudStore != nil && photo.FileURL != "" && !strings.HasPrefix(photo.FileURL, "/static/") {
 		downloadURL, err := cloudStore.GetDownloadURL(photo.FileURL)
 		if err != nil {
-			logger.Ctx(c.Request.Context()).Error("cloud download URL", "photo_id", photoID, "error", err)
+			logger.Ctx(c.Request.Context()).Error("cloud download URL", "photo_id", photo.ID, "error", err)
 			c.JSON(http.StatusBadGateway, gin.H{"error": "Ошибка получения ссылки из облака"})
 			return
 		}

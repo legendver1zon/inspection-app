@@ -2,10 +2,14 @@ import { Link, useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { api, type User } from '../lib/api'
 import { C } from '../lib/palette'
+import { isActive, uploadQueue, useUploadQueue } from '../lib/uploadQueue'
 
 export default function Header({ user }: { user: User }) {
   const queryClient = useQueryClient()
   const { pathname } = useLocation()
+  const queue = useUploadQueue()
+  const active = queue.filter(isActive).length
+  const failed = queue.filter((i) => i.status === 'failed').length
 
   async function logout() {
     await api.logout()
@@ -47,6 +51,18 @@ export default function Header({ user }: { user: User }) {
         </nav>
 
         <div className="flex-1" />
+        {(active > 0 || failed > 0) && (
+          <button
+            type="button"
+            onClick={failed > 0 ? () => uploadQueue.retryAll() : undefined}
+            title={failed > 0 ? 'Повторить отправку' : 'Фото отправляются'}
+            className="rounded-full px-3 py-1.5 text-[12.5px] font-bold"
+            style={failed > 0 ? { background: C.errBg, color: C.err, cursor: 'pointer' } : { background: C.warnBg, color: C.warn }}
+            aria-live="polite"
+          >
+            {failed > 0 ? `↻ не отправлено: ${failed}` : `↑ фото: ${active}`}
+          </button>
+        )}
         <Link to="/profile" className="flex items-center gap-2.5" aria-label="Профиль">
           {user.avatar_url ? (
             <img src={user.avatar_url} alt="" className="size-8 rounded-full border object-cover" style={{ borderColor: C.line }} />

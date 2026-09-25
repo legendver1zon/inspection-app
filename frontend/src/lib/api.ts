@@ -9,11 +9,24 @@ export class ApiError extends Error {
   }
 }
 
+export const AUTH_EXPIRED_EVENT = 'auth:expired'
+
+// Старые обработчики форм отвечают редиректом; при истёкшей сессии — 401 JSON
+function guard401(res: Response) {
+  if (res.status === 401) {
+    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+    throw new ApiError(401, 'Сессия истекла, войдите заново')
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest', ...init?.headers },
     ...init,
   })
+  if (res.status === 401 && !path.startsWith('/api/login') && !path.startsWith('/api/me')) {
+    window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+  }
   if (!res.ok) {
     let message = res.statusText
     try {
@@ -208,6 +221,17 @@ export const api = {
     }),
   logout: () => request<{ ok: boolean }>('/api/logout', { method: 'POST' }),
   me: () => request<{ user: User }>('/api/me'),
+  register: (body: {
+    email: string
+    password: string
+    confirm_password: string
+    full_name: string
+    no_patronymic: boolean
+  }) => request<{ ok: boolean }>('/api/register', { method: 'POST', body: JSON.stringify(body) }),
+  forgotPassword: (email: string) =>
+    request<{ ok: boolean }>('/api/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  resetPassword: (body: { email: string; code: string; password: string; confirm: string }) =>
+    request<{ ok: boolean }>('/api/reset-password', { method: 'POST', body: JSON.stringify(body) }),
   inspections: (params: { q?: string; page?: number }) => {
     const search = new URLSearchParams()
     if (params.q) search.set('q', params.q)
@@ -229,30 +253,35 @@ export const api = {
     // boundary выставит браузер, заголовок не задаём
     const fd = new FormData()
     fields.forEach((v, k) => fd.append(k, v))
-    const res = await fetch(`/inspections/${id}/edit`, { method: 'POST', body: fd })
+    const res = await fetch(`/inspections/${id}/edit`, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    guard401(res)
     const url = new URL(res.url, window.location.origin)
     return url.searchParams.get('error')
   },
   // Загрузка фото дефекта: XHR ради прогресса отправки (у fetch его нет)
-  uploadPhoto: (defectId: number, file: File, onProgress?: (pct: number) => void) =>
+  uploadPhoto: (defectId: number, blob: Blob, name: string, onProgress?: (pct: number) => void, timeoutMs = 120_000) =>
     new Promise<PhotoRef>((resolve, reject) => {
       const xhr = new XMLHttpRequest()
       xhr.open('POST', `/defects/${defectId}/photos`)
+      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest')
+      xhr.timeout = timeoutMs
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100))
       }
       xhr.onload = () => {
+        if (xhr.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
         try {
           const body = JSON.parse(xhr.responseText)
           if (xhr.status === 200) resolve({ id: body.id, status: 'pending' })
           else reject(new ApiError(xhr.status, body.error ?? 'Ошибка загрузки'))
         } catch {
-          reject(new ApiError(xhr.status, 'Ошибка загрузки'))
+          reject(new ApiError(xhr.status, xhr.status === 413 ? 'Файл слишком большой' : 'Ошибка загрузки'))
         }
       }
       xhr.onerror = () => reject(new ApiError(0, 'Сеть недоступна'))
+      xhr.ontimeout = () => reject(new ApiError(408, 'Слишком долгая отправка, попробуем ещё раз'))
       const fd = new FormData()
-      fd.append('photo', file)
+      fd.append('photo', blob, name)
       xhr.send(fd)
     }),
   deletePhoto: (photoId: number) =>
@@ -268,7 +297,7 @@ export const api = {
   uploadAvatar: async (file: File) => {
     const fd = new FormData()
     fd.append('avatar', file)
-    await fetch('/profile/avatar', { method: 'POST', body: fd })
+    guard401(await fetch('/profile/avatar', { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } }))
   },
   users: () => request<{ users: AdminUser[] }>('/api/users'),
   updateUser: (id: number, body: { full_name: string; email: string; role: string; new_password?: string }) =>
@@ -276,24 +305,24 @@ export const api = {
   deleteUser: (id: number) =>
     request<{ ok: boolean }>(`/api/users/${id}/delete`, { method: 'POST' }),
   setStatus: async (id: number, status: 'draft' | 'completed') => {
-    await fetch(`/inspections/${id}/status`, {
+    guard401(await fetch(`/inspections/${id}/status`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
       body: `status=${status}`,
-    })
+    }))
   },
   uploadPlan: async (id: number, blob: Blob) => {
     const fd = new FormData()
     fd.append('plan_image', blob, 'plan.jpg')
-    await fetch(`/inspections/${id}/upload-plan`, { method: 'POST', body: fd })
+    guard401(await fetch(`/inspections/${id}/upload-plan`, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } }))
   },
   // Старый обработчик отвечает redirect'ом на HTML-страницу — ответ не читаем,
   // после вызова инвалидируем детали, чтобы подтянулись новые документы
   generatePdf: async (id: number) => {
-    await fetch(`/inspections/${id}/generate`, {
+    guard401(await fetch(`/inspections/${id}/generate`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-Requested-With': 'XMLHttpRequest' },
       body: 'format=pdf',
-    })
+    }))
   },
 }

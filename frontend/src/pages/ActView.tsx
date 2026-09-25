@@ -5,6 +5,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api, type Defect, type PhotoRef, type User } from '../lib/api'
 import { C } from '../lib/palette'
 import Header from '../components/Header'
+import PhotoThumb from '../components/PhotoThumb'
 
 /* Просмотр акта в языке «Ленты»: кремовая бумага, белые карточки,
    помещения — секциями вниз по странице, фото — плитками. */
@@ -297,12 +298,7 @@ function PhotoStrip({ photos }: { photos: PhotoRef[] }) {
           style={{ borderColor: C.line }}
           aria-label={`Фото ${p.id}`}
         >
-          <img
-            src={`/photos/${p.id}/download`}
-            alt=""
-            loading="lazy"
-            className="size-20 object-cover transition-transform hover:scale-105 sm:size-24"
-          />
+          <PhotoThumb id={p.id} className="size-20 object-cover transition-transform hover:scale-105 sm:size-24" />
           {p.status !== 'done' && (
             <span
               className="absolute right-1 bottom-1 rounded px-1.5 py-0.5 text-[9.5px] font-extrabold text-white"

@@ -6,7 +6,9 @@ import Cropper from 'cropperjs'
 import 'cropperjs/dist/cropper.css'
 import { api, type DefectTemplate, type EditRoomData, type PhotoRef, type User } from '../lib/api'
 import { C } from '../lib/palette'
+import { isActive, uploadQueue, useUploadQueue } from '../lib/uploadQueue'
 import Header from '../components/Header'
+import PhotoThumb from '../components/PhotoThumb'
 
 /* Форма редактирования акта (часть 1: шапка + помещения + дефекты).
    Сохранение собирает те же поля, что старая HTML-форма, и шлёт их
@@ -133,7 +135,8 @@ export default function EditAct({ user }: { user: User }) {
   const [loaded, setLoaded] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [lastSaved, setLastSaved] = useState('')
-  const [uploadsActive, setUploadsActive] = useState(0)
+  const queueItems = useUploadQueue()
+  const uploadsActive = queueItems.filter((i) => i.actId === actId && isActive(i)).length
   // Счётчик правок: автосейв снимает dirty только если за время POST
   // не появилось новых изменений
   const changeSeq = useRef(0)
@@ -378,7 +381,6 @@ export default function EditAct({ user }: { user: User }) {
                     templatesBySection={templatesBySection}
                     onPatch={(patch) => patchRoom(room.key, patch)}
                     onPatchSilent={(patch) => patchRoomSilent(room.key, patch)}
-                    onUploading={(delta) => setUploadsActive((n) => Math.max(0, n + delta))}
                     onRemove={rooms.length > 1 ? () => { markDirty(); setRooms((rs) => rs.filter((r) => r.key !== room.key)) } : undefined}
                   />
                 </motion.div>
@@ -423,13 +425,12 @@ export default function EditAct({ user }: { user: User }) {
 
 /* ===== Помещение ===== */
 
-function RoomEditor({ room, index, templatesBySection, onPatch, onPatchSilent, onUploading, onRemove }: {
+function RoomEditor({ room, index, templatesBySection, onPatch, onPatchSilent, onRemove }: {
   room: RoomForm
   index: number
   templatesBySection: Map<string, DefectTemplate[]>
   onPatch: (patch: (r: RoomForm) => RoomForm) => void
   onPatchSilent: (patch: (r: RoomForm) => RoomForm) => void
-  onUploading: (delta: number) => void
   onRemove?: () => void
 }) {
   const [open, setOpen] = useState(index === 1)
@@ -584,7 +585,6 @@ function RoomEditor({ room, index, templatesBySection, onPatch, onPatchSilent, o
                                 <PhotoDock
                                   bind={room.binds[`w${t.id}_${w}`]}
                                   hasValue={!!room.walls[t.id]?.[w]}
-                                  onUploading={onUploading}
                                   onBind={(b) => onPatchSilent((r) => ({ ...r, binds: { ...r.binds, [`w${t.id}_${w}`]: b } }))}
                                 />
                               </div>
@@ -611,7 +611,6 @@ function RoomEditor({ room, index, templatesBySection, onPatch, onPatchSilent, o
                           <PhotoDock
                             bind={room.binds[`s${t.id}`]}
                             hasValue={!!room.simple[t.id]}
-                            onUploading={onUploading}
                             onBind={(b) => onPatchSilent((r) => ({ ...r, binds: { ...r.binds, [`s${t.id}`]: b } }))}
                           />
                         </div>
@@ -629,7 +628,6 @@ function RoomEditor({ room, index, templatesBySection, onPatch, onPatchSilent, o
                     <PhotoDock
                       bind={room.binds[`n${sec}`]}
                       hasValue={!!room.notes[sec]}
-                      onUploading={onUploading}
                       onBind={(b) => onPatchSilent((r) => ({ ...r, binds: { ...r.binds, [`n${sec}`]: b } }))}
                     />
                   </div>
@@ -645,37 +643,45 @@ function RoomEditor({ room, index, templatesBySection, onPatch, onPatchSilent, o
 
 /* ===== Фото дефекта ===== */
 
-function PhotoDock({ bind, hasValue, onBind, onUploading }: {
+function PhotoDock({ bind, hasValue, onBind }: {
   bind?: DefectBind
   hasValue: boolean
   onBind: (b: DefectBind) => void
-  onUploading: (delta: number) => void
 }) {
-  const [uploads, setUploads] = useState<{ key: string; name: string; pct: number }[]>([])
+  const { id } = useParams()
+  const actId = Number(id)
   const [err, setErr] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const defectId = bind?.defectId
+  const items = useUploadQueue().filter((i) => i.defectId === defectId)
+  const prevDefectId = useRef(defectId)
+
+  // Автосейв пересоздаёт дефекты с новыми id — переводим очередь на новый id
+  useEffect(() => {
+    if (prevDefectId.current && defectId && prevDefectId.current !== defectId) {
+      uploadQueue.rebind(prevDefectId.current, defectId)
+    }
+    prevDefectId.current = defectId
+  }, [defectId])
+
+  // Готовые фото из очереди переносим в привязку дефекта
+  useEffect(() => {
+    if (!bind) return
+    for (const it of items) {
+      if (it.status === 'done' && it.photo) {
+        if (!bind.photos.some((p) => p.id === it.photo!.id)) onBind({ ...bind, photos: [...bind.photos, it.photo] })
+        uploadQueue.ack(it.key)
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, bind?.defectId])
 
   if (!bind && !hasValue) return null
 
-  async function handleFiles(files: FileList | null) {
+  function handleFiles(files: FileList | null) {
     if (!files || !bind) return
     setErr('')
-    for (const file of Array.from(files)) {
-      const key = `${file.name}-${file.size}-${Math.random()}`
-      setUploads((u) => [...u, { key, name: file.name, pct: 0 }])
-      onUploading(1)
-      try {
-        const ref = await api.uploadPhoto(bind.defectId, file, (pct) =>
-          setUploads((u) => u.map((x) => (x.key === key ? { ...x, pct } : x))),
-        )
-        onBind({ ...bind, photos: [...bind.photos, ref] })
-      } catch (e) {
-        setErr(e instanceof Error ? e.message : 'Ошибка загрузки')
-      } finally {
-        onUploading(-1)
-        setUploads((u) => u.filter((x) => x.key !== key))
-      }
-    }
+    uploadQueue.enqueue(actId, bind.defectId, Array.from(files))
     if (inputRef.current) inputRef.current.value = ''
   }
 
@@ -689,17 +695,13 @@ function PhotoDock({ bind, hasValue, onBind, onUploading }: {
     }
   }
 
+  const failed = items.find((u) => u.status === 'failed')
+
   return (
     <div className="mt-2 flex flex-wrap items-center gap-2">
       {bind?.photos.map((p) => (
         <span key={p.id} className="group relative block">
-          <img
-            src={`/photos/${p.id}/download`}
-            alt=""
-            loading="lazy"
-            className="size-14 rounded-lg border object-cover"
-            style={{ borderColor: C.line }}
-          />
+          <PhotoThumb id={p.id} className="size-14 rounded-lg border object-cover" style={{ borderColor: C.line }} />
           {p.status !== 'done' && (
             <span className="absolute bottom-0.5 left-0.5 rounded px-1 text-[9px] font-extrabold text-white"
                   style={{ background: p.status === 'failed' ? C.err : C.warn }}>
@@ -718,12 +720,44 @@ function PhotoDock({ bind, hasValue, onBind, onUploading }: {
         </span>
       ))}
 
-      {uploads.map((u) => (
-        <span key={u.key} className="grid size-14 place-items-center rounded-lg border text-[10px] font-bold"
-              style={{ borderColor: C.line, color: C.muted }}>
-          {u.pct}%
-        </span>
-      ))}
+      {items.filter((u) => u.status !== 'done').map((u) => {
+        const bad = u.status === 'failed' || u.status === 'auth'
+        return (
+          <span
+            key={u.key}
+            title={u.error || u.name}
+            className="relative grid size-14 place-items-center rounded-lg border text-[10px] font-bold"
+            style={{ borderColor: bad ? C.err : C.line, color: bad ? C.err : C.muted }}
+          >
+            {u.status === 'uploading'
+              ? `${u.pct}%`
+              : u.status === 'compressing'
+                ? '…'
+                : u.status === 'failed'
+                  ? (
+                    <button type="button" onClick={() => uploadQueue.retry(u.key)} className="cursor-pointer leading-tight" aria-label={`Повторить: ${u.error}`}>
+                      ↻<br />ещё
+                    </button>
+                  )
+                  : u.status === 'auth'
+                    ? 'вход'
+                    : u.attempts > 0
+                      ? `↻${u.attempts}`
+                      : '⏳'}
+            {bad && (
+              <button
+                type="button"
+                onClick={() => uploadQueue.remove(u.key)}
+                aria-label="Убрать из очереди"
+                className="absolute -top-1.5 -right-1.5 grid size-5 cursor-pointer place-items-center rounded-full text-[10px] font-black text-white"
+                style={{ background: C.err }}
+              >
+                ✕
+              </button>
+            )}
+          </span>
+        )
+      })}
 
       {bind ? (
         <>
@@ -744,7 +778,7 @@ function PhotoDock({ bind, hasValue, onBind, onUploading }: {
           фото — после сохранения акта
         </span>
       )}
-      {err && <span className="text-[11.5px] font-semibold" style={{ color: C.err }}>{err}</span>}
+      {(err || failed) && <span className="text-[11.5px] font-semibold" style={{ color: C.err }}>{err || failed!.error}</span>}
     </div>
   )
 }

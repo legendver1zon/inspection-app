@@ -39,6 +39,9 @@ type mockCloudStore struct {
 	folderExistsErr   error
 	moveFolderErr     error
 	moveFolderCalls   []struct{ Old, New string }
+
+	downloadURL    string
+	downloadURLErr error
 }
 
 func (m *mockCloudStore) EnsurePath(p string) error {
@@ -72,7 +75,7 @@ func (m *mockCloudStore) MoveFolder(old, new string) error {
 	return m.moveFolderErr
 }
 func (m *mockCloudStore) GetDownloadURL(_ string) (string, error) {
-	return "", nil
+	return m.downloadURL, m.downloadURLErr
 }
 
 // --- Router with photo routes ---
