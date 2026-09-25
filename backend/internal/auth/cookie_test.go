@@ -144,7 +144,7 @@ func TestSetAuthCookie_SecureWhenExplicit(t *testing.T) {
 	}
 }
 
-func TestSetAuthCookie_MaxAge24Hours(t *testing.T) {
+func TestSetAuthCookie_MaxAgeSessionTTL(t *testing.T) {
 	os.Unsetenv("COOKIE_SECURE")
 	w, c := newTestContext()
 
@@ -154,8 +154,8 @@ func TestSetAuthCookie_MaxAge24Hours(t *testing.T) {
 	if len(cookies) == 0 {
 		t.Fatal("Cookie не установлена")
 	}
-	if cookies[0].MaxAge != 86400 {
-		t.Errorf("MaxAge должен быть 86400 (24ч), получено %d", cookies[0].MaxAge)
+	if cookies[0].MaxAge != int(SessionTTL.Seconds()) {
+		t.Errorf("MaxAge должен быть %d (30 дней), получено %d", int(SessionTTL.Seconds()), cookies[0].MaxAge)
 	}
 }
 

@@ -87,6 +87,7 @@ func APIAuth() gin.HandlerFunc {
 			unauth()
 			return
 		}
+		auth.RenewIfNeeded(c, claims)
 		c.Set("userID", claims.UserID)
 		c.Set("userRole", claims.Role)
 		c.Set("currentUser", u)

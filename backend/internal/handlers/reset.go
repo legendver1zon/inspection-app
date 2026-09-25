@@ -24,33 +24,23 @@ func GetForgotPassword(c *gin.Context) {
 	})
 }
 
-// PostForgotPassword — генерирует код и отправляет письмо
-func PostForgotPassword(c *gin.Context) {
-	email := strings.ToLower(strings.TrimSpace(c.PostForm("email")))
+// requestPasswordReset — генерирует код и отправляет письмо.
+// Ответ наружу всегда одинаковый, чтобы не раскрывать, есть ли email в базе.
+func requestPasswordReset(email, ip string) {
+	email = strings.ToLower(strings.TrimSpace(email))
 
 	// Инкрементируем на каждый запрос (не только при найденном email),
 	// чтобы не давать злоумышленнику 3 "бесплатных" проверки несуществующих адресов.
-	security.ForgotPasswordLimiter.Increment(c.ClientIP())
-
-	// Всегда показываем одинаковый ответ — чтобы не раскрывать, есть ли email в базе
-	showSent := func() {
-		c.HTML(http.StatusOK, "forgot_password.html", gin.H{
-			"title": "Восстановление пароля",
-			"sent":  true,
-			"email": email,
-		})
-	}
+	security.ForgotPasswordLimiter.Increment(ip)
 
 	var user models.User
 	if err := storage.DB.Where("email = ?", email).First(&user).Error; err != nil {
-		showSent()
 		return
 	}
 
 	// 6-значный код на crypto/rand (криптографически безопасный)
 	n, err := rand.Int(rand.Reader, big.NewInt(1000000))
 	if err != nil {
-		showSent()
 		return
 	}
 	code := fmt.Sprintf("%06d", n.Int64())
@@ -67,8 +57,18 @@ func PostForgotPassword(c *gin.Context) {
 	)
 	mailer.Send(email, "Сброс пароля — Акты осмотра", body)
 
-	security.Log(security.EventForgotPassword, c.ClientIP(), "email="+email)
-	showSent()
+	security.Log(security.EventForgotPassword, ip, "email="+email)
+}
+
+// PostForgotPassword — форма запроса кода
+func PostForgotPassword(c *gin.Context) {
+	email := strings.ToLower(strings.TrimSpace(c.PostForm("email")))
+	requestPasswordReset(email, c.ClientIP())
+	c.HTML(http.StatusOK, "forgot_password.html", gin.H{
+		"title": "Восстановление пароля",
+		"sent":  true,
+		"email": email,
+	})
 }
 
 // GetResetPassword — форма ввода кода и нового пароля
@@ -79,60 +79,43 @@ func GetResetPassword(c *gin.Context) {
 	})
 }
 
-// PostResetPassword — проверяет код, обновляет пароль
-func PostResetPassword(c *gin.Context) {
-	email := strings.ToLower(strings.TrimSpace(c.PostForm("email")))
-	code := c.PostForm("code")
-	password := c.PostForm("password")
-	confirm := c.PostForm("confirm")
-
-	renderErr := func(msg string) {
-		c.HTML(http.StatusOK, "reset_password.html", gin.H{
-			"title": "Новый пароль",
-			"email": email,
-			"error": msg,
-		})
-	}
+// resetPassword проверяет код и меняет пароль.
+// Возвращает HTTP-статус и текст ошибки (пустой при успехе).
+func resetPassword(email, code, password, confirm, ip string) (int, string) {
+	email = strings.ToLower(strings.TrimSpace(email))
 
 	if password != confirm {
-		renderErr("Пароли не совпадают")
-		return
+		return http.StatusBadRequest, "Пароли не совпадают"
 	}
 	if err := security.ValidatePassword(password); err != nil {
-		renderErr(err.Error())
-		return
+		return http.StatusBadRequest, err.Error()
 	}
 
 	var user models.User
 	if err := storage.DB.Where("email = ?", email).First(&user).Error; err != nil {
-		security.ResetPasswordLimiter.Increment(c.ClientIP())
-		renderErr("Пользователь не найден")
-		return
+		security.ResetPasswordLimiter.Increment(ip)
+		return http.StatusBadRequest, "Пользователь не найден"
 	}
 
 	// Лимит и на аккаунт (не только на IP): распределённый перебор кода
 	// с многих IP упирается в счётчик по email
 	if allowed, _ := security.ResetPasswordLimiter.Check("email:" + email); !allowed {
-		security.Log(security.EventPasswordResetBlocked, c.ClientIP(), "email="+email)
-		renderErr("Слишком много попыток для этого аккаунта. Запросите новый код позже.")
-		return
+		security.Log(security.EventPasswordResetBlocked, ip, "email="+email)
+		return http.StatusTooManyRequests, "Слишком много попыток для этого аккаунта. Запросите новый код позже."
 	}
 
 	if user.ResetToken == "" || user.ResetToken != code {
-		security.ResetPasswordLimiter.Increment(c.ClientIP())
+		security.ResetPasswordLimiter.Increment(ip)
 		security.ResetPasswordLimiter.Increment("email:" + email)
-		renderErr("Неверный код")
-		return
+		return http.StatusBadRequest, "Неверный код"
 	}
 	if user.ResetExpiry == nil || time.Now().After(*user.ResetExpiry) {
-		renderErr("Код истёк. Запросите новый.")
-		return
+		return http.StatusBadRequest, "Код истёк. Запросите новый."
 	}
 
 	hash, err := auth.HashPassword(password)
 	if err != nil {
-		renderErr("Ошибка сервера")
-		return
+		return http.StatusInternalServerError, "Ошибка сервера"
 	}
 
 	storage.DB.Model(&user).Updates(map[string]interface{}{
@@ -141,8 +124,23 @@ func PostResetPassword(c *gin.Context) {
 		"reset_expiry":  nil,
 	})
 
-	security.ResetPasswordLimiter.Reset(c.ClientIP())
+	security.ResetPasswordLimiter.Reset(ip)
 	security.ResetPasswordLimiter.Reset("email:" + email)
-	security.Log(security.EventPasswordReset, c.ClientIP(), "email="+email)
+	security.Log(security.EventPasswordReset, ip, "email="+email)
+	return http.StatusOK, ""
+}
+
+// PostResetPassword — проверяет код, обновляет пароль
+func PostResetPassword(c *gin.Context) {
+	email := strings.ToLower(strings.TrimSpace(c.PostForm("email")))
+	_, msg := resetPassword(email, c.PostForm("code"), c.PostForm("password"), c.PostForm("confirm"), c.ClientIP())
+	if msg != "" {
+		c.HTML(http.StatusOK, "reset_password.html", gin.H{
+			"title": "Новый пароль",
+			"email": email,
+			"error": msg,
+		})
+		return
+	}
 	c.Redirect(http.StatusFound, "/login?reset=1")
 }

@@ -41,13 +41,20 @@ func CheckPassword(password, hash string) bool {
 	return err == nil
 }
 
-// GenerateToken — создаёт JWT токен на 24 часа
+// Сессия живёт 30 дней и продлевается при активности: инспектор может
+// неделями не выходить из приложения, а истечение посреди осмотра
+// выглядело как «фото не загружаются».
+const (
+	SessionTTL = 30 * 24 * time.Hour
+	RenewAfter = 24 * time.Hour
+)
+
 func GenerateToken(userID uint, role string) (string, error) {
 	claims := Claims{
 		UserID: userID,
 		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(SessionTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),
 		},
 	}
@@ -71,4 +78,13 @@ func ParseToken(tokenStr string) (*Claims, error) {
 		return nil, errors.New("невалидный токен")
 	}
 	return claims, nil
+}
+
+// ShouldRenew — токен старше суток пора перевыпустить, чтобы срок сессии
+// отсчитывался от последней активности, а не от входа.
+func ShouldRenew(claims *Claims) bool {
+	if claims == nil || claims.IssuedAt == nil {
+		return true
+	}
+	return time.Since(claims.IssuedAt.Time) > RenewAfter
 }

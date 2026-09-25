@@ -79,72 +79,45 @@ func GetRegister(c *gin.Context) {
 	})
 }
 
-// PostRegister — обработка формы регистрации
-func PostRegister(c *gin.Context) {
-	email := strings.ToLower(strings.TrimSpace(c.PostForm("email")))
-	password := c.PostForm("password")
-	confirmPassword := c.PostForm("confirm_password")
-	fullName := strings.TrimSpace(c.PostForm("full_name"))
-	noPatronymic := c.PostForm("no_patronymic") == "1"
-	initials := textutil.Initials(fullName)
+type registerInput struct {
+	Email, Password, Confirm, FullName string
+	NoPatronymic                       bool
+}
 
-	if email == "" || password == "" || fullName == "" {
-		c.HTML(http.StatusBadRequest, "register.html", gin.H{
-			"title": "Регистрация",
-			"error": "Заполните все поля",
-		})
-		return
+// registerUser проверяет данные и создаёт пользователя.
+// Возвращает HTTP-статус и текст ошибки (пустой при успехе).
+func registerUser(in registerInput, ip string) (int, string) {
+	email := strings.ToLower(strings.TrimSpace(in.Email))
+	fullName := strings.TrimSpace(in.FullName)
+	if email == "" || in.Password == "" || fullName == "" {
+		return http.StatusBadRequest, "Заполните все поля"
 	}
 
 	minWords := 3
-	if noPatronymic {
+	if in.NoPatronymic {
 		minWords = 2
 	}
 	if len(strings.Fields(fullName)) < minWords {
-		errMsg := "Введите полное ФИО (Фамилия, Имя и Отчество)"
-		if noPatronymic {
-			errMsg = "Введите Фамилию и Имя"
+		if in.NoPatronymic {
+			return http.StatusBadRequest, "Введите Фамилию и Имя"
 		}
-		c.HTML(http.StatusBadRequest, "register.html", gin.H{
-			"title": "Регистрация",
-			"error": errMsg,
-		})
-		return
+		return http.StatusBadRequest, "Введите полное ФИО (Фамилия, Имя и Отчество)"
+	}
+	if in.Password != in.Confirm {
+		return http.StatusBadRequest, "Пароли не совпадают"
+	}
+	if err := security.ValidatePassword(in.Password); err != nil {
+		return http.StatusBadRequest, err.Error()
 	}
 
-	if password != confirmPassword {
-		c.HTML(http.StatusBadRequest, "register.html", gin.H{
-			"title": "Регистрация",
-			"error": "Пароли не совпадают",
-		})
-		return
-	}
-
-	if err := security.ValidatePassword(password); err != nil {
-		c.HTML(http.StatusBadRequest, "register.html", gin.H{
-			"title": "Регистрация",
-			"error": err.Error(),
-		})
-		return
-	}
-
-	// Проверяем, не занят ли email
 	var existing models.User
 	if storage.DB.Where("email = ?", email).First(&existing).Error == nil {
-		c.HTML(http.StatusBadRequest, "register.html", gin.H{
-			"title": "Регистрация",
-			"error": "Пользователь с таким email уже существует",
-		})
-		return
+		return http.StatusBadRequest, "Пользователь с таким email уже существует"
 	}
 
-	hash, err := auth.HashPassword(password)
+	hash, err := auth.HashPassword(in.Password)
 	if err != nil {
-		c.HTML(http.StatusInternalServerError, "register.html", gin.H{
-			"title": "Регистрация",
-			"error": "Ошибка сервера",
-		})
-		return
+		return http.StatusInternalServerError, "Ошибка сервера"
 	}
 
 	// Первый пользователь становится администратором
@@ -159,20 +132,34 @@ func PostRegister(c *gin.Context) {
 		Email:        email,
 		PasswordHash: hash,
 		FullName:     fullName,
-		Initials:     initials,
+		Initials:     textutil.Initials(fullName),
 		Role:         role,
 	}
-
 	if err := storage.DB.Create(&user).Error; err != nil {
-		c.HTML(http.StatusInternalServerError, "register.html", gin.H{
+		return http.StatusInternalServerError, "Ошибка создания пользователя"
+	}
+
+	security.RegisterLimiter.Increment(ip)
+	security.Log(security.EventRegister, ip, "email="+email)
+	return http.StatusOK, ""
+}
+
+// PostRegister — обработка формы регистрации
+func PostRegister(c *gin.Context) {
+	status, msg := registerUser(registerInput{
+		Email:        c.PostForm("email"),
+		Password:     c.PostForm("password"),
+		Confirm:      c.PostForm("confirm_password"),
+		FullName:     c.PostForm("full_name"),
+		NoPatronymic: c.PostForm("no_patronymic") == "1",
+	}, c.ClientIP())
+	if msg != "" {
+		c.HTML(status, "register.html", gin.H{
 			"title": "Регистрация",
-			"error": "Ошибка создания пользователя",
+			"error": msg,
 		})
 		return
 	}
-
-	security.RegisterLimiter.Increment(c.ClientIP())
-	security.Log(security.EventRegister, c.ClientIP(), "email="+email)
 	c.Redirect(http.StatusFound, "/login?registered=1")
 }
 

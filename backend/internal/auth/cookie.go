@@ -22,7 +22,7 @@ func isSecureCookie() bool {
 // SameSite=Lax всегда (CSRF-защита). Secure — только при HTTPS (COOKIE_SECURE=true).
 func SetAuthCookie(c *gin.Context, token string) {
 	c.SetSameSite(http.SameSiteLaxMode)
-	c.SetCookie("token", token, 86400, "/", "", isSecureCookie(), true)
+	c.SetCookie("token", token, int(SessionTTL.Seconds()), "/", "", isSecureCookie(), true)
 }
 
 // ClearAuthCookie удаляет cookie авторизации.

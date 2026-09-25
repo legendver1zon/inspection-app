@@ -127,12 +127,12 @@ var (
 
 // Init инициализирует все rate limiter (in-memory).
 func Init() {
-	LoginLimiter          = NewMemoryRateLimiter(5, 15*time.Minute)
-	RegisterLimiter       = NewMemoryRateLimiter(3, time.Hour)
+	LoginLimiter = NewMemoryRateLimiter(5, 15*time.Minute)
+	RegisterLimiter = NewMemoryRateLimiter(3, time.Hour)
 	ForgotPasswordLimiter = NewMemoryRateLimiter(3, time.Hour)
-	ResetPasswordLimiter  = NewMemoryRateLimiter(5, 15*time.Minute)
-	AdminLimiter          = NewMemoryRateLimiter(60, time.Minute)
-	InspectionLimiter     = NewMemoryRateLimiter(20, time.Hour)
+	ResetPasswordLimiter = NewMemoryRateLimiter(5, 15*time.Minute)
+	AdminLimiter = NewMemoryRateLimiter(60, time.Minute)
+	InspectionLimiter = NewMemoryRateLimiter(20, time.Hour)
 }
 
 // InitWithRedis инициализирует rate limiter на Redis (для нескольких инстансов).
@@ -149,12 +149,12 @@ func InitWithRedis(redisURL string) {
 		Init() // fallback
 		return
 	}
-	LoginLimiter          = NewRedisRateLimiter(client, "login", 5, 15*time.Minute)
-	RegisterLimiter       = NewRedisRateLimiter(client, "register", 3, time.Hour)
+	LoginLimiter = NewRedisRateLimiter(client, "login", 5, 15*time.Minute)
+	RegisterLimiter = NewRedisRateLimiter(client, "register", 3, time.Hour)
 	ForgotPasswordLimiter = NewRedisRateLimiter(client, "forgot", 3, time.Hour)
-	ResetPasswordLimiter  = NewRedisRateLimiter(client, "reset", 5, 15*time.Minute)
-	AdminLimiter          = NewRedisRateLimiter(client, "admin", 60, time.Minute)
-	InspectionLimiter     = NewRedisRateLimiter(client, "inspection", 20, time.Hour)
+	ResetPasswordLimiter = NewRedisRateLimiter(client, "reset", 5, 15*time.Minute)
+	AdminLimiter = NewRedisRateLimiter(client, "admin", 60, time.Minute)
+	InspectionLimiter = NewRedisRateLimiter(client, "inspection", 20, time.Hour)
 }
 
 // --- Тексты сообщений об ограничениях ---
@@ -310,4 +310,29 @@ func RateLimitForgotPassword() gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+// JSON-варианты лимитов для /api/*: тот же счётчик, ответ — {"error": ...} с 429.
+func jsonLimit(limiter func() RateLimiter, event string, msg func(time.Duration) string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		allowed, retryAfter := limiter().Check(c.ClientIP())
+		if !allowed {
+			Log(event, c.ClientIP(), "")
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": msg(retryAfter)})
+			return
+		}
+		c.Next()
+	}
+}
+
+func RateLimitRegisterJSON() gin.HandlerFunc {
+	return jsonLimit(func() RateLimiter { return RegisterLimiter }, EventRegisterBlocked, registerBlockedMsg)
+}
+
+func RateLimitForgotPasswordJSON() gin.HandlerFunc {
+	return jsonLimit(func() RateLimiter { return ForgotPasswordLimiter }, EventForgotPasswordBlocked, forgotPasswordBlockedMsg)
+}
+
+func RateLimitResetPasswordJSON() gin.HandlerFunc {
+	return jsonLimit(func() RateLimiter { return ResetPasswordLimiter }, EventPasswordResetBlocked, resetPasswordBlockedMsg)
 }
