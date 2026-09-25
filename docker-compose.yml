@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   postgres:
     image: postgres:16-alpine
@@ -50,9 +48,10 @@ services:
     # Только localhost: наружу приложение отдаёт nginx по HTTPS
     ports:
       - "127.0.0.1:8080:8080"
+    # На сервере файлы лежат в ./web/static/*, локально — в ./backend/web/static/* (см. .env)
     volumes:
-      - ./backend/web/static/uploads:/app/web/static/uploads
-      - ./backend/web/static/documents:/app/web/static/documents
+      - ${UPLOADS_DIR:-./web/static/uploads}:/app/web/static/uploads
+      - ${DOCUMENTS_DIR:-./web/static/documents}:/app/web/static/documents
 
 volumes:
   pgdata:
