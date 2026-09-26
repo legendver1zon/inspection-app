@@ -222,7 +222,16 @@ function Defects({ room, roomNumber, templates, actId, onPatch, onPatchSilent }:
     setPickerOpen(false)
   }
 
-  // Стены: чипы отмечают стены, значение общее на все отмеченные.
+  // Стены: чипы отмечают стены. По умолчанию значение общее на все отмеченные,
+  // но его можно раскрыть на каждую стену — так печатает таблицу PDF.
+  const [split, setSplit] = useState<Set<number>>(() => new Set())
+  const setSplitMode = (tplId: number, on: boolean) =>
+    setSplit((s) => {
+      const n = new Set(s)
+      if (on) n.add(tplId)
+      else n.delete(tplId)
+      return n
+    })
   const toggleWall = (tplId: number, w: number) => {
     const on = room.wallsOn[tplId]?.[w] ?? false
     if (on) {
@@ -232,9 +241,10 @@ function Defects({ room, roomNumber, templates, actId, onPatch, onPatchSilent }:
     onPatch((r) => {
       const wallsOn = [...(r.wallsOn[tplId] ?? [false, false, false, false])] as RoomForm['wallsOn'][number]
       const walls = [...(r.walls[tplId] ?? ['', '', '', ''])] as RoomForm['walls'][number]
+      const perWall = split.has(tplId) || wallsDiffer(wallsOn, walls)
       const shared = walls.find((v, i) => wallsOn[i] && v.trim()) ?? ''
       wallsOn[w] = !on
-      walls[w] = on ? '' : shared
+      walls[w] = on || perWall ? '' : shared
       const picked = r.picked.includes(`w${tplId}`) ? r.picked : [...r.picked, `w${tplId}`]
       return { ...r, wallsOn: { ...r.wallsOn, [tplId]: wallsOn }, walls: { ...r.walls, [tplId]: walls }, picked }
     })
@@ -243,6 +253,13 @@ function Defects({ room, roomNumber, templates, actId, onPatch, onPatchSilent }:
     onPatch((r) => {
       const wallsOn = r.wallsOn[tplId] ?? [false, false, false, false]
       const walls = WALLS.map((w) => (wallsOn[w] ? value : '')) as RoomForm['walls'][number]
+      return { ...r, walls: { ...r.walls, [tplId]: walls } }
+    })
+  }
+  const setWallValueAt = (tplId: number, w: number, value: string) => {
+    onPatch((r) => {
+      const walls = [...(r.walls[tplId] ?? ['', '', '', ''])] as RoomForm['walls'][number]
+      walls[w] = value
       return { ...r, walls: { ...r.walls, [tplId]: walls } }
     })
   }
@@ -287,7 +304,8 @@ function Defects({ room, roomNumber, templates, actId, onPatch, onPatchSilent }:
           const vals = room.walls[id] ?? ['', '', '', '']
           const active = WALLS.filter((w) => on[w])
           const shared = vals.find((v, i) => on[i] && v.trim()) ?? ''
-          const differ = active.some((w) => vals[w].trim() !== shared.trim())
+          const perWall = split.has(id) || wallsDiffer(on, vals)
+          const filled = active.filter((w) => vals[w].trim()).length
           const binds: BindRef[] = active.flatMap((w) => (room.binds[`${key}_${w}`] ? [{ key: `${key}_${w}`, bind: room.binds[`${key}_${w}`] }] : []))
           return (
             <DefectShell key={key} name={t?.name ?? 'Дефект из справочника'} sub={`Стены${t?.threshold ? ` · норма ${t.threshold}` : ''}`} onRemove={() => removeCard(key)}>
@@ -299,13 +317,45 @@ function Defects({ room, roomNumber, templates, actId, onPatch, onPatchSilent }:
                 ))}
               </div>
               {active.length === 0 && <span className="text-[12px] font-medium" style={{ color: C.warn }}>Стена не указана — отметьте её выше</span>}
-              <Field label={`Значение${t?.unit ? `, ${t.unit}` : ''}`} hint={valueHint(!!shared.trim())}>
-                <TextInput inputMode={t?.unit ? 'decimal' : undefined} placeholder={t?.unit || 'есть / описание'} value={shared} onChange={(e) => setWallValue(id, e.target.value)} />
-              </Field>
-              {differ && (
-                <span className="text-[12px]" style={{ color: C.faint }}>
-                  Значения по стенам различаются: {active.map((w) => `ст. ${w + 1} — ${vals[w] || '—'}`).join(', ')}. После правки станет общим.
-                </span>
+              {perWall ? (
+                <>
+                  <div className="grid grid-cols-2 gap-2">
+                    {active.map((w) => (
+                      <Field key={w} label={`Ст. ${w + 1}${t?.unit ? `, ${t.unit}` : ''}`}>
+                        <TextInput inputMode={t?.unit ? 'decimal' : undefined} placeholder={t?.unit || 'есть / описание'} value={vals[w]} onChange={(e) => setWallValueAt(id, w, e.target.value)} />
+                      </Field>
+                    ))}
+                  </div>
+                  <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+                    <span className="text-[12px]" style={{ color: filled === active.length ? C.faint : C.warn }}>
+                      {filled === 0 ? 'Без значения дефект не попадёт в акт' : filled < active.length ? 'Стена без значения в акт не попадёт' : 'У каждой стены своё значение'}
+                    </span>
+                    <Button
+                      variant="text"
+                      className="-mr-2 ml-auto h-8 px-2 text-[12px] sm:h-8"
+                      onClick={() => {
+                        if (filled > 1 && !window.confirm(`Оставить «${shared}» на всех стенах?`)) return
+                        setWallValue(id, shared)
+                        setSplitMode(id, false)
+                      }}
+                    >
+                      Одно значение
+                    </Button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <Field label={`Значение${t?.unit ? `, ${t.unit}` : ''}`} hint={valueHint(!!shared.trim())}>
+                    <TextInput inputMode={t?.unit ? 'decimal' : undefined} placeholder={t?.unit || 'есть / описание'} value={shared} onChange={(e) => setWallValue(id, e.target.value)} />
+                  </Field>
+                  {active.length > 1 && (
+                    <div className="flex justify-end">
+                      <Button variant="text" className="-mr-2 h-8 px-2 text-[12px] sm:h-8" onClick={() => setSplitMode(id, true)}>
+                        Разные значения по стенам
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
               <PhotoDock
                 k={photoKey('wall', id, active.length ? active[0] + 1 : 0)}
@@ -362,6 +412,11 @@ function Defects({ room, roomNumber, templates, actId, onPatch, onPatchSilent }:
       />
     </div>
   )
+}
+
+function wallsDiffer(on: readonly boolean[], vals: readonly string[]) {
+  const first = vals.find((v, i) => on[i] && v.trim()) ?? ''
+  return WALLS.some((w) => on[w] && vals[w].trim() !== first.trim())
 }
 
 function DefectShell({ name, chip, sub, onRemove, children }: {
