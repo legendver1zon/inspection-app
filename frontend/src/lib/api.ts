@@ -376,6 +376,9 @@ export const api = {
     fd.append('plan_image', blob, 'plan.jpg')
     guard401(await fetch(`/inspections/${id}/upload-plan`, { method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' } }))
   },
+  deleteDocument: async (id: number) => {
+    guard401(await fetch(`/documents/${id}/delete`, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } }))
+  },
   // Старый обработчик отвечает redirect'ом на HTML-страницу — ответ не читаем,
   // после вызова инвалидируем детали, чтобы подтянулись новые документы
   generatePdf: async (id: number) => {

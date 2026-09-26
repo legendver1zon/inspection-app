@@ -16,6 +16,20 @@ export default function ActView({ user }: { user: User }) {
   const queryClient = useQueryClient()
   const [pdfBusy, setPdfBusy] = useState(false)
   const [statusBusy, setStatusBusy] = useState(false)
+  const [docBusy, setDocBusy] = useState<number | null>(null)
+
+  async function removeDocument(docId: number) {
+    if (!window.confirm('Удалить этот PDF? Файл будет стёрт с сервера.')) return
+    setDocBusy(docId)
+    try {
+      await api.deleteDocument(docId)
+      await queryClient.invalidateQueries({ queryKey: ['inspection', actId] })
+    } catch {
+      window.alert('Не удалось удалить документ. Проверьте связь и попробуйте ещё раз.')
+    } finally {
+      setDocBusy(null)
+    }
+  }
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['inspection', actId],
@@ -233,19 +247,36 @@ export default function ActView({ user }: { user: User }) {
               ) : (
                 <div className="grid gap-2">
                   {act.documents.map((doc) => (
-                    <div key={doc.id} className="flex items-center gap-3 rounded-xl border px-4 py-3" style={{ borderColor: C.line }}>
-                      <span className="grid size-9 place-items-center rounded-lg text-[11px] font-extrabold uppercase" style={{ background: C.accentSoft, color: C.accentDark }}>
+                    <div key={doc.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl border px-3 py-3 sm:px-4" style={{ borderColor: C.line }}>
+                      <span className="grid size-9 flex-none place-items-center rounded-lg text-[11px] font-extrabold uppercase" style={{ background: C.accentSoft, color: C.accentDark }}>
                         {doc.format}
                       </span>
-                      <span className="text-sm font-semibold">Акт № {act.act_number}</span>
-                      <span className="text-[12.5px]" style={{ color: C.faint }}>{doc.created}</span>
+                      <span className="flex min-w-0 flex-1 flex-col">
+                        <span className="truncate text-sm font-semibold">Акт № {act.act_number}</span>
+                        <span className="text-[12.5px] whitespace-nowrap" style={{ color: C.faint }}>{doc.created}</span>
+                      </span>
+                      <span className="flex w-full items-center justify-end gap-2 sm:ml-auto sm:w-auto">
                       <a
                         href={`/documents/${doc.id}/download`}
-                        className="ml-auto rounded-full px-4 py-2 text-[13px] font-extrabold text-white transition-opacity hover:opacity-90"
+                        className="rounded-full px-4 py-2 text-[13px] font-extrabold whitespace-nowrap text-white transition-opacity hover:opacity-90"
                         style={{ background: C.accent }}
                       >
                         Скачать
                       </a>
+                      <button
+                        type="button"
+                        onClick={() => removeDocument(doc.id)}
+                        disabled={docBusy === doc.id}
+                        aria-label="Удалить документ"
+                        title="Удалить"
+                        className="grid size-9 flex-none cursor-pointer place-items-center rounded-full border transition-colors disabled:opacity-50"
+                        style={{ borderColor: C.line, color: C.err }}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3" />
+                        </svg>
+                      </button>
+                      </span>
                     </div>
                   ))}
                 </div>

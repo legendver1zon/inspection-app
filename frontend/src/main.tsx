@@ -9,6 +9,19 @@ import '@fontsource/inter/600.css'
 import '@fontsource/inter/700.css'
 import './index.css'
 
+// Новая версия приложения: Service Worker обновился и взял страницу под
+// контроль — перезагружаем один раз, чтобы не работать на старой сборке.
+// Черновик акта и очередь фото лежат в IndexedDB, поэтому ничего не теряется.
+if ('serviceWorker' in navigator) {
+  const hadController = !!navigator.serviceWorker.controller
+  let reloaded = false
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!hadController || reloaded) return
+    reloaded = true
+    window.location.reload()
+  })
+}
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: { retry: 1, staleTime: 15_000, refetchOnWindowFocus: false },
