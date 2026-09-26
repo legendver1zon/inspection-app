@@ -57,7 +57,7 @@ register / forgot-password / reset-password (старые страницы ра�
 
 **Что сделано:**
 
-- Бэкенд: сессия 30 дней с продлением при активности (`auth.SessionTTL`,
+- Бэкенд: сессия 7 дней с продлением при активности (`auth.SessionTTL`,
   `RenewIfNeeded` в RequireAuth и APIAuth); RequireAuth отвечает 401 JSON
   fetch/XHR-клиентам (`WantsJSON`: X-Requested-With, Accept, Sec-Fetch-Mode)
   вместо редиректа; JSON-API `/api/register`, `/api/forgot-password`,

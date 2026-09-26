@@ -155,7 +155,7 @@ func TestSetAuthCookie_MaxAgeSessionTTL(t *testing.T) {
 		t.Fatal("Cookie не установлена")
 	}
 	if cookies[0].MaxAge != int(SessionTTL.Seconds()) {
-		t.Errorf("MaxAge должен быть %d (30 дней), получено %d", int(SessionTTL.Seconds()), cookies[0].MaxAge)
+		t.Errorf("MaxAge должен быть %d (7 дней), получено %d", int(SessionTTL.Seconds()), cookies[0].MaxAge)
 	}
 }
 

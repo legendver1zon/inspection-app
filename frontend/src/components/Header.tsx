@@ -25,7 +25,7 @@ export default function Header({ user }: { user: User }) {
 
   return (
     <header className="border-b" style={{ background: C.surface, borderColor: C.line }}>
-      <div className="mx-auto flex h-14 max-w-5xl items-center gap-4 px-5">
+      <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-3 gap-y-1.5 px-4 py-2 sm:h-14 sm:flex-nowrap sm:gap-4 sm:px-5 sm:py-0">
         <Link to="/inspections" className="flex items-center gap-2.5 font-extrabold" style={{ color: C.ink }}>
           <span className="grid size-8 place-items-center rounded-lg text-sm font-black text-white" style={{ background: C.accent }}>
             А
@@ -33,7 +33,10 @@ export default function Header({ user }: { user: User }) {
           <span className="hidden sm:block">АктОсмотр</span>
         </Link>
 
-        <nav className="flex gap-1" aria-label="Основная навигация">
+        <nav
+          className="order-last -mx-1 flex w-full gap-1 overflow-x-auto px-1 [scrollbar-width:none] sm:order-none sm:mx-0 sm:w-auto sm:px-0 [&::-webkit-scrollbar]:hidden"
+          aria-label="Основная навигация"
+        >
           {links.map(([to, label]) => {
             const active = pathname.startsWith(to)
             return (
@@ -41,7 +44,7 @@ export default function Header({ user }: { user: User }) {
                 key={to}
                 to={to}
                 aria-current={active ? 'page' : undefined}
-                className="rounded-full px-3.5 py-2 text-[13.5px] font-bold transition-colors"
+                className="rounded-full px-3.5 py-2 text-[13.5px] font-bold whitespace-nowrap transition-colors"
                 style={active ? { background: C.accentSoft, color: C.accentDark } : { color: C.muted }}
               >
                 {label}
