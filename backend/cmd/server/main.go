@@ -260,6 +260,7 @@ func main() {
 		{
 			apiAuthed.GET("/me", handlers.APIMe)
 			apiAuthed.GET("/inspections", handlers.APIListInspections)
+			apiAuthed.POST("/inspections", handlers.APICreateInspection)
 			apiAuthed.GET("/inspections/:id", handlers.APIGetInspection)
 			apiAuthed.GET("/inspections/:id/edit-data", handlers.APIGetEditData)
 			apiAuthed.GET("/dashboard", handlers.APIDashboard)

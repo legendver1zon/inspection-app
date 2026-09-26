@@ -1,7 +1,9 @@
 import { useDeferredValue, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { api, type ActCard, type User } from '../lib/api'
+import { api, ApiError, type ActCard, type User } from '../lib/api'
+import { useOnline } from '../lib/online'
 import { C } from '../lib/palette'
 import Header from '../components/Header'
 
@@ -15,6 +17,23 @@ type Filter = 'all' | 'draft' | 'completed'
 export default function V1Inspections({ user }: { user: User }) {
   const [q, setQ] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
+  const navigate = useNavigate()
+  const online = useOnline()
+  const [creating, setCreating] = useState(false)
+  const [createError, setCreateError] = useState('')
+
+  // Новый акт создаётся на сервере (номер берётся из id записи), поэтому без сети недоступен
+  async function createAct() {
+    setCreating(true)
+    setCreateError('')
+    try {
+      const { id } = await api.createInspection()
+      navigate(`/inspections/${id}/edit`)
+    } catch (e) {
+      setCreateError(e instanceof ApiError ? e.message : 'Не удалось создать осмотр: нет связи с сервером')
+      setCreating(false)
+    }
+  }
   const deferredQ = useDeferredValue(q)
 
   const { data, isLoading } = useQuery({
@@ -93,14 +112,22 @@ export default function V1Inspections({ user }: { user: User }) {
               </button>
             ))}
           </div>
-          <a
-            href="/inspections/new"
-            className="rounded-full px-5 py-3 text-[14px] font-extrabold text-white transition-opacity hover:opacity-90"
+          <button
+            type="button"
+            onClick={createAct}
+            disabled={creating || !online}
+            title={online ? undefined : 'Создание акта требует связи с сервером'}
+            className="cursor-pointer rounded-full px-5 py-3 text-[14px] font-extrabold text-white transition-opacity hover:opacity-90 disabled:cursor-default disabled:opacity-50"
             style={{ background: C.ink }}
           >
-            ＋ Осмотр
-          </a>
+            {creating ? 'Создаём…' : '＋ Осмотр'}
+          </button>
         </div>
+        {createError && (
+          <div className="mb-4 rounded-xl px-4 py-3 text-[13px] font-semibold" role="alert" style={{ background: C.errBg, color: C.err }}>
+            {createError}
+          </div>
+        )}
 
         {/* Лента по дням */}
         {isLoading ? (

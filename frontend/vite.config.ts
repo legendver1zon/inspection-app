@@ -37,7 +37,7 @@ export default defineConfig({
         clientsClaim: true,
         skipWaiting: true,
         navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//, /^\/photos\//, /^\/documents\//, /^\/static\//, /^\/defects\//, /^\/healthz/, /^\/assets\//, /\.[a-z0-9]+$/i],
+        navigateFallbackDenylist: [/^\/inspections\/new$/, /^\/api\//, /^\/photos\//, /^\/documents\//, /^\/static\//, /^\/defects\//, /^\/healthz/, /^\/assets\//, /\.[a-z0-9]+$/i],
         globPatterns: ['**/*.{js,css,html,png,svg,woff2}'],
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
         cleanupOutdatedCaches: true,

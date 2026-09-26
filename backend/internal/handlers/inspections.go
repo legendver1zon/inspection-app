@@ -226,16 +226,16 @@ func GetInspections(c *gin.Context) {
 	})
 }
 
-// GetNewInspection — сразу создаёт пустой осмотр и редиректит на редактирование.
-// Номер акта формируется из ID записи (гарантированно уникален, без race condition).
-func GetNewInspection(c *gin.Context) {
+// createDraftInspection — создаёт пустой осмотр. Номер акта формируется из ID
+// записи (гарантированно уникален, без race condition). Возвращает статус и
+// текст ошибки, если создать нельзя (лимит или сбой БД).
+func createDraftInspection(c *gin.Context) (models.Inspection, int, string) {
 	userID := c.GetUint("userID")
 	role := c.GetString("userRole")
 
 	if allowed, msg := security.CheckInspectionLimit(userID, role); !allowed {
 		security.Log(security.EventInspectionBlocked, c.ClientIP(), "userID="+strconv.Itoa(int(userID)))
-		c.JSON(http.StatusTooManyRequests, gin.H{"error": msg})
-		return
+		return models.Inspection{}, http.StatusTooManyRequests, msg
 	}
 
 	inspection := models.Inspection{
@@ -249,16 +249,33 @@ func GetNewInspection(c *gin.Context) {
 		if err := tx.Create(&inspection).Error; err != nil {
 			return err
 		}
-		actNumber := strconv.FormatUint(uint64(inspection.ID), 10) + "-" + time.Now().Format("020106")
-		return tx.Model(&inspection).Update("act_number", actNumber).Error
+		inspection.ActNumber = strconv.FormatUint(uint64(inspection.ID), 10) + "-" + time.Now().Format("020106")
+		return tx.Model(&inspection).Update("act_number", inspection.ActNumber).Error
 	})
-
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания"})
+		return models.Inspection{}, http.StatusInternalServerError, "Ошибка создания"
+	}
+	return inspection, http.StatusOK, ""
+}
+
+// GetNewInspection — сразу создаёт пустой осмотр и редиректит на редактирование.
+func GetNewInspection(c *gin.Context) {
+	inspection, status, msg := createDraftInspection(c)
+	if msg != "" {
+		c.JSON(status, gin.H{"error": msg})
 		return
 	}
-
 	c.Redirect(http.StatusFound, "/inspections/"+strconv.FormatUint(uint64(inspection.ID), 10)+"/edit")
+}
+
+// APICreateInspection — POST /api/inspections: то же создание для React-фронта.
+func APICreateInspection(c *gin.Context) {
+	inspection, status, msg := createDraftInspection(c)
+	if msg != "" {
+		c.JSON(status, gin.H{"error": msg})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"id": inspection.ID, "act_number": inspection.ActNumber})
 }
 
 // ArchivedDefect — удалённый дефект с фото для блока архива в view.html.

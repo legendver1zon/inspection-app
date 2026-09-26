@@ -262,6 +262,7 @@ export const api = {
   },
   inspection: (id: number) =>
     request<{ inspection: InspectionDetail }>(`/api/inspections/${id}`),
+  createInspection: () => request<{ id: number; act_number: string }>('/api/inspections', { method: 'POST' }),
   editData: (id: number) => request<EditData>(`/api/inspections/${id}/edit-data`),
   checkActNumber: (id: number, value: string) =>
     request<{ taken: boolean; other_id?: number }>(
