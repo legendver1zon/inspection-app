@@ -219,8 +219,29 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ email, password }),
     }),
-  logout: () => request<{ ok: boolean }>('/api/logout', { method: 'POST' }),
-  me: () => request<{ user: User }>('/api/me'),
+  logout: async () => {
+    const r = await request<{ ok: boolean }>('/api/logout', { method: 'POST' })
+    try { localStorage.removeItem('me') } catch { /* ignore */ }
+    return r
+  },
+  // Без сети сервер недоступен, но сессия жива: берём пользователя из
+  // последнего успешного ответа, чтобы не выкидывать на вход
+  me: async () => {
+    try {
+      const r = await request<{ user: User }>('/api/me')
+      try { localStorage.setItem('me', JSON.stringify(r.user)) } catch { /* ignore */ }
+      return r
+    } catch (e) {
+      if (e instanceof ApiError) {
+        if (e.status === 401) { try { localStorage.removeItem('me') } catch { /* ignore */ } }
+        throw e
+      }
+      let cached: string | null = null
+      try { cached = localStorage.getItem('me') } catch { /* ignore */ }
+      if (cached) return { user: JSON.parse(cached) as User }
+      throw e
+    }
+  },
   register: (body: {
     email: string
     password: string
@@ -281,6 +302,45 @@ export const api = {
       xhr.onerror = () => reject(new ApiError(0, 'Сеть недоступна'))
       xhr.ontimeout = () => reject(new ApiError(408, 'Слишком долгая отправка, попробуем ещё раз'))
       const fd = new FormData()
+      fd.append('photo', blob, name)
+      xhr.send(fd)
+    }),
+  // Загрузка по ключу помещение/раздел/шаблон/стена: id дефекта меняется при
+  // каждом сохранении формы, а ключ стабилен; client_id защищает от дублей
+  uploadPhotoByKey: (
+    k: { actId: number; roomNumber: number; section: string; templateId: number | null; wallNumber: number },
+    blob: Blob,
+    name: string,
+    clientId: string,
+    onProgress?: (pct: number) => void,
+    timeoutMs = 120_000,
+  ) =>
+    new Promise<{ photo: PhotoRef; defectId: number }>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', `/inspections/${k.actId}/photos`)
+      xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest')
+      xhr.timeout = timeoutMs
+      xhr.upload.onprogress = (e) => {
+        if (e.lengthComputable && onProgress) onProgress(Math.round((e.loaded / e.total) * 100))
+      }
+      xhr.onload = () => {
+        if (xhr.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
+        try {
+          const body = JSON.parse(xhr.responseText)
+          if (xhr.status === 200) resolve({ photo: { id: body.id, status: 'pending' }, defectId: body.defect_id })
+          else reject(new ApiError(xhr.status, body.error ?? 'Ошибка загрузки'))
+        } catch {
+          reject(new ApiError(xhr.status, xhr.status === 413 ? 'Файл слишком большой' : 'Ошибка загрузки'))
+        }
+      }
+      xhr.onerror = () => reject(new ApiError(0, 'Сеть недоступна'))
+      xhr.ontimeout = () => reject(new ApiError(408, 'Слишком долгая отправка, попробуем ещё раз'))
+      const fd = new FormData()
+      fd.append('room_number', String(k.roomNumber))
+      fd.append('section', k.section)
+      fd.append('template_id', k.templateId == null ? '' : String(k.templateId))
+      fd.append('wall_number', String(k.wallNumber))
+      fd.append('client_id', clientId)
       fd.append('photo', blob, name)
       xhr.send(fd)
     }),

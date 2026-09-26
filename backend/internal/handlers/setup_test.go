@@ -87,6 +87,7 @@ func setupRouter(t *testing.T) *gin.Engine {
 		protected.POST("/inspections/:id/edit", PostEditInspection)
 		protected.GET("/api/inspections/:id/check-act-number", GetCheckActNumber)
 		protected.POST("/inspections/:id/generate", PostGenerateDocument)
+		protected.POST("/inspections/:id/photos", PostUploadInspectionPhoto)
 
 		protected.POST("/documents/:id/delete", PostDeleteDocument)
 		protected.GET("/documents/:id/download", GetDownloadDocument)

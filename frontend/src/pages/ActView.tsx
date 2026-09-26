@@ -196,7 +196,7 @@ export default function ActView({ user }: { user: User }) {
 
                     {room.defects.length > 0 && (
                       <div className="grid gap-2.5">
-                        {room.defects.map((d) => <DefectRow key={d.id} defect={d} />)}
+                        {room.defects.filter((d) => d.value || d.notes || d.photos.length > 0).map((d) => <DefectRow key={d.id} defect={d} />)}
                       </div>
                     )}
                   </motion.section>

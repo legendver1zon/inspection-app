@@ -58,14 +58,15 @@ type Inspection struct {
 // Photo — фотография дефекта
 type Photo struct {
 	gorm.Model
-	DefectID      uint       `gorm:"not null;index"`
-	FileURL       string     // публичная ссылка на файл (после синхронизации с облаком)
-	FilePath      string     // локальный путь до файла (до синхронизации)
+	DefectID      uint   `gorm:"not null;index"`
+	FileURL       string // публичная ссылка на файл (после синхронизации с облаком)
+	FilePath      string // локальный путь до файла (до синхронизации)
 	FileName      string
 	UploadStatus  string     `gorm:"not null;default:'done';index"` // pending | uploading | done | failed
 	RetryCount    int        `gorm:"not null;default:0"`
 	LastError     string     // последняя ошибка загрузки (для диагностики)
 	LastAttemptAt *time.Time // время последней попытки загрузки
+	ClientID      *string    `gorm:"size:64;uniqueIndex"` // идентификатор из офлайн-очереди клиента (идемпотентность)
 }
 
 // InspectionRoom — помещение (основная единица, содержит замеры и дефекты)
@@ -120,8 +121,8 @@ type RoomDefect struct {
 	DefectTemplate   DefectTemplate `gorm:"foreignKey:DefectTemplateID"`
 	Section          string         // window | ceiling | wall | floor | door | plumbing
 	Value            string
-	WallNumber       int    // 0 = не стена, 1-4 = ст1-ст4
-	Notes            string // текст поля "Прочее"
+	WallNumber       int     // 0 = не стена, 1-4 = ст1-ст4
+	Notes            string  // текст поля "Прочее"
 	Photos           []Photo `gorm:"foreignKey:DefectID"`
 }
 

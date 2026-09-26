@@ -1,7 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { api } from '../../lib/api'
 import { C } from '../../lib/palette'
-import { isActive, uploadQueue, useUploadQueue } from '../../lib/uploadQueue'
+import { isActive, uploadQueue, useUploadQueue, type PhotoKey } from '../../lib/uploadQueue'
 import PhotoThumb from '../../components/PhotoThumb'
 import { Button, CameraIcon, CloseIcon } from './ui'
 import type { DefectBind } from './form'
@@ -11,38 +11,53 @@ export interface BindRef {
   bind: DefectBind
 }
 
-// Фото дефекта: миниатюры, очередь отправки, кнопка «Добавить фото».
-// Для стенового дефекта binds — записи всех отмеченных стен, загрузка идёт
-// в первую из них.
-export default function PhotoDock({ actId, binds, canUpload, hint, onBind }: {
-  actId: number
+const previews = new Map<string, string>()
+function previewUrl(key: string, blob?: Blob) {
+  if (!blob) return undefined
+  let u = previews.get(key)
+  if (!u) {
+    u = URL.createObjectURL(blob)
+    previews.set(key, u)
+  }
+  return u
+}
+
+// Фото дефекта: миниатюры, очередь отправки (с превью), кнопка «Добавить фото».
+// Загрузка адресуется ключом помещение/раздел/шаблон/стена, поэтому фото
+// можно снимать сразу после выбора дефекта и без сети — уйдут позже.
+export default function PhotoDock({ k, bindKey, binds, canUpload, hint, onBind }: {
+  k: PhotoKey
+  bindKey: string
   binds: BindRef[]
   canUpload: boolean
   hint?: string
   onBind: (key: string, b: DefectBind) => void
 }) {
   const inputRef = useRef<HTMLInputElement>(null)
-  const ids = binds.map((b) => b.bind.defectId)
-  const items = useUploadQueue().filter((i) => ids.includes(i.defectId))
-  const target = binds[0]
-  const prevTarget = useRef(target?.bind.defectId)
+  const all = useUploadQueue()
+  const items = useMemo(
+    () => all.filter((i) => i.actId === k.actId && i.roomNumber === k.roomNumber && i.section === k.section && (i.templateId ?? null) === (k.templateId ?? null)),
+    [all, k.actId, k.roomNumber, k.section, k.templateId],
+  )
 
-  // Автосейв пересоздаёт дефекты с новыми id — переводим очередь на новый id
-  useEffect(() => {
-    const cur = target?.bind.defectId
-    if (prevTarget.current && cur && prevTarget.current !== cur) uploadQueue.rebind(prevTarget.current, cur)
-    prevTarget.current = cur
-  }, [target?.bind.defectId])
-
-  // Готовые фото из очереди переносим в привязку дефекта
+  // Готовые фото из очереди переносим в привязку дефекта (создавая её, если
+  // дефект появился на сервере только что)
   useEffect(() => {
     for (const it of items) {
       if (it.status !== 'done' || !it.photo) continue
-      const ref = binds.find((b) => b.bind.defectId === it.defectId) ?? target
-      if (ref && !ref.bind.photos.some((p) => p.id === it.photo!.id)) {
-        onBind(ref.key, { ...ref.bind, photos: [...ref.bind.photos, it.photo] })
+      const targetKey = k.section === 'wall' && it.wallNumber > 0 ? `${bindKey.split('_')[0]}_${it.wallNumber - 1}` : bindKey
+      const ref = binds.find((b) => b.key === targetKey)
+      if (ref) {
+        if (!ref.bind.photos.some((p) => p.id === it.photo!.id)) onBind(targetKey, { ...ref.bind, photos: [...ref.bind.photos, it.photo] })
+      } else if (it.defectId) {
+        onBind(targetKey, { defectId: it.defectId, photos: [it.photo] })
       }
       uploadQueue.ack(it.key)
+      const u = previews.get(it.key)
+      if (u) {
+        URL.revokeObjectURL(u)
+        previews.delete(it.key)
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items])
@@ -51,6 +66,7 @@ export default function PhotoDock({ actId, binds, canUpload, hint, onBind }: {
   const total = photos.length
   const pending = items.filter((u) => u.status !== 'done')
   const failed = pending.find((u) => u.status === 'failed' || u.status === 'auth')
+  const sending = pending.filter(isActive).length
 
   async function remove(key: string, bind: DefectBind, photoId: number) {
     if (!window.confirm('Удалить фото?')) return
@@ -63,8 +79,8 @@ export default function PhotoDock({ actId, binds, canUpload, hint, onBind }: {
   }
 
   function handleFiles(files: FileList | null) {
-    if (!files || !target) return
-    uploadQueue.enqueue(actId, target.bind.defectId, Array.from(files))
+    if (!files) return
+    uploadQueue.enqueue(k, Array.from(files))
     if (inputRef.current) inputRef.current.value = ''
   }
 
@@ -95,14 +111,21 @@ export default function PhotoDock({ actId, binds, canUpload, hint, onBind }: {
           ))}
           {pending.map((u) => {
             const bad = u.status === 'failed' || u.status === 'auth'
+            const src = previewUrl(u.key, u.blob ?? u.file)
             return (
               <span
                 key={u.key}
                 title={u.error || u.name}
-                className="relative grid size-[84px] place-items-center rounded-lg border text-[12px] font-semibold sm:size-20"
-                style={{ borderColor: bad ? C.err : C.line, background: C.track, color: bad ? C.err : C.muted }}
+                className="relative block size-[84px] overflow-hidden rounded-lg border sm:size-20"
+                style={{ borderColor: bad ? C.err : C.line, background: C.track }}
               >
-                {u.status === 'uploading' ? `${u.pct}%` : u.status === 'compressing' ? '…' : bad ? '!' : u.attempts > 0 ? `↻${u.attempts}` : '⏳'}
+                {src && <img src={src} alt="" className="size-full object-cover" style={{ opacity: 0.55 }} />}
+                <span
+                  className="absolute inset-x-0 bottom-0 px-1 py-0.5 text-center text-[11px] font-bold"
+                  style={{ background: 'rgba(255,255,255,.85)', color: bad ? C.err : C.muted }}
+                >
+                  {u.status === 'uploading' ? `${u.pct}%` : u.status === 'compressing' ? '…' : bad ? 'не ушло' : navigator.onLine ? 'в очереди' : 'ждёт сеть'}
+                </span>
                 {bad && (
                   <button
                     type="button"
@@ -121,12 +144,13 @@ export default function PhotoDock({ actId, binds, canUpload, hint, onBind }: {
       )}
 
       <div className="flex flex-wrap items-center gap-3">
-        <Button icon={<CameraIcon />} disabled={!canUpload || !target} onClick={() => inputRef.current?.click()}>
-          {total > 0 ? 'Ещё фото' : 'Добавить фото'}
+        <Button icon={<CameraIcon />} disabled={!canUpload} onClick={() => inputRef.current?.click()}>
+          {total > 0 || pending.length > 0 ? 'Ещё фото' : 'Добавить фото'}
         </Button>
-        {total > 0 && (
+        {(total > 0 || sending > 0) && (
           <span className="text-[12px]" style={{ color: C.muted }}>
-            {total} фото{pending.some(isActive) ? ` · отправляется ${pending.filter(isActive).length}` : ''}
+            {total > 0 && `${total} фото`}
+            {sending > 0 && `${total > 0 ? ' · ' : ''}отправляется ${sending}`}
           </span>
         )}
         {!canUpload && hint && <span className="text-[12px]" style={{ color: C.faint }}>{hint}</span>}

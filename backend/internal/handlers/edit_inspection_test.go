@@ -88,11 +88,11 @@ func TestPostEditInspection_SavesRoomsAndHeader(t *testing.T) {
 	insp := newInspection(t, user.ID, "ул. Старая, 1", "Владелец", "draft", time.Now())
 
 	body, ct := buildEditForm(2, map[string]string{
-		"address":      "ул. Новая, 10",
-		"owner_name":   "Петров Пётр",
+		"address":       "ул. Новая, 10",
+		"owner_name":    "Петров Пётр",
 		"general_notes": "Всё хорошо",
-		"room_name_1":  "Кухня",
-		"room_name_2":  "Зал",
+		"room_name_1":   "Кухня",
+		"room_name_2":   "Зал",
 	})
 
 	w := doEditPost(router, insp.ID, body, ct, tok)
@@ -145,10 +145,10 @@ func TestPostEditInspection_SavesDefects(t *testing.T) {
 
 	defectKey := fmt.Sprintf("defect_%d_1", tmpl.ID)
 	body, ct := buildEditForm(1, map[string]string{
-		"address":    "ул. Дефект, 5",
-		"owner_name": "Хозяев",
+		"address":     "ул. Дефект, 5",
+		"owner_name":  "Хозяев",
 		"room_name_1": "Спальня",
-		defectKey:    "2 мм",
+		defectKey:     "2 мм",
 	})
 
 	w := doEditPost(router, insp.ID, body, ct, tok)
@@ -187,8 +187,8 @@ func TestPostEditInspection_ReplacesOldRooms(t *testing.T) {
 
 	// Первое сохранение — 1 комната
 	body1, ct1 := buildEditForm(1, map[string]string{
-		"address":    "ул. Замена, 3",
-		"owner_name": "Старый",
+		"address":     "ул. Замена, 3",
+		"owner_name":  "Старый",
 		"room_name_1": "Старая комната",
 	})
 	doEditPost(router, insp.ID, body1, ct1, tok)
@@ -201,8 +201,8 @@ func TestPostEditInspection_ReplacesOldRooms(t *testing.T) {
 
 	// Второе сохранение — 3 комнаты
 	body2, ct2 := buildEditForm(3, map[string]string{
-		"address":    "ул. Замена, 3",
-		"owner_name": "Новый",
+		"address":     "ул. Замена, 3",
+		"owner_name":  "Новый",
 		"room_name_1": "Новая 1",
 		"room_name_2": "Новая 2",
 		"room_name_3": "Новая 3",
@@ -627,8 +627,8 @@ func TestPostEditInspection_PartialData_SavesNormally(t *testing.T) {
 
 	// active_rooms=1, address есть, owner_name пустой — это валидная форма
 	body, ct := buildEditForm(1, map[string]string{
-		"address":    "ул. Обновлённая, 5",
-		"owner_name": "",
+		"address":     "ул. Обновлённая, 5",
+		"owner_name":  "",
 		"room_name_1": "Прихожая",
 	})
 
@@ -718,5 +718,140 @@ func TestCheckActNumber_Free(t *testing.T) {
 	}
 	if !strings.Contains(wSame.Body.String(), `"taken":false`) {
 		t.Errorf("свой же номер: want taken:false, got %s", wSame.Body.String())
+	}
+}
+
+// --- Заготовки дефектов: picked_* без значения ---
+
+func roomDefects(t *testing.T, inspID uint, roomNumber int) []models.RoomDefect {
+	t.Helper()
+	var room models.InspectionRoom
+	if err := storage.DB.Where("inspection_id = ? AND room_number = ?", inspID, roomNumber).First(&room).Error; err != nil {
+		t.Fatalf("room %d: %v", roomNumber, err)
+	}
+	var defects []models.RoomDefect
+	storage.DB.Where("room_id = ?", room.ID).Order("id").Find(&defects)
+	return defects
+}
+
+func TestPostEditInspection_PickedWithoutValue_CreatesEmptyDefect(t *testing.T) {
+	setupTestDB(t)
+	router := setupRouter(t)
+
+	user := newUser(t, "picked-empty@test.com", "pass", "Заготовкин Тест", models.RoleInspector)
+	tok := tokenFor(t, user.ID, "inspector")
+	insp := newInspection(t, user.ID, "ул. Заготовок, 1", "Хозяев", "draft", time.Now())
+
+	tmpl := newDefectTemplate(t, "window", "Царапина на стекле")
+	wallTmpl := newDefectTemplate(t, "wall", "Отклонение от вертикали")
+
+	body, ct := buildEditForm(1, map[string]string{
+		"address":                           "ул. Заготовок, 1",
+		"owner_name":                        "Хозяев",
+		fmt.Sprintf("picked_%d_1", tmpl.ID): "1",
+		fmt.Sprintf("picked_%d_1_wall3", wallTmpl.ID): "1",
+		"picked_notes_ceiling_1":                      "1",
+	})
+	if w := doEditPost(router, insp.ID, body, ct, tok); w.Code != http.StatusFound {
+		t.Fatalf("want 302, got %d: %s", w.Code, w.Body.String())
+	}
+
+	defects := roomDefects(t, insp.ID, 1)
+	if len(defects) != 3 {
+		t.Fatalf("defects: want 3, got %d: %+v", len(defects), defects)
+	}
+	type key struct {
+		section string
+		tmpl    uint
+		wall    int
+	}
+	got := map[key]models.RoomDefect{}
+	for _, d := range defects {
+		var tid uint
+		if d.DefectTemplateID != nil {
+			tid = *d.DefectTemplateID
+		}
+		got[key{d.Section, tid, d.WallNumber}] = d
+	}
+	simple, ok := got[key{"window", tmpl.ID, 0}]
+	if !ok || simple.Value != "" {
+		t.Errorf("простой picked-дефект: want пустое value, got %+v (found=%v)", simple, ok)
+	}
+	wall, ok := got[key{"wall", wallTmpl.ID, 3}]
+	if !ok || wall.Value != "" {
+		t.Errorf("picked-дефект стены 3: want пустое value, got %+v (found=%v)", wall, ok)
+	}
+	notes, ok := got[key{"ceiling", 0, 0}]
+	if !ok || notes.Notes != "" || notes.DefectTemplateID != nil {
+		t.Errorf("picked «Прочее»: want nil template и пустые notes, got %+v (found=%v)", notes, ok)
+	}
+}
+
+func TestPostEditInspection_PickedWithoutValue_KeepsPhotoOnResave(t *testing.T) {
+	setupTestDB(t)
+	router := setupRouter(t)
+
+	user := newUser(t, "picked-photo@test.com", "pass", "Фотов Тест", models.RoleInspector)
+	tok := tokenFor(t, user.ID, "inspector")
+	insp := newInspection(t, user.ID, "ул. Фото, 2", "Хозяев", "draft", time.Now())
+	tmpl := newDefectTemplate(t, "floor", "Скол плитки")
+
+	fields := map[string]string{
+		"address":                           "ул. Фото, 2",
+		"owner_name":                        "Хозяев",
+		fmt.Sprintf("picked_%d_1", tmpl.ID): "1",
+	}
+	body, ct := buildEditForm(1, fields)
+	if w := doEditPost(router, insp.ID, body, ct, tok); w.Code != http.StatusFound {
+		t.Fatalf("first save: want 302, got %d", w.Code)
+	}
+	first := roomDefects(t, insp.ID, 1)
+	if len(first) != 1 {
+		t.Fatalf("first save: want 1 defect, got %d", len(first))
+	}
+	photo := models.Photo{DefectID: first[0].ID, FileName: "p.jpg", FileURL: "/static/p.jpg", UploadStatus: "pending"}
+	if err := storage.DB.Create(&photo).Error; err != nil {
+		t.Fatalf("create photo: %v", err)
+	}
+
+	body, ct = buildEditForm(1, fields)
+	if w := doEditPost(router, insp.ID, body, ct, tok); w.Code != http.StatusFound {
+		t.Fatalf("second save: want 302, got %d", w.Code)
+	}
+	second := roomDefects(t, insp.ID, 1)
+	if len(second) != 1 || second[0].ID == first[0].ID || second[0].Value != "" {
+		t.Fatalf("second save: want 1 new empty defect, got %+v", second)
+	}
+
+	var reloaded models.Photo
+	storage.DB.First(&reloaded, photo.ID)
+	if reloaded.DefectID != second[0].ID {
+		t.Errorf("фото должно перепривязаться к новому дефекту %d, got defect_id=%d", second[0].ID, reloaded.DefectID)
+	}
+}
+
+func TestPostEditInspection_NotPickedNoValue_NoDefect(t *testing.T) {
+	setupTestDB(t)
+	router := setupRouter(t)
+
+	user := newUser(t, "not-picked@test.com", "pass", "Пустов Тест", models.RoleInspector)
+	tok := tokenFor(t, user.ID, "inspector")
+	insp := newInspection(t, user.ID, "ул. Пустая, 3", "Хозяев", "draft", time.Now())
+	tmpl := newDefectTemplate(t, "door", "Перекос полотна")
+	wallTmpl := newDefectTemplate(t, "wall", "Трещина")
+
+	body, ct := buildEditForm(1, map[string]string{
+		"address":                                     "ул. Пустая, 3",
+		"owner_name":                                  "Хозяев",
+		fmt.Sprintf("defect_%d_1", tmpl.ID):           "",
+		fmt.Sprintf("picked_%d_1", tmpl.ID):           "0",
+		fmt.Sprintf("defect_%d_1_wall2", wallTmpl.ID): "",
+		"notes_ceiling_1":                             "",
+	})
+	if w := doEditPost(router, insp.ID, body, ct, tok); w.Code != http.StatusFound {
+		t.Fatalf("want 302, got %d", w.Code)
+	}
+	if defects := roomDefects(t, insp.ID, 1); len(defects) != 0 {
+		t.Errorf("без флага и значения дефектов быть не должно, got %+v", defects)
 	}
 }

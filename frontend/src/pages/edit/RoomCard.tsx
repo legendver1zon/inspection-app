@@ -1,8 +1,9 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { DefectTemplate } from '../../lib/api'
 import { C } from '../../lib/palette'
 import DefectPicker from './DefectPicker'
 import PhotoDock, { type BindRef } from './PhotoDock'
+import { useUploadQueue, type PhotoKey } from '../../lib/uploadQueue'
 import {
   SECTIONS, SECTION_LABEL, WALLS, WALL_TYPES, WINDOW_TYPES,
   defectCount, measured, photoCount, plural, windowsCount,
@@ -46,7 +47,7 @@ export default function RoomCard({ room, index, templates, actId, open, onToggle
         </Field>
         <RoomParams room={room} onPatch={onPatch} />
         <span className="text-[14px] font-semibold">Дефекты{nDef > 0 && ` · ${nDef}`}</span>
-        <Defects room={room} templates={templates} actId={actId} onPatch={onPatch} onPatchSilent={onPatchSilent} />
+        <Defects room={room} roomNumber={index} templates={templates} actId={actId} onPatch={onPatch} onPatchSilent={onPatchSilent} />
         {onRemove && (
           <div className="flex justify-end">
             <Button variant="danger" icon={<TrashIcon />} onClick={() => { if (window.confirm('Удалить помещение вместе с дефектами и фото?')) onRemove() }}>
@@ -162,8 +163,9 @@ function RoomParams({ room, onPatch }: { room: RoomForm; onPatch: Patch }) {
 
 /* ===== Дефекты помещения ===== */
 
-function Defects({ room, templates, actId, onPatch, onPatchSilent }: {
+function Defects({ room, roomNumber, templates, actId, onPatch, onPatchSilent }: {
   room: RoomForm
+  roomNumber: number
   templates: DefectTemplate[]
   actId: number
   onPatch: Patch
@@ -171,6 +173,30 @@ function Defects({ room, templates, actId, onPatch, onPatchSilent }: {
 }) {
   const [pickerOpen, setPickerOpen] = useState(false)
   const tplById = useMemo(() => new Map(templates.map((t) => [t.id, t])), [templates])
+
+  // Фото, ждущие отправки, должны быть видны даже если их карточка потерялась
+  // (например, черновик стёрт): достраиваем выбранные дефекты по очереди
+  const queued = useUploadQueue()
+  useEffect(() => {
+    const mine = queued.filter((i) => i.actId === actId && i.roomNumber === roomNumber && i.status !== 'done')
+    if (mine.length === 0) return
+    onPatch((r) => {
+      let next = r
+      for (const i of mine) {
+        const key = i.templateId == null ? `n${i.section}` : i.section === 'wall' ? `w${i.templateId}` : `s${i.templateId}`
+        if (!next.picked.includes(key)) next = { ...next, picked: [...next.picked, key] }
+        if (i.section === 'wall' && i.templateId != null && i.wallNumber >= 1) {
+          const on = [...(next.wallsOn[i.templateId] ?? [false, false, false, false])] as RoomForm['wallsOn'][number]
+          if (!on[i.wallNumber - 1]) {
+            on[i.wallNumber - 1] = true
+            next = { ...next, wallsOn: { ...next.wallsOn, [i.templateId]: on } }
+          }
+        }
+      }
+      return next
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queued.length])
   const sectionOrder = useMemo(() => new Map(SECTIONS.map(([s], i) => [s, i])), [])
 
   const cards = useMemo(() => {
@@ -244,11 +270,8 @@ function Defects({ room, templates, actId, onPatch, onPatchSilent }: {
     })
   }
 
-  const valueHint = (hasValue: boolean, bound: boolean) => {
-    if (!hasValue) return 'Без значения дефект не попадёт в акт'
-    if (!bound) return 'Фото можно будет добавить после сохранения'
-    return undefined
-  }
+  const valueHint = (hasValue: boolean) => (hasValue ? undefined : 'Без значения дефект не попадёт в акт')
+  const photoKey = (section: string, templateId: number | null, wallNumber = 0): PhotoKey => ({ actId, roomNumber, section, templateId, wallNumber })
 
   return (
     <div className="flex flex-col gap-2.5">
@@ -276,7 +299,7 @@ function Defects({ room, templates, actId, onPatch, onPatchSilent }: {
                 ))}
               </div>
               {active.length === 0 && <span className="text-[12px] font-medium" style={{ color: C.warn }}>Стена не указана — отметьте её выше</span>}
-              <Field label={`Значение${t?.unit ? `, ${t.unit}` : ''}`} hint={valueHint(!!shared.trim(), binds.length > 0)}>
+              <Field label={`Значение${t?.unit ? `, ${t.unit}` : ''}`} hint={valueHint(!!shared.trim())}>
                 <TextInput inputMode={t?.unit ? 'decimal' : undefined} placeholder={t?.unit || 'есть / описание'} value={shared} onChange={(e) => setWallValue(id, e.target.value)} />
               </Field>
               {differ && (
@@ -284,7 +307,14 @@ function Defects({ room, templates, actId, onPatch, onPatchSilent }: {
                   Значения по стенам различаются: {active.map((w) => `ст. ${w + 1} — ${vals[w] || '—'}`).join(', ')}. После правки станет общим.
                 </span>
               )}
-              <PhotoDock actId={actId} binds={binds} canUpload={binds.length > 0} onBind={setBind} />
+              <PhotoDock
+                k={photoKey('wall', id, active.length ? active[0] + 1 : 0)}
+                bindKey={`${key}_${active[0] ?? 0}`}
+                binds={binds}
+                canUpload={active.length > 0}
+                hint="сначала отметьте стену"
+                onBind={setBind}
+              />
             </DefectShell>
           )
         }
@@ -295,10 +325,10 @@ function Defects({ room, templates, actId, onPatch, onPatchSilent }: {
           const text = room.notes[sec] ?? ''
           return (
             <DefectShell key={key} name="Свой дефект" chip={SECTION_LABEL[sec] ?? sec} onRemove={() => removeCard(key)}>
-              <Field label="Описание" hint={valueHint(!!text.trim(), !!bind)}>
+              <Field label="Описание" hint={valueHint(!!text.trim())}>
                 <TextArea rows={2} placeholder="Опишите дефект" value={text} onChange={(e) => onPatch((r) => ({ ...r, notes: { ...r.notes, [sec]: e.target.value } }))} />
               </Field>
-              <PhotoDock actId={actId} binds={bind ? [{ key, bind }] : []} canUpload={!!bind} onBind={setBind} />
+              <PhotoDock k={photoKey(sec, null)} bindKey={key} binds={bind ? [{ key, bind }] : []} canUpload onBind={setBind} />
             </DefectShell>
           )
         }
@@ -309,10 +339,10 @@ function Defects({ room, templates, actId, onPatch, onPatchSilent }: {
         const value = room.simple[id] ?? ''
         return (
           <DefectShell key={key} name={t?.name ?? 'Дефект из справочника'} chip={SECTION_LABEL[t?.section ?? ''] ?? t?.section} sub={t?.threshold ? `норма ${t.threshold}` : undefined} onRemove={() => removeCard(key)}>
-            <Field label={`Значение${t?.unit ? `, ${t.unit}` : ''}`} hint={valueHint(!!value.trim(), !!bind)}>
+            <Field label={`Значение${t?.unit ? `, ${t.unit}` : ''}`} hint={valueHint(!!value.trim())}>
               <TextInput inputMode={t?.unit ? 'decimal' : undefined} placeholder={t?.unit || 'есть / описание'} value={value} onChange={(e) => onPatch((r) => ({ ...r, simple: { ...r.simple, [id]: e.target.value } }))} />
             </Field>
-            <PhotoDock actId={actId} binds={bind ? [{ key, bind }] : []} canUpload={!!bind} onBind={setBind} />
+            <PhotoDock k={photoKey(t?.section ?? '', id)} bindKey={key} binds={bind ? [{ key, bind }] : []} canUpload onBind={setBind} />
           </DefectShell>
         )
       })}

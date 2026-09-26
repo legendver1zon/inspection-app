@@ -1,25 +1,29 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type User } from '../lib/api'
+import { api, type DefectTemplate, type User } from '../lib/api'
 import { C } from '../lib/palette'
-import { isActive, useUploadQueue } from '../lib/uploadQueue'
+import { isActive, uploadQueue, useUploadQueue } from '../lib/uploadQueue'
+import { useOnline } from '../lib/online'
+import { clearDraft, loadDraft, saveDraft } from '../lib/draftStore'
 import Header from '../components/Header'
 import PlanCard from './edit/PlanCard'
 import RoomCard from './edit/RoomCard'
-import { buildParams, bindsFrom, emptyRoom, numStr, roomFromData, type RoomForm } from './edit/form'
+import { buildParams, bindsFrom, emptyRoom, fromDraftRoom, numStr, roomFromData, toDraftRoom, type RoomForm } from './edit/form'
 import { Button, Card, CheckIcon, Chip, Collapse, Field, PlusIcon, TextArea, TextInput } from './edit/ui'
 
-/* Редактор акта в структуре редактора осмотров CRM: основные данные,
-   свёртка параметров объекта, план, помещения аккордеоном с дефектами
-   из справочника, липкая панель сохранения. Сохранение — тот же
-   POST /inspections/:id/edit с автосейвом. */
+/* Редактор акта в структуре редактора осмотров CRM. Работает без сети:
+   черновик формы живёт в IndexedDB, автосохранение повторяется при
+   появлении связи, фото уходят через очередь по ключу дефекта. */
+
+const RETRY_MS = 8000
 
 export default function EditAct({ user }: { user: User }) {
   const { id } = useParams()
   const actId = Number(id)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const online = useOnline()
 
   const { data, isLoading, isError } = useQuery({
     queryKey: ['edit-data', actId],
@@ -30,39 +34,95 @@ export default function EditAct({ user }: { user: User }) {
 
   const [header, setHeader] = useState<Record<string, string>>({})
   const [rooms, setRooms] = useState<RoomForm[]>([])
+  const [templates, setTemplates] = useState<DefectTemplate[]>([])
+  const [actNumber, setActNumber] = useState('')
+  const [actStatus, setActStatus] = useState<'draft' | 'completed'>('draft')
   const [expanded, setExpanded] = useState<number[]>([])
   const [paramsOpen, setParamsOpen] = useState(false)
   const [planUrl, setPlanUrl] = useState('')
   const [numberTaken, setNumberTaken] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
+  const [saveFailed, setSaveFailed] = useState(false)
   const [loaded, setLoaded] = useState(false)
+  const [offlineOnly, setOfflineOnly] = useState(false)
+  const [restored, setRestored] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [lastSaved, setLastSaved] = useState('')
+  const [retryTick, setRetryTick] = useState(0)
   const queueItems = useUploadQueue()
   const uploadsActive = queueItems.filter((i) => i.actId === actId && isActive(i)).length
   // Счётчик правок: автосейв снимает dirty только если за время POST
   // не появилось новых изменений
   const changeSeq = useRef(0)
+  const latest = useRef({ header, rooms })
+  latest.current = { header, rooms }
 
+  // Загрузка: данные сервера (или кеш SW без сети) + черновик из IndexedDB.
+  // Черновик есть только если были несохранённые правки — он главнее.
   useEffect(() => {
-    if (!data || loaded) return
-    const a = data.act
-    setHeader({
-      act_number: a.act_number, inspection_date: a.date, inspection_time: a.time,
-      address: a.address, owner_name: a.owner_name, developer_rep_name: a.developer_rep_name,
-      rooms_count: numStr(a.rooms_count), floor: numStr(a.floor), total_area: numStr(a.total_area),
-      temp_outside: a.temp_outside ? String(a.temp_outside) : '', temp_inside: a.temp_inside ? String(a.temp_inside) : '',
-      humidity: numStr(a.humidity), electricity: a.electricity, ventilation: a.ventilation,
-      general_notes: a.general_notes,
-    })
-    const rs = data.rooms.length > 0 ? data.rooms.map(roomFromData) : [emptyRoom()]
-    setRooms(rs)
-    setExpanded([])
-    setParamsOpen(!a.total_area)
-    setPlanUrl(a.plan_image)
-    setLoaded(true)
-  }, [data, loaded])
+    if (loaded) return
+    if (!data && !isError) return
+    let cancelled = false
+    ;(async () => {
+      const draft = await loadDraft(actId)
+      if (cancelled) return
+      if (data) {
+        const a = data.act
+        setActNumber(a.act_number)
+        setActStatus(a.status === 'completed' ? 'completed' : 'draft')
+        setTemplates(data.templates)
+        setPlanUrl(a.plan_image)
+        setParamsOpen(!a.total_area)
+      }
+      if (draft) {
+        setHeader(draft.header)
+        setRooms(draft.rooms.map((r, idx) => fromDraftRoom(r, data?.rooms[idx] ? bindsFrom(data.rooms[idx]) : {})))
+        if (!data) {
+          setTemplates(draft.templates)
+          setActNumber(draft.actNumber)
+          setOfflineOnly(true)
+        }
+        setRestored(true)
+        changeSeq.current++
+        setDirty(true)
+      } else if (data) {
+        const a = data.act
+        setHeader({
+          act_number: a.act_number, inspection_date: a.date, inspection_time: a.time,
+          address: a.address, owner_name: a.owner_name, developer_rep_name: a.developer_rep_name,
+          rooms_count: numStr(a.rooms_count), floor: numStr(a.floor), total_area: numStr(a.total_area),
+          temp_outside: a.temp_outside ? String(a.temp_outside) : '', temp_inside: a.temp_inside ? String(a.temp_inside) : '',
+          humidity: numStr(a.humidity), electricity: a.electricity, ventilation: a.ventilation,
+          general_notes: a.general_notes,
+        })
+        setRooms(data.rooms.length > 0 ? data.rooms.map(roomFromData) : [emptyRoom()])
+      } else {
+        return
+      }
+      setExpanded([])
+      setLoaded(true)
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [data, isError, loaded, actId])
+
+  // Черновик пишется при каждой правке (с небольшой задержкой)
+  useEffect(() => {
+    if (!dirty || !loaded) return
+    const t = setTimeout(() => {
+      void saveDraft({
+        actId,
+        actNumber,
+        header: latest.current.header,
+        rooms: latest.current.rooms.map(toDraftRoom),
+        templates,
+        updatedAt: Date.now(),
+      })
+    }, 400)
+    return () => clearTimeout(t)
+  }, [dirty, loaded, header, rooms, actId, actNumber, templates])
 
   function markDirty() {
     changeSeq.current++
@@ -86,11 +146,16 @@ export default function EditAct({ user }: { user: User }) {
     setRooms((rs) => [...rs, room])
     setExpanded((e) => [...e, room.key])
   }
+  function removeRoom(idx: number) {
+    markDirty()
+    uploadQueue.renumberRooms(actId, idx + 1)
+    setRooms((rs) => rs.filter((_, i) => i !== idx))
+  }
   const toggleRoom = (key: number) => setExpanded((e) => (e.includes(key) ? e.filter((k) => k !== key) : [...e, key]))
 
   async function checkNumber() {
     const v = header.act_number?.trim()
-    if (!v || v === data?.act.act_number) { setNumberTaken(null); return }
+    if (!v || v === actNumber) { setNumberTaken(null); return }
     try {
       const res = await api.checkActNumber(actId, v)
       setNumberTaken(res.taken ? `Номер уже занят осмотром #${res.other_id}` : null)
@@ -114,14 +179,22 @@ export default function EditAct({ user }: { user: User }) {
     const seq = changeSeq.current
     setSaving(true)
     if (!auto) setError('')
+    uploadQueue.hold()
     try {
       const err = await api.saveAct(actId, buildParams(header, rooms))
       if (err) {
         setError(err)
+        setSaveFailed(false)
         if (!auto) window.scrollTo({ top: 0 })
         return
       }
-      if (changeSeq.current === seq) setDirty(false)
+      setSaveFailed(false)
+      setRestored(false)
+      setOfflineOnly(false)
+      if (changeSeq.current === seq) {
+        setDirty(false)
+        await clearDraft(actId)
+      }
       setLastSaved(new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }))
       if (auto) {
         await refreshBinds()
@@ -130,20 +203,23 @@ export default function EditAct({ user }: { user: User }) {
         navigate(`/inspections/${actId}`)
       }
     } catch {
-      if (!auto) setError('Не удалось сохранить — проверьте соединение и попробуйте ещё раз.')
+      setSaveFailed(true)
+      if (!auto) setError('Не удалось сохранить: нет связи. Правки сохранены на телефоне и уйдут автоматически.')
+      setTimeout(() => setRetryTick((t) => t + 1), RETRY_MS)
     } finally {
+      uploadQueue.release()
       setSaving(false)
     }
   }
 
-  // Автосейв: 2.5 сек тишины после правок; пауза, пока грузятся фото
-  // или занят номер акта
+  // Автосейв: 2.5 сек тишины после правок; пауза, пока занят номер акта или
+  // нет сети; после сбоя — повтор по таймеру и при появлении сети
   useEffect(() => {
-    if (!dirty || !loaded || saving || uploadsActive > 0 || numberTaken) return
+    if (!dirty || !loaded || saving || numberTaken || !online) return
     const t = setTimeout(() => doSave(true), 2500)
     return () => clearTimeout(t)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dirty, loaded, saving, uploadsActive, numberTaken, header, rooms])
+  }, [dirty, loaded, saving, numberTaken, online, retryTick, header, rooms])
 
   useEffect(() => {
     if (!dirty) return
@@ -154,13 +230,17 @@ export default function EditAct({ user }: { user: User }) {
 
   const statusText = saving
     ? 'Сохраняем…'
-    : uploadsActive > 0
-      ? `Отправляем фото: ${uploadsActive}`
-      : dirty
-        ? 'Есть несохранённые изменения'
-        : lastSaved
-          ? `Сохранено ${lastSaved}`
-          : ''
+    : !online && (dirty || uploadsActive > 0)
+      ? 'Нет сети: всё сохранено на телефоне, отправим при появлении связи'
+      : saveFailed
+        ? 'Не удалось сохранить, повторим автоматически'
+        : uploadsActive > 0
+          ? `Отправляем фото: ${uploadsActive}`
+          : dirty
+            ? 'Есть несохранённые изменения'
+            : lastSaved
+              ? `Сохранено ${lastSaved}`
+              : ''
 
   const allPhotos = rooms.flatMap((r) => Object.values(r.binds).flatMap((b) => b.photos))
   const cloudFailed = allPhotos.filter((p) => p.status === 'failed').length
@@ -177,19 +257,19 @@ export default function EditAct({ user }: { user: User }) {
       <Header user={user} />
 
       <main className="mx-auto flex max-w-4xl flex-col gap-4 px-4 pt-4 pb-28 sm:px-5 sm:pt-5">
-        {isLoading && <div className="h-72 animate-pulse rounded-xl motion-reduce:animate-none" style={{ background: C.track }} />}
-        {isError && (
+        {isLoading && !loaded && <div className="h-72 animate-pulse rounded-xl motion-reduce:animate-none" style={{ background: C.track }} />}
+        {isError && !loaded && !isLoading && (
           <div className="rounded-xl px-4 py-3 text-[13px] font-semibold" style={{ background: C.errBg, color: C.err }}>
-            Не удалось загрузить форму. Возможно, акт удалён или у вас нет доступа.
+            Не удалось загрузить форму: нет связи, а сохранённого черновика этого акта на телефоне нет. Откройте акт при появлении сети.
           </div>
         )}
 
-        {loaded && data && (
+        {loaded && (
           <>
             <div className="flex flex-wrap items-center gap-2">
-              <h1 className="mr-1 text-[20px] font-semibold tracking-tight">Осмотр №{data.act.act_number}</h1>
-              <Chip variant={data.act.status === 'completed' ? 'success' : 'info'}>
-                {data.act.status === 'completed' ? 'Завершён' : 'В работе'}
+              <h1 className="mr-1 text-[20px] font-semibold tracking-tight">Осмотр №{actNumber}</h1>
+              <Chip variant={actStatus === 'completed' ? 'success' : 'info'}>
+                {actStatus === 'completed' ? 'Завершён' : 'В работе'}
               </Chip>
               {cloudFailed > 0 ? (
                 <Chip variant="danger">сбой выгрузки: {cloudFailed}</Chip>
@@ -205,6 +285,14 @@ export default function EditAct({ user }: { user: User }) {
                 ← К просмотру акта
               </Link>
             </div>
+
+            {restored && (
+              <div className="rounded-xl px-4 py-3 text-[13px] font-semibold" role="status" style={{ background: C.warnBg, color: C.warn }}>
+                {offlineOnly
+                  ? 'Открыт черновик с телефона: сервер недоступен, правки отправим при появлении связи.'
+                  : 'Восстановлены несохранённые правки с телефона — отправим на сервер автоматически.'}
+              </div>
+            )}
 
             {error && (
               <div className="rounded-xl px-4 py-3 text-[13px] font-semibold" role="alert" style={{ background: C.errBg, color: C.err }}>
@@ -274,13 +362,13 @@ export default function EditAct({ user }: { user: User }) {
                     key={room.key}
                     room={room}
                     index={idx + 1}
-                    templates={data.templates}
+                    templates={templates}
                     actId={actId}
                     open={expanded.includes(room.key)}
                     onToggle={() => toggleRoom(room.key)}
                     onPatch={(patch) => patchRoom(room.key, patch)}
                     onPatchSilent={(patch) => patchRoomSilent(room.key, patch)}
-                    onRemove={rooms.length > 1 ? () => { markDirty(); setRooms((rs) => rs.filter((r) => r.key !== room.key)) } : undefined}
+                    onRemove={rooms.length > 1 ? () => removeRoom(idx) : undefined}
                   />
                 ))}
                 {roomsN > 0 && (
@@ -293,7 +381,7 @@ export default function EditAct({ user }: { user: User }) {
 
             <div className="fixed inset-x-0 bottom-0 z-30 border-t px-4 py-3 backdrop-blur-md sm:px-5" style={{ background: 'rgba(255,255,255,.88)', borderColor: C.line, paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
               <div className="mx-auto flex max-w-4xl items-center gap-3">
-                <span className="min-w-0 flex-1 truncate text-[13px]" style={{ color: error ? C.err : C.muted }} aria-live="polite">
+                <span className="min-w-0 flex-1 text-[13px] leading-tight" style={{ color: error || saveFailed ? C.err : !online ? C.warn : C.muted }} aria-live="polite">
                   {statusText}
                 </span>
                 <Button variant="primary" icon={<CheckIcon />} disabled={saving || !!numberTaken} onClick={() => doSave(false)}>

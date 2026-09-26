@@ -161,8 +161,27 @@ export function buildParams(header: Record<string, string>, rooms: RoomForm[]): 
       vals.forEach((v, w) => { if (v) p.set(`defect_${tid}_${i}_wall${w + 1}`, v) })
     }
     for (const [sec, txt] of Object.entries(room.notes)) if (txt) p.set(`notes_${sec}_${i}`, txt)
+    // Выбранные, но ещё не заполненные дефекты сервер сохраняет как заготовки —
+    // так к ним можно прикреплять фото до ввода значения
+    for (const key of room.picked) {
+      if (key.startsWith('s')) p.set(`picked_${key.slice(1)}_${i}`, '1')
+      else if (key.startsWith('w')) {
+        const id = key.slice(1)
+        ;(room.wallsOn[Number(id)] ?? []).forEach((on, w) => { if (on) p.set(`picked_${id}_${i}_wall${w + 1}`, '1') })
+      } else p.set(`picked_notes_${key.slice(1)}_${i}`, '1')
+    }
   })
   return p
+}
+
+export function toDraftRoom(r: RoomForm) {
+  const { key: _k, binds: _b, ...rest } = r
+  return rest
+}
+
+export function fromDraftRoom(d: Omit<RoomForm, 'key' | 'binds' | 'm'> & { m: Record<string, string> }, binds: Record<string, DefectBind> = {}): RoomForm {
+  const base = emptyRoom()
+  return { ...base, ...d, m: { ...base.m, ...(d.m as Partial<Measures>) }, binds }
 }
 
 export function measured(r: RoomForm) {

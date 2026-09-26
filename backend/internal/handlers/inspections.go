@@ -32,15 +32,28 @@ func redirectWithError(c *gin.Context, inspectionID uint, msg string) {
 	c.Redirect(http.StatusFound, editURL)
 }
 
-// isActNumberConflict возвращает true, если ошибка GORM — это нарушение
-// уникального индекса по act_number (PostgreSQL SQLSTATE 23505).
+// isUniqueConflict возвращает true, если ошибка GORM — это нарушение
+// уникального индекса по колонке column (PostgreSQL SQLSTATE 23505).
 // Строковая проверка выбрана, чтобы не тянуть pgx/pgconn как прямую зависимость.
-func isActNumberConflict(err error) bool {
+func isUniqueConflict(err error, column string) bool {
 	if err == nil {
 		return false
 	}
 	s := err.Error()
-	return strings.Contains(s, "23505") && strings.Contains(s, "act_number")
+	return strings.Contains(s, "23505") && strings.Contains(s, column)
+}
+
+func isActNumberConflict(err error) bool {
+	return isUniqueConflict(err, "act_number")
+}
+
+// formFlag — чекбокс-флаг формы (picked_*): "1", "on" или "true".
+func formFlag(c *gin.Context, name string) bool {
+	switch c.PostForm(name) {
+	case "1", "on", "true":
+		return true
+	}
+	return false
 }
 
 const pageSize = 20
@@ -308,11 +321,11 @@ func GetInspection(c *gin.Context) {
 	user := CurrentUser(c)
 
 	c.HTML(http.StatusOK, "view.html", gin.H{
-		"title":          "Акт №" + inspection.ActNumber,
-		"inspection":     inspection,
-		"documents":      documents,
-		"user":           user,
-		"isAdmin":        c.GetString("userRole") == "admin",
+		"title":           "Акт №" + inspection.ActNumber,
+		"inspection":      inspection,
+		"documents":       documents,
+		"user":            user,
+		"isAdmin":         c.GetString("userRole") == "admin",
 		"archivedDefects": archived,
 	})
 }
@@ -536,6 +549,15 @@ func PostEditInspection(c *gin.Context) {
 
 		simpleSections := []string{"window", "ceiling", "floor", "door", "plumbing"}
 
+		createDefect := func(nd models.RoomDefect, roomNumber int) {
+			if err := tx.Create(&nd).Error; err == nil {
+				relinkPhotos(nd.ID, roomNumber, nd.Section, nd.DefectTemplateID, nd.WallNumber)
+			}
+		}
+
+		// Дефект создаётся, если у него есть значение/текст ИЛИ флаг picked_*:
+		// «выбранный, но ещё не заполненный» дефект должен пережить сохранение,
+		// иначе фото, снятые к нему офлайн, теряют привязку.
 		for i := 1; i <= activeRooms; i++ {
 			iStr := strconv.Itoa(i)
 
@@ -550,19 +572,18 @@ func PostEditInspection(c *gin.Context) {
 				if !containsStr(simpleSections, tmpl.Section) {
 					continue
 				}
-				key := "defect_" + strconv.FormatUint(uint64(tmpl.ID), 10) + "_" + iStr
-				if val := c.PostForm(key); val != "" {
-					tid := tmpl.ID
-					nd := models.RoomDefect{
-						RoomID:           room.ID,
-						DefectTemplateID: &tid,
-						Section:          tmpl.Section,
-						Value:            val,
-					}
-					if err := tx.Create(&nd).Error; err == nil {
-						relinkPhotos(nd.ID, i, tmpl.Section, &tid, 0)
-					}
+				suffix := strconv.FormatUint(uint64(tmpl.ID), 10) + "_" + iStr
+				val := c.PostForm("defect_" + suffix)
+				if val == "" && !formFlag(c, "picked_"+suffix) {
+					continue
 				}
+				tid := tmpl.ID
+				createDefect(models.RoomDefect{
+					RoomID:           room.ID,
+					DefectTemplateID: &tid,
+					Section:          tmpl.Section,
+					Value:            val,
+				}, i)
 			}
 
 			// Стены — 4 значения на дефект
@@ -571,35 +592,33 @@ func PostEditInspection(c *gin.Context) {
 					continue
 				}
 				for w := 1; w <= 4; w++ {
-					key := "defect_" + strconv.FormatUint(uint64(tmpl.ID), 10) + "_" + iStr + "_wall" + strconv.Itoa(w)
-					if val := c.PostForm(key); val != "" {
-						tid := tmpl.ID
-						nd := models.RoomDefect{
-							RoomID:           room.ID,
-							DefectTemplateID: &tid,
-							Section:          "wall",
-							Value:            val,
-							WallNumber:       w,
-						}
-						if err := tx.Create(&nd).Error; err == nil {
-							relinkPhotos(nd.ID, i, "wall", &tid, w)
-						}
+					suffix := strconv.FormatUint(uint64(tmpl.ID), 10) + "_" + iStr + "_wall" + strconv.Itoa(w)
+					val := c.PostForm("defect_" + suffix)
+					if val == "" && !formFlag(c, "picked_"+suffix) {
+						continue
 					}
+					tid := tmpl.ID
+					createDefect(models.RoomDefect{
+						RoomID:           room.ID,
+						DefectTemplateID: &tid,
+						Section:          "wall",
+						Value:            val,
+						WallNumber:       w,
+					}, i)
 				}
 			}
 
 			// Прочее для каждой секции
 			for _, sec := range append(simpleSections, "wall") {
-				if notes := c.PostForm("notes_" + sec + "_" + iStr); notes != "" {
-					nd := models.RoomDefect{
-						RoomID:  room.ID,
-						Section: sec,
-						Notes:   notes,
-					}
-					if err := tx.Create(&nd).Error; err == nil {
-						relinkPhotos(nd.ID, i, sec, nil, 0)
-					}
+				notes := c.PostForm("notes_" + sec + "_" + iStr)
+				if notes == "" && !formFlag(c, "picked_notes_"+sec+"_"+iStr) {
+					continue
 				}
+				createDefect(models.RoomDefect{
+					RoomID:  room.ID,
+					Section: sec,
+					Notes:   notes,
+				}, i)
 			}
 		}
 

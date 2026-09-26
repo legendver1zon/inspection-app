@@ -5,6 +5,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { api, type User } from '../lib/api'
 import { C } from '../lib/palette'
 import { isActive, uploadQueue, useUploadQueue } from '../lib/uploadQueue'
+import { useOnline } from '../lib/online'
 
 type NavItem = { to: string; label: string; icon: ReactNode }
 
@@ -12,6 +13,7 @@ export default function Header({ user }: { user: User }) {
   const queryClient = useQueryClient()
   const { pathname } = useLocation()
   const [open, setOpen] = useState(false)
+  const online = useOnline()
   const queue = useUploadQueue()
   const active = queue.filter(isActive).length
   const failed = queue.filter((i) => i.status === 'failed').length
@@ -66,6 +68,7 @@ export default function Header({ user }: { user: User }) {
   )
 
   return (
+    <>
     <header className="border-b" style={{ background: C.surface, borderColor: C.line }}>
       <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4 sm:gap-4 sm:px-5">
         <Link to="/inspections" className="flex items-center gap-2.5 font-extrabold" style={{ color: C.ink }}>
@@ -182,6 +185,12 @@ export default function Header({ user }: { user: User }) {
         )}
       </AnimatePresence>
     </header>
+    {!online && (
+      <div className="px-4 py-2 text-center text-[12.5px] font-semibold" style={{ background: C.warnBg, color: C.warn }} role="status">
+        Нет сети. Правки и фото сохраняются на телефоне и отправятся сами, когда связь появится.
+      </div>
+    )}
+    </>
   )
 }
 

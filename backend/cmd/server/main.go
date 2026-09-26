@@ -16,10 +16,12 @@ import (
 	"inspection-app/internal/templatefuncs"
 	"inspection-app/internal/worker"
 	"log"
+	"mime"
 	"net/http"
 	"os"
 	"os/exec"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -99,6 +101,7 @@ func main() {
 				"script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "+
 				"style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; "+
 				"img-src 'self' data: blob: https://api.qrserver.com; "+
+				"connect-src 'self'; worker-src 'self'; manifest-src 'self'; "+
 				"object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 		c.Next()
 	})
@@ -108,7 +111,8 @@ func main() {
 	r.Use(func(c *gin.Context) {
 		limit := int64(10 << 20)
 		p := c.Request.URL.Path
-		if strings.HasPrefix(p, "/defects/") || strings.HasSuffix(p, "/upload-plan") || p == "/profile/avatar" {
+		if strings.HasPrefix(p, "/defects/") || strings.HasSuffix(p, "/upload-plan") || p == "/profile/avatar" ||
+			(strings.HasPrefix(p, "/inspections/") && strings.HasSuffix(p, "/photos")) {
 			limit = 200 << 20
 		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
@@ -314,6 +318,7 @@ func main() {
 		protected.GET("/documents/:id/download", handlers.GetDownloadDocument)
 
 		protected.POST("/inspections/:id/upload-plan", handlers.PostUploadPlan)
+		protected.POST("/inspections/:id/photos", handlers.PostUploadInspectionPhoto)
 
 		protected.POST("/profile", handlers.PostProfile)
 		protected.POST("/profile/avatar", handlers.PostUploadAvatar)
@@ -340,16 +345,41 @@ func main() {
 		}
 	}
 
-	// SPA-fallback: неизвестные GET-адреса — клиентские маршруты React
+	// SPA-fallback: неизвестные GET-адреса — клиентские маршруты React.
+	// Файлы из корня сборки (sw.js, registerSW.js, manifest.webmanifest, иконки)
+	// отдаются как файлы, иначе service worker получил бы index.html.
 	if spaEnabled {
+		_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+		spaFile := func(clean string) (string, bool) {
+			if clean == "/" || strings.Contains(clean, "..") {
+				return "", false
+			}
+			fp := filepath.Join(spaDir, filepath.FromSlash(clean))
+			st, err := os.Stat(fp)
+			if err != nil || !st.Mode().IsRegular() {
+				return "", false
+			}
+			return fp, true
+		}
 		r.NoRoute(func(c *gin.Context) {
 			p := c.Request.URL.Path
-			if c.Request.Method == http.MethodGet &&
-				!strings.HasPrefix(p, "/api") && !strings.HasPrefix(p, "/static") && !strings.HasPrefix(p, "/assets") {
-				serveSPA(c)
+			if c.Request.Method != http.MethodGet ||
+				strings.HasPrefix(p, "/api") || strings.HasPrefix(p, "/static") || strings.HasPrefix(p, "/assets") {
+				c.JSON(http.StatusNotFound, gin.H{"error": "Не найдено"})
 				return
 			}
-			c.JSON(http.StatusNotFound, gin.H{"error": "Не найдено"})
+			clean := path.Clean("/" + p)
+			if fp, ok := spaFile(clean); ok {
+				if clean == "/sw.js" || clean == "/registerSW.js" {
+					c.Header("Cache-Control", "no-cache")
+				}
+				if clean == "/sw.js" {
+					c.Header("Service-Worker-Allowed", "/")
+				}
+				c.File(fp)
+				return
+			}
+			serveSPA(c)
 		})
 	}
 

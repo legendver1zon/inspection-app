@@ -3,6 +3,7 @@ package pdf
 import (
 	"inspection-app/internal/models"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -14,19 +15,19 @@ func TestGenerate_CreatesFile(t *testing.T) {
 	tmpDir := t.TempDir() // автоматически очищается
 
 	inspection := &models.Inspection{
-		ActNumber:      "42-310326",
-		Date:           time.Date(2026, 3, 31, 10, 0, 0, 0, time.UTC),
-		InspectionTime: "10:00",
-		Address:        "ул. Тестовая, д. 1, кв. 5",
-		RoomsCount:     2,
-		Floor:          3,
-		TotalArea:      55.5,
-		TempOutside:    -5,
-		TempInside:     22,
-		Humidity:       45.3,
-		OwnerName:      "Иванов И.И.",
+		ActNumber:        "42-310326",
+		Date:             time.Date(2026, 3, 31, 10, 0, 0, 0, time.UTC),
+		InspectionTime:   "10:00",
+		Address:          "ул. Тестовая, д. 1, кв. 5",
+		RoomsCount:       2,
+		Floor:            3,
+		TotalArea:        55.5,
+		TempOutside:      -5,
+		TempInside:       22,
+		Humidity:         45.3,
+		OwnerName:        "Иванов И.И.",
 		DeveloperRepName: "Петров П.П.",
-		User:           models.User{FullName: "Сидоров С.С.", Initials: "Сидоров С.С."},
+		User:             models.User{FullName: "Сидоров С.С.", Initials: "Сидоров С.С."},
 		Rooms: []models.InspectionRoom{
 			{
 				RoomNumber: 1,
@@ -354,7 +355,7 @@ func TestSplitByCommas(t *testing.T) {
 		{"", 1},
 		{"простой текст", 1},
 		{"раз, два, три", 3},
-		{"значение 0,6 мм", 1},        // десятичная запятая НЕ разбивается
+		{"значение 0,6 мм", 1},         // десятичная запятая НЕ разбивается
 		{"0,6 мм, трещина, 1,2 мм", 3}, // разбивается только между словами
 	}
 	for _, tt := range tests {
@@ -362,5 +363,44 @@ func TestSplitByCommas(t *testing.T) {
 		if len(result) != tt.expected {
 			t.Errorf("splitByCommas(%q) returned %d parts %v, want %d", tt.input, len(result), result, tt.expected)
 		}
+	}
+}
+
+// Заготовки дефектов (picked без значения) не должны давать ни строк, ни разделов:
+// PDF с такими дефектами совпадает по размеру с PDF без дефектов вовсе.
+func TestGenerate_EmptyDefectsNotRendered(t *testing.T) {
+	tmpDir := t.TempDir()
+	tid := uint(1)
+	wallTid := uint(2)
+	date := time.Date(2026, 3, 31, 10, 0, 0, 0, time.UTC)
+
+	build := func(defects []models.RoomDefect) *models.Inspection {
+		return &models.Inspection{
+			ActNumber: "7-310326",
+			Date:      date,
+			User:      models.User{Initials: "Тест Т."},
+			Rooms: []models.InspectionRoom{
+				{RoomNumber: 1, RoomName: "Зал", WallType: "paint", Defects: defects},
+			},
+		}
+	}
+	empty := []models.RoomDefect{
+		{Section: "window", DefectTemplateID: &tid, DefectTemplate: models.DefectTemplate{Name: "Царапина"}},
+		{Section: "wall", WallNumber: 2, DefectTemplateID: &wallTid, DefectTemplate: models.DefectTemplate{Name: "Отклонение"}},
+		{Section: "ceiling"},
+	}
+
+	withEmpty, err := Generate(build(empty), tmpDir)
+	if err != nil {
+		t.Fatalf("Generate() с пустыми дефектами: %v", err)
+	}
+	without, err := Generate(build(nil), filepath.Join(tmpDir, "b"))
+	if err != nil {
+		t.Fatalf("Generate() без дефектов: %v", err)
+	}
+	a, _ := os.Stat(withEmpty)
+	b, _ := os.Stat(without)
+	if a.Size() != b.Size() {
+		t.Errorf("пустые дефекты попали в PDF: %d байт против %d без дефектов", a.Size(), b.Size())
 	}
 }

@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"inspection-app/internal/cloudstorage"
 	"inspection-app/internal/locker"
@@ -11,15 +12,18 @@ import (
 	"inspection-app/internal/storage"
 	"inspection-app/internal/thumbs"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 const (
@@ -81,89 +85,254 @@ func PostUploadPhoto(c *gin.Context) {
 		return
 	}
 
-	file, header, err := c.Request.FormFile("photo")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Файл не найден в запросе (поле: photo)"})
+	file, ext, ok := readPhotoUpload(c)
+	if !ok {
 		return
 	}
 	defer file.Close()
 
-	if header.Size > maxPhotoSize {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Файл слишком большой (максимум 20 МБ)"})
+	photo, ok := storeDefectPhoto(c, file, ext, inspection.ID, defect.ID, nil)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, photoJSON(photo, false))
+}
+
+var (
+	photoSections = map[string]bool{"window": true, "ceiling": true, "wall": true, "floor": true, "door": true, "plumbing": true}
+	clientIDRe    = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+)
+
+// PostUploadInspectionPhoto обрабатывает POST /inspections/:id/photos.
+// Фото привязывается не к id дефекта (он меняется при каждом сохранении формы),
+// а к ключу room_number|section|template_id|wall_number: дефект находится по ключу
+// или создаётся пустым. client_id делает загрузку идемпотентной для офлайн-очереди.
+func PostUploadInspectionPhoto(c *gin.Context) {
+	inspection, ok := loadInspection(c)
+	if !ok {
 		return
 	}
 
+	bad := func(msg string) { c.JSON(http.StatusBadRequest, gin.H{"error": msg}) }
+
+	clientID := strings.TrimSpace(c.PostForm("client_id"))
+	if !clientIDRe.MatchString(clientID) {
+		bad("client_id обязателен: до 64 символов из A-Z, a-z, 0-9, _ и -")
+		return
+	}
+	roomNumber, err := strconv.Atoi(strings.TrimSpace(c.PostForm("room_number")))
+	if err != nil || roomNumber < 1 {
+		bad("Неверный номер помещения")
+		return
+	}
+	section := c.PostForm("section")
+	if !photoSections[section] {
+		bad("Неверная секция дефекта")
+		return
+	}
+	var templateID *uint
+	if s := strings.TrimSpace(c.PostForm("template_id")); s != "" && s != "0" {
+		v, err := strconv.ParseUint(s, 10, 32)
+		if err != nil {
+			bad("Неверный template_id")
+			return
+		}
+		var tmpl models.DefectTemplate
+		if err := storage.DB.First(&tmpl, uint(v)).Error; err != nil {
+			bad("Шаблон дефекта не найден")
+			return
+		}
+		if tmpl.Section != section {
+			bad("Шаблон дефекта относится к другой секции")
+			return
+		}
+		templateID = &tmpl.ID
+	}
+	wallNumber := 0
+	if s := strings.TrimSpace(c.PostForm("wall_number")); s != "" {
+		if wallNumber, err = strconv.Atoi(s); err != nil || wallNumber < 0 || wallNumber > 4 {
+			bad("Номер стены должен быть от 1 до 4")
+			return
+		}
+	}
+	switch {
+	case section == "wall" && templateID != nil && wallNumber == 0:
+		bad("Для дефекта стены укажите номер стены (1–4)")
+		return
+	case (section != "wall" || templateID == nil) && wallNumber != 0:
+		bad("Номер стены указывается только для дефектов стен")
+		return
+	}
+
+	if existing, found := findPhotoByClientID(clientID); found {
+		if !photoInInspection(existing, inspection.ID) {
+			c.JSON(http.StatusConflict, gin.H{"error": "client_id уже используется в другом осмотре"})
+			return
+		}
+		c.JSON(http.StatusOK, photoJSON(existing, true))
+		return
+	}
+
+	file, ext, ok := readPhotoUpload(c)
+	if !ok {
+		return
+	}
+	defer file.Close()
+
+	var room models.InspectionRoom
+	if err := storage.DB.Where("inspection_id = ? AND room_number = ?", inspection.ID, roomNumber).
+		Order("id desc").First(&room).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Помещение не найдено"})
+		return
+	}
+
+	q := storage.DB.Where("room_id = ? AND section = ? AND wall_number = ?", room.ID, section, wallNumber)
+	if templateID == nil {
+		q = q.Where("defect_template_id IS NULL")
+	} else {
+		q = q.Where("defect_template_id = ?", *templateID)
+	}
+	var defect models.RoomDefect
+	if err := q.Order("id").First(&defect).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			logger.Ctx(c.Request.Context()).Error("defect lookup failed", "inspection_id", inspection.ID, "error", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка поиска дефекта"})
+			return
+		}
+		defect = models.RoomDefect{RoomID: room.ID, DefectTemplateID: templateID, Section: section, WallNumber: wallNumber}
+		if err := storage.DB.Create(&defect).Error; err != nil {
+			logger.Ctx(c.Request.Context()).Error("defect create failed", "inspection_id", inspection.ID, "error", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания дефекта"})
+			return
+		}
+	}
+
+	photo, ok := storeDefectPhoto(c, file, ext, inspection.ID, defect.ID, &clientID)
+	if !ok {
+		return
+	}
+	c.JSON(http.StatusOK, photoJSON(photo, false))
+}
+
+func photoJSON(p models.Photo, duplicate bool) gin.H {
+	h := gin.H{"id": p.ID, "url": p.FileURL, "filename": p.FileName, "defect_id": p.DefectID}
+	if duplicate {
+		h["duplicate"] = true
+	}
+	return h
+}
+
+// findPhotoByClientID ищет фото по client_id, включая удалённые: уникальный
+// индекс держит и их, а повтор из очереди клиента — та же самая загрузка.
+func findPhotoByClientID(clientID string) (models.Photo, bool) {
+	var p models.Photo
+	err := storage.DB.Unscoped().Where("client_id = ?", clientID).First(&p).Error
+	return p, err == nil
+}
+
+func photoInInspection(p models.Photo, inspectionID uint) bool {
+	var n int64
+	storage.DB.Table("room_defects").
+		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+		Where("room_defects.id = ? AND inspection_rooms.inspection_id = ?", p.DefectID, inspectionID).
+		Count(&n)
+	return n > 0
+}
+
+// readPhotoUpload берёт файл из поля photo и проверяет размер и расширение.
+// При ошибке сам пишет 400 и возвращает ok=false; файл закрывает вызывающий.
+func readPhotoUpload(c *gin.Context) (multipart.File, string, bool) {
+	file, header, err := c.Request.FormFile("photo")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Файл не найден в запросе (поле: photo)"})
+		return nil, "", false
+	}
+	if header.Size > maxPhotoSize {
+		file.Close()
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Файл слишком большой (максимум 20 МБ)"})
+		return nil, "", false
+	}
 	ext := strings.ToLower(filepath.Ext(header.Filename))
 	if ext != ".jpg" && ext != ".jpeg" && ext != ".png" && ext != ".webp" {
+		file.Close()
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Допустимые форматы: jpg, jpeg, png, webp"})
-		return
+		return nil, "", false
 	}
+	return file, ext, true
+}
 
-	// Определяем локальный путь
+// storeDefectPhoto кладёт файл в uploads/photos/{inspection}/{defect}, создаёт
+// запись Photo, строит миниатюру в фоне и ставит осмотр в очередь облака.
+// Если ответ уже отправлен (ошибка или повтор по client_id) — возвращает ok=false.
+func storeDefectPhoto(c *gin.Context, file io.Reader, ext string, inspectionID, defectID uint, clientID *string) (models.Photo, bool) {
 	var photoCount int64
 	storage.DB.Model(&models.Photo{}).Where("defect_id = ?", defectID).Count(&photoCount)
 	if photoCount >= maxPhotosPerDefect {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Максимум %d фото на дефект", maxPhotosPerDefect)})
-		return
+		return models.Photo{}, false
 	}
-	// Уникальное имя через timestamp — исключает race condition при одновременной загрузке
-	fileName := fmt.Sprintf("photo_%d_%d%s", defectID, time.Now().UnixMilli(), ext)
 
-	localDir := filepath.Join("web", "static", "uploads", "photos",
-		strconv.Itoa(int(inspection.ID)), strconv.Itoa(defectID))
+	inspStr := strconv.FormatUint(uint64(inspectionID), 10)
+	defStr := strconv.FormatUint(uint64(defectID), 10)
+	// Уникальное имя через timestamp — исключает race condition при одновременной загрузке
+	fileName := fmt.Sprintf("photo_%s_%d%s", defStr, time.Now().UnixMilli(), ext)
+
+	localDir := filepath.Join("web", "static", "uploads", "photos", inspStr, defStr)
 	if err := os.MkdirAll(localDir, 0755); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания директории: " + err.Error()})
-		return
+		return models.Photo{}, false
 	}
 
 	localFile := filepath.Join(localDir, fileName)
 	dst, err := os.Create(localFile)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания файла: " + err.Error()})
-		return
+		return models.Photo{}, false
 	}
-	defer dst.Close()
-
-	if _, err := io.Copy(dst, file); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка записи файла: " + err.Error()})
-		return
+	_, copyErr := io.Copy(dst, file)
+	dst.Close()
+	if copyErr != nil {
+		os.Remove(localFile)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка записи файла: " + copyErr.Error()})
+		return models.Photo{}, false
 	}
 
 	absPath, _ := filepath.Abs(localFile)
-	staticURL := "/static/uploads/photos/" +
-		strconv.Itoa(int(inspection.ID)) + "/" + strconv.Itoa(defectID) + "/" + fileName
-
 	photo := models.Photo{
-		DefectID:     uint(defectID),
-		FileURL:      staticURL,
+		DefectID:     defectID,
+		FileURL:      "/static/uploads/photos/" + inspStr + "/" + defStr + "/" + fileName,
 		FilePath:     absPath,
 		FileName:     fileName,
 		UploadStatus: "pending",
+		ClientID:     clientID,
 	}
 	if err := storage.DB.Create(&photo).Error; err != nil {
+		os.Remove(localFile)
+		// Два параллельных запроса с одним client_id: первый уже сохранил фото
+		if clientID != nil && isUniqueConflict(err, "client_id") {
+			if existing, found := findPhotoByClientID(*clientID); found {
+				c.JSON(http.StatusOK, photoJSON(existing, true))
+				return existing, false
+			}
+		}
+		logger.Ctx(c.Request.Context()).Error("photo create failed", "inspection_id", inspectionID, "defect_id", defectID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения записи"})
-		return
+		return models.Photo{}, false
 	}
 
 	go makeThumbAsync(photo)
 
-	// Ставим фото в очередь на загрузку
 	if cloudStore != nil {
 		if uploadQueue != nil {
-			if err := uploadQueue.Push(context.Background(), inspection.ID); err != nil {
-				logger.Ctx(c.Request.Context()).Error("redis push failed, fallback sync", "inspection_id", inspection.ID, "error", err)
-				ScheduleSync(inspection.ID)
+			if err := uploadQueue.Push(context.Background(), inspectionID); err != nil {
+				logger.Ctx(c.Request.Context()).Error("redis push failed, fallback sync", "inspection_id", inspectionID, "error", err)
+				ScheduleSync(inspectionID)
 			}
 		} else {
-			ScheduleSync(inspection.ID)
+			ScheduleSync(inspectionID)
 		}
 	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"id":       photo.ID,
-		"url":      photo.FileURL,
-		"filename": photo.FileName,
-	})
+	return photo, true
 }
 
 // loadPhotoInspection загружает осмотр по цепочке фото → дефект → помещение → осмотр
@@ -591,7 +760,7 @@ func BuildUploadStatusMap(inspectionID uint) map[string]interface{} {
 
 // SyncInspectionPhotos — синхронный fallback: загружает все фото и публикует папку.
 // Используется когда Redis недоступен. Устанавливает upload_status = "pending" для
-// всех фото с file_path != '', затем вызывает UploadInspectionPhotos.
+// всех фото с file_path != ”, затем вызывает UploadInspectionPhotos.
 func SyncInspectionPhotos(inspectionID uint) {
 	if cloudStore == nil {
 		return
