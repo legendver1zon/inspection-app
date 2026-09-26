@@ -50,7 +50,7 @@ func PostGenerateDocument(c *gin.Context) {
 			logger.Ctx(c.Request.Context()).Error("PDF generate EnsureFolder", "inspection_id", inspection.ID, "error", err)
 		}
 		// Перечитываем осмотр, чтобы получить актуальный PhotoFolderURL
-		storage.DB.Preload("User").Preload("Rooms.Defects.DefectTemplate").Preload("Rooms.Defects.Photos").
+		storage.DB.Preload("User").Preload("Rooms.Defects.DefectTemplate").Preload("Rooms.Defects.Photos").Preload("Signatures").
 			First(&inspection, inspection.ID)
 		filePath, genErr = pdf.Generate(inspection, outputDir)
 	} else {

@@ -1,6 +1,10 @@
 package pdf
 
 import (
+	"bytes"
+	"image"
+	"image/color"
+	"image/png"
 	"inspection-app/internal/models"
 	"os"
 	"path/filepath"
@@ -310,43 +314,6 @@ func TestRoomHasAnyDefects(t *testing.T) {
 	}
 }
 
-func TestMaxWindowsUsed(t *testing.T) {
-	tests := []struct {
-		name     string
-		rooms    []models.InspectionRoom
-		expected int
-	}{
-		{"no windows", []models.InspectionRoom{{Window1Height: 0}}, 1},
-		{"window 1 only", []models.InspectionRoom{{Window1Height: 1.5}}, 1},
-		{"window 2", []models.InspectionRoom{{Window2Height: 1.0}}, 2},
-		{"window 3", []models.InspectionRoom{{Window3Width: 0.5}}, 3},
-		{"window 5", []models.InspectionRoom{{Window5Height: 2.0}}, 5},
-		{"mixed rooms", []models.InspectionRoom{
-			{Window1Height: 1.0},
-			{Window3Width: 0.5},
-		}, 3},
-	}
-
-	for _, tt := range tests {
-		result := maxWindowsUsed(tt.rooms)
-		if result != tt.expected {
-			t.Errorf("maxWindowsUsed(%s) = %d, want %d", tt.name, result, tt.expected)
-		}
-	}
-}
-
-func TestHasAnyMeasurements(t *testing.T) {
-	if hasAnyMeasurements([]models.InspectionRoom{{Length: 0, Width: 0}}) {
-		t.Error("Не должно быть замеров для нулевых значений")
-	}
-	if !hasAnyMeasurements([]models.InspectionRoom{{Length: 5.5}}) {
-		t.Error("Должен найти замер Length=5.5")
-	}
-	if !hasAnyMeasurements([]models.InspectionRoom{{DoorHeight: 2.1}}) {
-		t.Error("Должен найти замер DoorHeight=2.1")
-	}
-}
-
 func TestSplitByCommas(t *testing.T) {
 	tests := []struct {
 		input    string
@@ -402,5 +369,45 @@ func TestGenerate_EmptyDefectsNotRendered(t *testing.T) {
 	b, _ := os.Stat(without)
 	if a.Size() != b.Size() {
 		t.Errorf("пустые дефекты попали в PDF: %d байт против %d без дефектов", a.Size(), b.Size())
+	}
+}
+
+// Подпись собственника рисуется картинкой над линией, температура скрыта.
+func TestGenerate_HideClimateAndSignature(t *testing.T) {
+	tmp := t.TempDir()
+	sigDir := filepath.Join(tmp, "web", "static", "uploads", "signatures", "1")
+	if err := os.MkdirAll(sigDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	img := image.NewNRGBA(image.Rect(0, 0, 120, 40))
+	for x := 10; x < 110; x++ {
+		img.Set(x, 20, color.NRGBA{A: 255})
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(sigDir, "owner-test.png"), buf.Bytes(), 0644); err != nil {
+		t.Fatal(err)
+	}
+	orig, _ := os.Getwd()
+	if err := os.Chdir(tmp); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(orig) })
+
+	inspection := &models.Inspection{
+		ActNumber: "7-260926", Date: time.Now(), Address: "ул. Подписная, 1",
+		OwnerName: "Иванов И.И.", HideClimate: true,
+		User:       models.User{Initials: "Сидоров С.С."},
+		Signatures: []models.Signature{{Role: models.SignatureRoleOwner, FilePath: "signatures/1/owner-test.png", SignedAt: time.Now()}},
+	}
+	out := filepath.Join(tmp, "out")
+	path, err := Generate(inspection, out)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if st, err := os.Stat(path); err != nil || st.Size() == 0 {
+		t.Fatalf("PDF не создан: %v", err)
 	}
 }

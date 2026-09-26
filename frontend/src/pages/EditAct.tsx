@@ -10,8 +10,10 @@ import Header from '../components/Header'
 import PlanCard from './edit/PlanCard'
 import RoomCard from './edit/RoomCard'
 import PhotoDock from './edit/PhotoDock'
-import { buildParams, bindsFrom, emptyRoom, fromDraftRoom, numStr, roomFromData, toDraftRoom, type DefectBind, type RoomForm } from './edit/form'
-import { Button, Card, CheckIcon, Chip, Collapse, Field, PlusIcon, TextArea, TextInput } from './edit/ui'
+import SignaturePad from './edit/SignaturePad'
+import SignatureRow from './edit/SignatureRow'
+import { buildParams, bindsFrom, emptyRoom, fromDraftRoom, localISO, numStr, roomFromData, sigsFrom, toDraftRoom, type DefectBind, type RoomForm, type SigRole, type SigState } from './edit/form'
+import { Button, Card, CheckIcon, Chip, Collapse, Field, PlusIcon, Switch, TextArea, TextInput } from './edit/ui'
 
 /* Редактор акта в структуре редактора осмотров CRM. Работает без сети:
    черновик формы живёт в IndexedDB, автосохранение повторяется при
@@ -49,6 +51,9 @@ export default function EditAct({ user }: { user: User }) {
   const [paramsOpen, setParamsOpen] = useState(false)
   const [planUrl, setPlanUrl] = useState('')
   const [generalBinds, setGeneralBinds] = useState<Record<string, DefectBind>>({})
+  const [sigs, setSigs] = useState<Record<string, SigState>>({})
+  const [padRole, setPadRole] = useState<SigRole | null>(null)
+  const [serverLocked, setServerLocked] = useState(false)
   const [numberTaken, setNumberTaken] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -64,8 +69,8 @@ export default function EditAct({ user }: { user: User }) {
   // Счётчик правок: автосейв снимает dirty только если за время POST
   // не появилось новых изменений
   const changeSeq = useRef(0)
-  const latest = useRef({ header, rooms })
-  latest.current = { header, rooms }
+  const latest = useRef({ header, rooms, sigs })
+  latest.current = { header, rooms, sigs }
 
   // Загрузка: данные сервера (или кеш SW без сети) + черновик из IndexedDB.
   // Черновик есть только если были несохранённые правки — он главнее.
@@ -83,10 +88,16 @@ export default function EditAct({ user }: { user: User }) {
         setTemplates(data.templates)
         setPlanUrl(a.plan_image)
         setGeneralBinds(generalBindsFrom(a.general_photos))
+        setServerLocked(!!a.locked)
         setParamsOpen(!a.total_area)
       }
+      const serverSigs = sigsFrom(data?.act.signatures)
       if (draft) {
         setHeader(draft.header)
+        // Неотправленная подпись из черновика главнее серверной
+        const d = draft.signatures ?? {}
+        const pendingSig = (s?: SigState) => !!(s && (s.dataUrl || s.clear || s.fromProfile))
+        setSigs({ inspector: pendingSig(d.inspector) ? d.inspector! : serverSigs.inspector, owner: pendingSig(d.owner) ? d.owner! : serverSigs.owner })
         setRooms(draft.rooms.map((r, idx) => fromDraftRoom(r, data?.rooms[idx] ? bindsFrom(data.rooms[idx]) : {}, data?.rooms[idx] ? idx + 1 : 0)))
         if (!data) {
           setTemplates(draft.templates)
@@ -104,8 +115,9 @@ export default function EditAct({ user }: { user: User }) {
           rooms_count: numStr(a.rooms_count), floor: numStr(a.floor), total_area: numStr(a.total_area),
           temp_outside: a.temp_outside ? String(a.temp_outside) : '', temp_inside: a.temp_inside ? String(a.temp_inside) : '',
           humidity: numStr(a.humidity), electricity: a.electricity, ventilation: a.ventilation,
-          general_notes: a.general_notes,
+          general_notes: a.general_notes, hide_climate: a.hide_climate ? '1' : '0',
         })
+        setSigs(serverSigs)
         setRooms(data.rooms.length > 0 ? data.rooms.map(roomFromData) : [emptyRoom()])
       } else {
         return
@@ -128,11 +140,12 @@ export default function EditAct({ user }: { user: User }) {
         header: latest.current.header,
         rooms: latest.current.rooms.map(toDraftRoom),
         templates,
+        signatures: latest.current.sigs,
         updatedAt: Date.now(),
       })
     }, 400)
     return () => clearTimeout(t)
-  }, [dirty, loaded, header, rooms, actId, actNumber, templates])
+  }, [dirty, loaded, header, rooms, sigs, actId, actNumber, templates])
 
   function markDirty() {
     changeSeq.current++
@@ -178,6 +191,13 @@ export default function EditAct({ user }: { user: User }) {
     const d = await api.editData(actId)
     setPlanUrl(d.act.plan_image)
     setGeneralBinds(generalBindsFrom(d.act.general_photos))
+    setServerLocked(!!d.act.locked)
+    const fresh = sigsFrom(d.act.signatures)
+    // Подпись, нарисованная во время отправки, не теряется
+    setSigs((cur) => ({
+      inspector: cur.inspector === sentSigs.current.inspector ? fresh.inspector : cur.inspector,
+      owner: cur.owner === sentSigs.current.owner ? fresh.owner : cur.owner,
+    }))
     setRooms((rs) =>
       rs.map((room, idx) => {
         const serverRoom = d.rooms.find((r) => r.number === (room.prev || idx + 1))
@@ -186,13 +206,15 @@ export default function EditAct({ user }: { user: User }) {
     )
   }
 
+  const sentSigs = useRef<Record<string, SigState>>({})
   async function doSave(auto: boolean) {
     const seq = changeSeq.current
     setSaving(true)
     if (!auto) setError('')
     uploadQueue.hold()
+    sentSigs.current = sigs
     try {
-      const err = await api.saveAct(actId, buildParams(header, rooms))
+      const err = await api.saveAct(actId, buildParams(header, rooms, sigs))
       if (err) {
         setError(err)
         setSaveFailed(false)
@@ -264,6 +286,23 @@ export default function EditAct({ user }: { user: User }) {
 
   const allPhotos = [...rooms.flatMap((r) => Object.values(r.binds).flatMap((b) => b.photos)), ...Object.values(generalBinds).flatMap((b) => b.photos)]
   const generalPhotoN = Object.values(generalBinds).reduce((s, b) => s + b.photos.length, 0)
+  const climateOn = header.hide_climate !== '1'
+  const locked = serverLocked && !sigs.owner?.clear
+  const sign = (role: SigRole, dataUrl: string) => {
+    setSigs((s) => ({ ...s, [role]: { dataUrl, at: localISO() } }))
+    setPadRole(null)
+    markDirty()
+  }
+  const signFromProfile = () => {
+    setSigs((s) => ({ ...s, inspector: { fromProfile: true, at: localISO() } }))
+    markDirty()
+  }
+  const clearSig = (role: SigRole) => {
+    const msg = role === 'owner' && serverLocked ? 'Снять подпись собственника? Акт снова откроется для правок.' : 'Убрать подпись?'
+    if (!window.confirm(msg)) return
+    setSigs((s) => ({ ...s, [role]: { clear: true } }))
+    markDirty()
+  }
   const generalKey = (kind: string) => ({ actId, roomNumber: 0, section: kind, templateId: null, wallNumber: 0 })
   const generalRefs = (kind: string) => (generalBinds[kind] ? [{ key: kind, bind: generalBinds[kind] }] : [])
   const setGeneralBind = (key: string, b: DefectBind) => setGeneralBinds((g) => ({ ...g, [key]: b }))
@@ -274,6 +313,7 @@ export default function EditAct({ user }: { user: User }) {
     header.total_area && `${header.total_area} м²`,
     header.floor && `${header.floor} этаж`,
     header.owner_name,
+    !climateOn && 'без температуры',
     generalPhotoN > 0 && `${generalPhotoN} фото`,
   ].filter(Boolean).join(' · ')
 
@@ -325,6 +365,15 @@ export default function EditAct({ user }: { user: User }) {
               </div>
             )}
 
+            {locked && (
+              <div className="flex flex-wrap items-center gap-3 rounded-xl px-4 py-3" role="status" style={{ background: C.warnBg, color: C.warn }}>
+                <span className="min-w-0 flex-1 text-[13px] font-semibold">Акт подписан собственником и закрыт для правок.</span>
+                <Button variant="danger-text" className="h-8 px-2 text-[12px] sm:h-8" onClick={() => clearSig('owner')}>Снять подпись</Button>
+              </div>
+            )}
+
+            <div inert={locked || undefined} className={locked ? 'flex flex-col gap-4 opacity-60' : 'contents'}>
+
             <Card title="Основные данные">
               <div className="grid gap-3 sm:grid-cols-2">
                 <Field label="Номер акта" error={numberTaken}>
@@ -358,9 +407,16 @@ export default function EditAct({ user }: { user: User }) {
                 <Field label="Этаж"><TextInput inputMode="numeric" value={header.floor ?? ''} onChange={(e) => setH('floor', e.target.value)} /></Field>
                 <Field label="Помещений"><TextInput inputMode="numeric" value={header.rooms_count ?? ''} onChange={(e) => setH('rooms_count', e.target.value)} /></Field>
                 <Field label="Площадь, м²"><TextInput inputMode="decimal" value={header.total_area ?? ''} onChange={(e) => setH('total_area', e.target.value)} /></Field>
-                <Field label="t° снаружи"><TextInput inputMode="decimal" value={header.temp_outside ?? ''} onChange={(e) => setH('temp_outside', e.target.value)} /></Field>
-                <Field label="t° внутри"><TextInput inputMode="decimal" value={header.temp_inside ?? ''} onChange={(e) => setH('temp_inside', e.target.value)} /></Field>
-                <Field label="Влажность, %"><TextInput inputMode="decimal" value={header.humidity ?? ''} onChange={(e) => setH('humidity', e.target.value)} /></Field>
+                <div className="col-span-2 sm:col-span-6">
+                  <Switch checked={climateOn} onChange={(v) => setH('hide_climate', v ? '0' : '1')} label="Температура и влажность в акте" hint="Летом выключите — строка не попадёт в PDF" />
+                </div>
+                {climateOn && (
+                  <>
+                    <Field label="t° снаружи"><TextInput inputMode="decimal" value={header.temp_outside ?? ''} onChange={(e) => setH('temp_outside', e.target.value)} /></Field>
+                    <Field label="t° внутри"><TextInput inputMode="decimal" value={header.temp_inside ?? ''} onChange={(e) => setH('temp_inside', e.target.value)} /></Field>
+                    <Field label="Влажность, %"><TextInput inputMode="decimal" value={header.humidity ?? ''} onChange={(e) => setH('humidity', e.target.value)} /></Field>
+                  </>
+                )}
                 <Field label="ФИО собственника" className="col-span-2 sm:col-span-3"><TextInput value={header.owner_name ?? ''} onChange={(e) => setH('owner_name', e.target.value)} /></Field>
                 <Field label="Представитель застройщика" className="col-span-2 sm:col-span-3"><TextInput value={header.developer_rep_name ?? ''} onChange={(e) => setH('developer_rep_name', e.target.value)} /></Field>
                 <div className="col-span-2 flex flex-col gap-2 sm:col-span-3">
@@ -412,15 +468,53 @@ export default function EditAct({ user }: { user: User }) {
                 )}
               </div>
             </Card>
+            </div>
+
+            <Card title="Подписи">
+              <div className="flex flex-col gap-2.5">
+                <SignatureRow
+                  role="inspector"
+                  label="Осмотр проводил"
+                  name={user.initials}
+                  state={sigs.inspector ?? {}}
+                  user={user}
+                  disabled={locked}
+                  onDraw={() => setPadRole('inspector')}
+                  onFromProfile={signFromProfile}
+                  onClear={() => clearSig('inspector')}
+                />
+                <SignatureRow
+                  role="owner"
+                  label="Собственник"
+                  name={header.owner_name || 'ФИО собственника не указано'}
+                  state={sigs.owner ?? {}}
+                  user={user}
+                  onDraw={() => setPadRole('owner')}
+                  onClear={() => clearSig('owner')}
+                />
+                <span className="text-[12px]" style={{ color: C.faint }}>Представитель застройщика подписывает бумажный экземпляр акта.</span>
+              </div>
+            </Card>
+
+            <SignaturePad
+              open={padRole !== null}
+              title={padRole === 'owner' ? 'Подпись собственника' : 'Подпись инспектора'}
+              onClose={() => setPadRole(null)}
+              onDone={(d) => padRole && sign(padRole, d)}
+            />
 
             <div className="fixed inset-x-0 bottom-0 z-30 border-t px-4 py-3 backdrop-blur-md sm:px-5" style={{ background: 'rgba(255,255,255,.88)', borderColor: C.line, paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
               <div className="mx-auto flex max-w-4xl items-center gap-3">
                 <span className="min-w-0 flex-1 text-[13px] leading-tight" style={{ color: error || saveFailed ? C.err : !online ? C.warn : C.muted }} aria-live="polite">
                   {statusText}
                 </span>
-                <Button variant="primary" icon={<CheckIcon />} disabled={saving || !!numberTaken} onClick={() => doSave(false)}>
-                  {saving ? 'Сохраняем…' : 'Сохранить и выйти'}
-                </Button>
+                {locked && !dirty ? (
+                  <Button variant="primary" onClick={() => navigate(`/inspections/${actId}`)}>К просмотру акта</Button>
+                ) : (
+                  <Button variant="primary" icon={<CheckIcon />} disabled={saving || !!numberTaken} onClick={() => doSave(false)}>
+                    {saving ? 'Сохраняем…' : 'Сохранить и выйти'}
+                  </Button>
+                )}
               </div>
             </div>
           </>

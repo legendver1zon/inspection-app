@@ -70,6 +70,7 @@ func Migrate() {
 		&models.DefectTemplate{},
 		&models.Document{},
 		&models.Photo{},
+		&models.Signature{},
 	)
 	if err != nil {
 		log.Fatalf("Ошибка миграции: %v", err)

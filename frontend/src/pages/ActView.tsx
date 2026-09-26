@@ -143,9 +143,11 @@ export default function ActView({ user }: { user: User }) {
                   act.rooms_count > 0 && `${act.rooms_count} комн.`,
                   act.floor > 0 && `${act.floor} этаж`,
                   act.total_area > 0 && `${act.total_area} м²`,
-                  act.temp_outside !== 0 && `t° нар. ${act.temp_outside}°C`,
-                  act.temp_inside !== 0 && `t° внутр. ${act.temp_inside}°C`,
-                  act.humidity > 0 && `влажность ${act.humidity}%`,
+                  !act.hide_climate && act.temp_outside !== 0 && `t° нар. ${act.temp_outside}°C`,
+                  !act.hide_climate && act.temp_inside !== 0 && `t° внутр. ${act.temp_inside}°C`,
+                  !act.hide_climate && act.humidity > 0 && `влажность ${act.humidity}%`,
+                  act.signatures?.inspector && `подписал инспектор ${fmtSigned(act.signatures.inspector.signed_at)}`,
+                  act.signatures?.owner && `подписал собственник ${fmtSigned(act.signatures.owner.signed_at)}`,
                   act.electricity && `электричество: ${act.electricity}`,
                   act.ventilation && `вентиляция: ${act.ventilation}`,
                 ]
@@ -346,6 +348,11 @@ export default function ActView({ user }: { user: User }) {
       </main>
     </div>
   )
+}
+
+function fmtSigned(iso: string) {
+  const d = new Date(iso)
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
 
 function MiniStat({ n, label }: { n: number; label: string }) {

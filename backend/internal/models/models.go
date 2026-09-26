@@ -16,14 +16,15 @@ const (
 // User — пользователь системы
 type User struct {
 	gorm.Model
-	Email        string `gorm:"uniqueIndex;not null"`
-	PasswordHash string `gorm:"not null"`
-	FullName     string `gorm:"not null"`
-	Initials     string `gorm:"not null"`
-	Role         Role   `gorm:"not null;default:'inspector'"`
-	AvatarURL    string
-	ResetToken   string
-	ResetExpiry  *time.Time
+	Email         string `gorm:"uniqueIndex;not null"`
+	PasswordHash  string `gorm:"not null"`
+	FullName      string `gorm:"not null"`
+	Initials      string `gorm:"not null"`
+	Role          Role   `gorm:"not null;default:'inspector'"`
+	AvatarURL     string
+	ResetToken    string
+	ResetExpiry   *time.Time
+	SignaturePath string // рукописная подпись (файл в uploads), ставится в акт одним нажатием
 }
 
 // Inspection — акт осмотра объекта
@@ -52,7 +53,34 @@ type Inspection struct {
 	Ventilation  string
 	GeneralNotes string
 
-	Rooms []InspectionRoom `gorm:"foreignKey:InspectionID"`
+	HideClimate bool `gorm:"not null;default:false"` // не печатать температуру и влажность в акте
+
+	Rooms      []InspectionRoom `gorm:"foreignKey:InspectionID"`
+	Signatures []Signature      `gorm:"foreignKey:InspectionID"`
+}
+
+// Роли рукописных подписей в акте. Представитель застройщика подписывает
+// бумажный экземпляр, его строка в PDF остаётся пустой.
+const (
+	SignatureRoleInspector = "inspector"
+	SignatureRoleOwner     = "owner"
+)
+
+// Signature — рукописная подпись стороны (PNG). Подпись собственника
+// закрывает акт для правок, пока её не снимут.
+type Signature struct {
+	ID           uint      `gorm:"primaryKey"`
+	InspectionID uint      `gorm:"not null;uniqueIndex:idx_signatures_inspection_role"`
+	Role         string    `gorm:"size:16;not null;uniqueIndex:idx_signatures_inspection_role"`
+	FilePath     string    `gorm:"not null"` // относительно каталога uploads
+	SignedAt     time.Time `gorm:"not null"`
+	TZOffsetMin  int       // смещение зоны телефона в минутах: база хранит UTC, а в акте нужно местное время
+	CreatedAt    time.Time
+}
+
+// SignedLocal — время подписания в зоне телефона, как его видел подписавший.
+func (s Signature) SignedLocal() time.Time {
+	return s.SignedAt.In(time.FixedZone("", s.TZOffsetMin*60))
 }
 
 // Виды фото: дефекта, общего вида помещения и общих замечаний по квартире.

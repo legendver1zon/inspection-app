@@ -265,6 +265,10 @@ func main() {
 			apiAuthed.GET("/inspections/:id/edit-data", handlers.APIGetEditData)
 			apiAuthed.GET("/dashboard", handlers.APIDashboard)
 			apiAuthed.POST("/profile", handlers.APIUpdateProfile)
+			apiAuthed.GET("/profile/signature", handlers.APIGetProfileSignature)
+			apiAuthed.POST("/profile/signature", handlers.APISetProfileSignature)
+			apiAuthed.POST("/profile/signature/delete", handlers.APIDeleteProfileSignature)
+			apiAuthed.GET("/inspections/:id/signature/:role", handlers.APIGetInspectionSignature)
 
 			apiAdmin := apiAuthed.Group("/")
 			apiAdmin.Use(handlers.APIAdminOnly())

@@ -3,6 +3,7 @@
 // сохранения на сервере.
 import { createStore, del, get, set } from 'idb-keyval'
 import type { DefectTemplate } from './api'
+import type { SigState } from '../pages/edit/form'
 
 // Своя база: idb-keyval создаёт хранилище только при первом открытии базы
 const store = createStore('inspection-app-drafts', 'drafts')
@@ -25,6 +26,7 @@ export interface Draft {
   header: Record<string, string>
   rooms: DraftRoom[]
   templates: DefectTemplate[]
+  signatures?: Record<string, SigState>
   updatedAt: number
 }
 

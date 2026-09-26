@@ -47,6 +47,18 @@ export interface User {
   initials: string
   role: 'admin' | 'inspector'
   avatar_url: string
+  has_signature: boolean
+  signature_url: string
+}
+
+// Рукописные подписи в акте (представитель застройщика подписывает бумагу)
+export interface SignatureInfo {
+  signed_at: string
+  url: string
+}
+export interface Signatures {
+  inspector: SignatureInfo | null
+  owner: SignatureInfo | null
 }
 
 export interface ActCard {
@@ -142,6 +154,9 @@ export interface InspectionDetail {
   plan_image: string
   photo_folder_url: string
   general_photos: GeneralPhotos
+  hide_climate: boolean
+  signatures: Signatures
+  locked: boolean
   can_delete: boolean
   rooms: Room[]
   archived: ArchivedDefect[]
@@ -205,6 +220,9 @@ export interface EditData {
     general_notes: string
     plan_image: string
     general_photos: GeneralPhotos
+    hide_climate: boolean
+    signatures: Signatures
+    locked: boolean
   }
   rooms: EditRoomData[]
   templates: DefectTemplate[]
@@ -376,6 +394,9 @@ export const api = {
     new_password?: string
     confirm?: string
   }) => request<{ user: User }>('/api/profile', { method: 'POST', body: JSON.stringify(body) }),
+  setProfileSignature: (dataUrl: string) =>
+    request<{ user: User }>('/api/profile/signature', { method: 'POST', body: JSON.stringify({ data_url: dataUrl }) }),
+  deleteProfileSignature: () => request<{ user: User }>('/api/profile/signature/delete', { method: 'POST' }),
   uploadAvatar: async (file: File) => {
     const fd = new FormData()
     fd.append('avatar', file)

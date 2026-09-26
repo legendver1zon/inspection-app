@@ -105,23 +105,15 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 		"Этаж:", strconv.Itoa(inspection.Floor),
 		"Общая площадь:", fmtFloat(inspection.TotalArea)+" м²",
 	)
-	row4col(f,
-		"t наружн.=", fmtTempOutside(inspection.TempOutside),
-		"t внутр.=", fmtTempInside(inspection.TempInside),
-		"RH=", fmtHumidity(inspection.Humidity),
-	)
-
-	// Высота таблицы замеров: заголовок(6) + строк*6 + отступ(4)
-	// При 4+ окнах — две таблицы
-	measTableH := 0.0
-	if hasAnyMeasurements(inspection.Rooms) {
-		oneTableH := 10.0 + float64(len(inspection.Rooms))*6.0
-		if maxWindowsUsed(inspection.Rooms) >= 4 {
-			measTableH = oneTableH*2 + 8
-		} else {
-			measTableH = oneTableH
-		}
+	// Летом температуру и влажность отключают в акте
+	if !inspection.HideClimate {
+		row4col(f,
+			"t наружн.=", fmtTempOutside(inspection.TempOutside),
+			"t внутр.=", fmtTempInside(inspection.TempInside),
+			"RH=", fmtHumidity(inspection.Humidity),
+		)
 	}
+
 	// Нижняя граница первой страницы (с учётом колонтитула)
 	pg1Bottom := pageH - marginB - 10.0
 
@@ -143,8 +135,8 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 					// Масштабируем под ширину страницы, сохраняем пропорции
 					drawW := contentW
 					drawH := iH * (drawW / iW)
-					// Ограничиваем высоту так, чтобы ниже поместилась таблица замеров
-					maxH := pg1Bottom - measTableH - f.GetY() - 5
+					// Не выходим за низ первой страницы
+					maxH := pg1Bottom - f.GetY() - 5
 					if maxH < 30 {
 						maxH = 30
 					}
@@ -162,18 +154,7 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 		}
 	}
 
-	// Таблица замеров — прикреплена к низу первой страницы (как подписи)
-	if hasAnyMeasurements(inspection.Rooms) {
-		if !hasContent {
-			f.Ln(5)
-		}
-		// Опускаем позицию к низу страницы
-		f.SetY(pg1Bottom - measTableH)
-		drawMeasurementsTable(f, inspection.Rooms)
-		hasContent = true
-	}
-
-	// ===== Дефекты по помещениям — с новой страницы (если на стр.1 был план/замеры)
+	// ===== Дефекты по помещениям — с новой страницы (если на стр.1 был план)
 	if hasContent {
 		f.AddPage()
 	} else {
@@ -216,7 +197,7 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 	}
 
 	// ===== Подписи сторон — внизу последней страницы =====
-	const sigH = 56.0
+	const sigH = 88.0
 	// Нижняя граница области контента (с отступом для колонтитула)
 	bottomLine := pageH - marginB - 10.0
 	if f.GetY()+sigH > bottomLine {
@@ -246,43 +227,6 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 	return outPath, nil
 }
 
-func hasAnyMeasurements(rooms []models.InspectionRoom) bool {
-	for _, r := range rooms {
-		if r.Length > 0 || r.Width > 0 || r.Height > 0 ||
-			r.Window1Height > 0 || r.Window1Width > 0 ||
-			r.Window2Height > 0 || r.Window3Height > 0 ||
-			r.Window4Height > 0 || r.Window5Height > 0 ||
-			r.DoorHeight > 0 || r.DoorWidth > 0 {
-			return true
-		}
-	}
-	return false
-}
-
-// maxWindowsUsed returns the highest window number (1-5) that has data across all rooms.
-func maxWindowsUsed(rooms []models.InspectionRoom) int {
-	max := 1
-	for _, r := range rooms {
-		if r.Window5Height > 0 || r.Window5Width > 0 {
-			return 5
-		}
-		if r.Window4Height > 0 || r.Window4Width > 0 {
-			if 4 > max {
-				max = 4
-			}
-		} else if r.Window3Height > 0 || r.Window3Width > 0 {
-			if 3 > max {
-				max = 3
-			}
-		} else if r.Window2Height > 0 || r.Window2Width > 0 {
-			if 2 > max {
-				max = 2
-			}
-		}
-	}
-	return max
-}
-
 func roomHasAnyDefects(room *models.InspectionRoom) bool {
 	for _, d := range room.Defects {
 		if d.Value != "" || d.Notes != "" {
@@ -290,204 +234,6 @@ func roomHasAnyDefects(room *models.InspectionRoom) bool {
 		}
 	}
 	return false
-}
-
-func drawMeasurementsTable(f *fpdf.Fpdf, rooms []models.InspectionRoom) {
-	if len(rooms) == 0 {
-		return
-	}
-
-	numWin := maxWindowsUsed(rooms)
-	const rowH = 6.0
-
-	windowVals := func(r models.InspectionRoom) []float64 {
-		return []float64{
-			r.Window1Height, r.Window1Width,
-			r.Window2Height, r.Window2Width,
-			r.Window3Height, r.Window3Width,
-			r.Window4Height, r.Window4Width,
-			r.Window5Height, r.Window5Width,
-		}
-	}
-
-	// drawTwoLineHeader рисует заголовок: если в названии есть пробел — две строки,
-	// иначе — одна строка, центрированная по вертикали.
-	drawTwoLineHeader := func(hdrs []string, wids []float64, hdrH float64, fs float64) {
-		startY := f.GetY()
-		// Проход 1: рамки
-		xCur := marginL
-		for i := range hdrs {
-			f.SetXY(xCur, startY)
-			f.CellFormat(wids[i], hdrH, "", "1", 0, "C", false, 0, "")
-			xCur += wids[i]
-		}
-		// Проход 2: текст
-		setFont(f, "B", fs)
-		xCur = marginL
-		for i, h := range hdrs {
-			if idx := strings.Index(h, " "); idx >= 0 {
-				// Два слова — разбиваем на две строки
-				f.SetXY(xCur, startY)
-				f.CellFormat(wids[i], hdrH/2, h[:idx], "", 0, "C", false, 0, "")
-				f.SetXY(xCur, startY+hdrH/2)
-				f.CellFormat(wids[i], hdrH/2, h[idx+1:], "", 0, "C", false, 0, "")
-			} else {
-				// Одно слово — по центру вертикально
-				f.SetXY(xCur, startY+(hdrH-rowH)/2)
-				f.CellFormat(wids[i], rowH, h, "", 0, "C", false, 0, "")
-			}
-			xCur += wids[i]
-		}
-		f.SetXY(marginL, startY+hdrH)
-	}
-
-	if numWin >= 4 {
-		// === Таблица 1: основные размеры (без окон) ===
-		// №(8) + Помещение(35 фикс.) + 5 колонок данных (остаток поровну)
-		const mainNameW = 35.0
-		mainDataColW := (contentW - 8.0 - mainNameW) / 5.0
-		// Заголовки: слова с пробелом → двухстрочные
-		mainHeaders := []string{"№", "Помещение", "Длина", "Ширина", "Высота", "Дверь высота", "Дверь ширина"}
-		mainWidths := []float64{8, mainNameW, mainDataColW, mainDataColW, mainDataColW, mainDataColW, mainDataColW}
-
-		drawTwoLineHeader(mainHeaders, mainWidths, 12.0, 9)
-
-		setFont(f, "", 9)
-		for _, room := range rooms {
-			// Перенос строки в названии помещения если не влезает
-			nameLines := wrapText(f, room.RoomName, mainNameW)
-			nRows := len(nameLines)
-			if nRows < 1 {
-				nRows = 1
-			}
-			rH := float64(nRows) * rowH
-			startY := f.GetY()
-			xCur := marginL
-			// Рамки строки
-			allCols := append([]float64{}, mainWidths...)
-			for _, w := range allCols {
-				f.SetXY(xCur, startY)
-				f.CellFormat(w, rH, "", "1", 0, "C", false, 0, "")
-				xCur += w
-			}
-			// Текст: № и данные
-			vals := []string{
-				strconv.Itoa(room.RoomNumber), "",
-				fmtFloat(room.Length), fmtFloat(room.Width), fmtFloat(room.Height),
-				fmtFloat(room.DoorHeight), fmtFloat(room.DoorWidth),
-			}
-			xCur = marginL
-			for i, v := range vals {
-				if i == 1 {
-					// Название помещения — с переносом строк
-					for li, line := range nameLines {
-						f.SetXY(xCur, startY+float64(li)*rowH)
-						f.CellFormat(mainWidths[i], rowH, line, "", 0, "C", false, 0, "")
-					}
-				} else {
-					f.SetXY(xCur, startY+(rH-rowH)/2)
-					f.CellFormat(mainWidths[i], rowH, v, "", 0, "C", false, 0, "")
-				}
-				xCur += mainWidths[i]
-			}
-			f.SetXY(marginL, startY+rH)
-		}
-		f.Ln(5)
-
-		// === Таблица 2: размеры окон ===
-		// №(8) + Помещение(35 фикс.) + numWin*2 колонок (остаток поровну)
-		const winNameW = 35.0
-		winColW := (contentW - 8.0 - winNameW) / float64(numWin*2)
-		winFs := 9.0
-		if numWin >= 5 {
-			winFs = 7.5
-		} else {
-			winFs = 8.0
-		}
-
-		winHeaders := []string{"№", "Помещение"}
-		winWidths := []float64{8, winNameW}
-		for i := 1; i <= numWin; i++ {
-			winHeaders = append(winHeaders, fmt.Sprintf("Ок-%d выс", i))
-			winHeaders = append(winHeaders, fmt.Sprintf("Ок-%d шир", i))
-			winWidths = append(winWidths, winColW)
-			winWidths = append(winWidths, winColW)
-		}
-		drawTwoLineHeader(winHeaders, winWidths, 12.0, winFs)
-
-		setFont(f, "", winFs)
-		for _, room := range rooms {
-			wins := windowVals(room)
-			// Пропускаем помещения без размеров окон
-			hasWin := false
-			for _, v := range wins {
-				if v > 0 {
-					hasWin = true
-					break
-				}
-			}
-			if !hasWin {
-				continue
-			}
-			row := []string{strconv.Itoa(room.RoomNumber), room.RoomName}
-			for i := 0; i < numWin*2; i++ {
-				row = append(row, fmtFloat(wins[i]))
-			}
-			for i, cell := range row {
-				f.CellFormat(winWidths[i], rowH, cell, "1", 0, "C", false, 0, "")
-			}
-			f.Ln(-1)
-		}
-		f.Ln(4)
-
-	} else {
-		// === Одна таблица (numWin < 4) ===
-		// №(8) + Помещение(45 фикс.) + window cols + Д выс(13) + Д шир(13)
-		const singleNameW = 45.0
-		// Оставшееся место делим между окнами и дверями
-		winColW := (contentW - 8.0 - singleNameW - 26.0) / float64(numWin*2)
-		if winColW > 16.0 {
-			winColW = 16.0
-		}
-
-		headers := []string{"№", "Помещение", "Дл.", "Шир.", "Выс."}
-		widths := []float64{8, singleNameW, 13, 13, 13}
-		for i := 1; i <= numWin; i++ {
-			headers = append(headers, fmt.Sprintf("Ок-%d выс", i))
-			headers = append(headers, fmt.Sprintf("Ок-%d шир", i))
-			widths = append(widths, winColW)
-			widths = append(widths, winColW)
-		}
-		headers = append(headers, "Д выс", "Д шир")
-		widths = append(widths, 13, 13)
-
-		setFont(f, "B", 9)
-		for i, h := range headers {
-			f.CellFormat(widths[i], rowH, h, "1", 0, "C", false, 0, "")
-		}
-		f.Ln(-1)
-
-		setFont(f, "", 9)
-		for _, room := range rooms {
-			wins := windowVals(room)
-			row := []string{
-				strconv.Itoa(room.RoomNumber),
-				room.RoomName,
-				fmtFloat(room.Length),
-				fmtFloat(room.Width),
-				fmtFloat(room.Height),
-			}
-			for i := 0; i < numWin*2; i++ {
-				row = append(row, fmtFloat(wins[i]))
-			}
-			row = append(row, fmtFloat(room.DoorHeight), fmtFloat(room.DoorWidth))
-			for i, cell := range row {
-				f.CellFormat(widths[i], rowH, cell, "1", 0, "C", false, 0, "")
-			}
-			f.Ln(-1)
-		}
-		f.Ln(4)
-	}
 }
 
 func drawRoomDefects(f *fpdf.Fpdf, room *models.InspectionRoom) {
@@ -879,25 +625,74 @@ func drawGeneralNotes(f *fpdf.Fpdf, inspection *models.Inspection) {
 func drawSignatures(f *fpdf.Fpdf, inspection *models.Inspection) {
 	setFont(f, "B", 10)
 	f.CellFormat(contentW, 6, "Подписи сторон", "", 1, "C", false, 0, "")
-	f.Ln(5)
+	f.Ln(2)
 
-	sigLine := func(role, name string) {
+	sigs := map[string]models.Signature{}
+	for _, s := range inspection.Signatures {
+		sigs[s.Role] = s
+	}
+
+	// Над линией — место под подпись: картинка рукописной подписи с телефона
+	// или пустое поле для подписи на бумаге (представитель застройщика).
+	const imgH, imgMaxW, colX, colW = 14.0, 50.0, marginL + 50.0, 55.0
+	sigLine := func(role, name string, sig *models.Signature) {
+		top := f.GetY()
+		if sig != nil {
+			if p := signatureImagePath(sig); p != "" {
+				opts := fpdf.ImageOptions{ImageType: "PNG"}
+				if info := f.RegisterImageOptions(p, opts); info != nil {
+					iw, ih := info.Extent()
+					if iw > 0 && ih > 0 {
+						drawH := imgH
+						drawW := iw * (drawH / ih)
+						if drawW > imgMaxW {
+							drawW = imgMaxW
+							drawH = ih * (drawW / iw)
+						}
+						f.ImageOptions(p, colX+(colW-drawW)/2, top+imgH-drawH, drawW, drawH, false, opts, 0, "")
+					}
+				}
+			}
+		}
+		f.SetY(top + imgH)
 		setFont(f, "", 9)
 		f.CellFormat(50, 5, role, "", 0, "L", false, 0, "")
-		f.CellFormat(55, 5, "", "B", 0, "C", false, 0, "")
+		f.CellFormat(colW, 5, "", "B", 0, "C", false, 0, "")
 		f.CellFormat(5, 5, "", "", 0, "C", false, 0, "")
 		f.CellFormat(70, 5, name, "B", 1, "C", false, 0, "")
 		setFont(f, "", 7)
+		caption := "(подпись)"
+		if sig != nil {
+			caption = "подписано " + sig.SignedLocal().Format("02.01.2006 15:04")
+		}
 		f.CellFormat(50, 4, "", "", 0, "", false, 0, "")
-		f.CellFormat(55, 4, "(подпись)", "", 0, "C", false, 0, "")
+		f.CellFormat(colW, 4, caption, "", 0, "C", false, 0, "")
 		f.CellFormat(5, 4, "", "", 0, "", false, 0, "")
 		f.CellFormat(70, 4, "ФИО", "", 1, "C", false, 0, "")
-		f.Ln(5)
+		f.Ln(2)
+	}
+	sigOf := func(role string) *models.Signature {
+		if s, ok := sigs[role]; ok {
+			return &s
+		}
+		return nil
 	}
 
-	sigLine("Осмотр проводил:", inspection.User.Initials)
-	sigLine("Собственник:", inspection.OwnerName)
-	sigLine("Представитель застройщика:", inspection.DeveloperRepName)
+	sigLine("Осмотр проводил:", inspection.User.Initials, sigOf(models.SignatureRoleInspector))
+	sigLine("Собственник:", inspection.OwnerName, sigOf(models.SignatureRoleOwner))
+	sigLine("Представитель застройщика:", inspection.DeveloperRepName, nil)
+}
+
+// signatureImagePath — путь к PNG подписи, если файл на месте.
+func signatureImagePath(s *models.Signature) string {
+	if s.FilePath == "" {
+		return ""
+	}
+	p := filepath.Join("web", "static", "uploads", filepath.FromSlash(s.FilePath))
+	if _, err := os.Stat(p); err != nil {
+		return ""
+	}
+	return p
 }
 
 // ===== Вспомогательные функции =====

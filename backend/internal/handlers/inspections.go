@@ -245,6 +245,11 @@ func createDraftInspection(c *gin.Context) (models.Inspection, int, string) {
 		Date:      time.Now(),
 		Status:    "draft",
 	}
+	// «Температура и влажность в акте» наследуется от последнего акта инспектора
+	var last models.Inspection
+	if storage.DB.Select("hide_climate").Where("user_id = ?", userID).Order("id desc").First(&last).Error == nil {
+		inspection.HideClimate = last.HideClimate
+	}
 
 	err := storage.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(&inspection).Error; err != nil {
@@ -401,6 +406,16 @@ func PostEditInspection(c *gin.Context) {
 		return
 	}
 
+	// Подписанный собственником акт закрыт для правок, пока подпись не снята
+	if ownerSigned(inspection.ID) && !formFlag(c, "signature_owner_clear") {
+		if auth.WantsJSON(c) {
+			c.JSON(http.StatusForbidden, gin.H{"error": errSignedByOwner})
+		} else {
+			redirectWithError(c, inspection.ID, errSignedByOwner)
+		}
+		return
+	}
+
 	if err := c.Request.ParseMultipartForm(32 << 20); err != nil {
 		logger.Ctx(c.Request.Context()).Error("ParseMultipartForm failed",
 			"inspection_id", inspection.ID,
@@ -499,6 +514,9 @@ func PostEditInspection(c *gin.Context) {
 		"electricity":        c.PostForm("electricity"),
 		"ventilation":        c.PostForm("ventilation"),
 		"general_notes":      c.PostForm("general_notes"),
+	}
+	if _, present := c.GetPostForm("hide_climate"); present {
+		updates["hide_climate"] = formFlag(c, "hide_climate")
 	}
 	if dateStr := c.PostForm("inspection_date"); dateStr != "" {
 		if d, err := time.Parse("2006-01-02", dateStr); err == nil {
@@ -674,6 +692,17 @@ func PostEditInspection(c *gin.Context) {
 		return
 	}
 
+	if err := applyFormSignatures(c, inspection); err != nil {
+		logger.Ctx(c.Request.Context()).Warn("signature not saved", "inspection_id", inspection.ID, "error", err)
+		msg := "Подпись не сохранена: " + err.Error()
+		if auth.WantsJSON(c) {
+			c.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		} else {
+			redirectWithError(c, inspection.ID, msg)
+		}
+		return
+	}
+
 	// Диагностика: считаем что фактически сохранилось
 	var savedRoomCount int64
 	var savedDefectCount int64
@@ -814,6 +843,10 @@ func PostDeleteInspection(c *gin.Context) {
 	}
 	if !canDeleteInspection(c, inspection) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Удалять можно только свои незавершённые акты"})
+		return
+	}
+	if c.GetString("userRole") != "admin" && ownerSigned(inspection.ID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": errSignedByOwner})
 		return
 	}
 

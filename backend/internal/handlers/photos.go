@@ -479,6 +479,10 @@ func DeletePhoto(c *gin.Context) {
 	if !ok {
 		return
 	}
+	if ownerSigned(photo.InspectionID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": errSignedByOwner})
+		return
+	}
 
 	if photo.FilePath != "" {
 		if err := os.Remove(photo.FilePath); err != nil && !os.IsNotExist(err) {

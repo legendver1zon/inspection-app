@@ -259,3 +259,22 @@ export function CloseIcon() {
     </svg>
   )
 }
+
+export function Switch({ checked, onChange, label, hint }: {
+  checked: boolean
+  onChange: (v: boolean) => void
+  label: ReactNode
+  hint?: ReactNode
+}) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} className="flex w-full cursor-pointer items-center gap-3 text-left">
+      <span className="relative inline-flex h-6 w-11 flex-none rounded-full transition-colors" style={{ background: checked ? C.accent : C.track }}>
+        <span className="absolute top-0.5 size-5 rounded-full bg-white shadow transition-transform" style={{ transform: checked ? 'translateX(22px)' : 'translateX(2px)' }} />
+      </span>
+      <span className="flex min-w-0 flex-col">
+        <span className="text-[14px] font-medium">{label}</span>
+        {hint && <span className="text-[12px]" style={{ color: C.faint }}>{hint}</span>}
+      </span>
+    </button>
+  )
+}

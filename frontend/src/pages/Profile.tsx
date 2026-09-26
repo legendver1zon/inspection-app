@@ -4,6 +4,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { api, ApiError, type User } from '../lib/api'
 import { C } from '../lib/palette'
 import Header from '../components/Header'
+import SignaturePad from './edit/SignaturePad'
 
 export default function Profile({ user }: { user: User }) {
   const queryClient = useQueryClient()
@@ -15,6 +16,32 @@ export default function Profile({ user }: { user: User }) {
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const avatarInput = useRef<HTMLInputElement>(null)
+  const [padOpen, setPadOpen] = useState(false)
+  const [sigBusy, setSigBusy] = useState(false)
+
+  async function saveSignature(dataUrl: string) {
+    setPadOpen(false)
+    setSigBusy(true)
+    try {
+      const { user: fresh } = await api.setProfileSignature(dataUrl)
+      queryClient.setQueryData(['me'], { user: fresh })
+      setMsg({ ok: true, text: 'Подпись сохранена' })
+    } catch (e) {
+      setMsg({ ok: false, text: e instanceof ApiError ? e.message : 'Не удалось сохранить подпись' })
+    } finally {
+      setSigBusy(false)
+    }
+  }
+  async function removeSignature() {
+    if (!window.confirm('Удалить подпись из профиля? В уже подписанных актах она останется.')) return
+    setSigBusy(true)
+    try {
+      const { user: fresh } = await api.deleteProfileSignature()
+      queryClient.setQueryData(['me'], { user: fresh })
+    } finally {
+      setSigBusy(false)
+    }
+  }
 
   async function save() {
     setBusy(true)
@@ -88,6 +115,31 @@ export default function Profile({ user }: { user: User }) {
               <input value={initials} onChange={(e) => setInitials(e.target.value)} className={input} style={inputStyle} />
             </label>
           </section>
+
+          {/* Подпись */}
+          <section className="grid gap-3 rounded-2xl border p-5" style={{ background: C.surface, borderColor: C.line }}>
+            <h2 className="text-[13px] font-extrabold tracking-wide uppercase" style={{ color: C.muted }}>Моя подпись</h2>
+            {user.has_signature ? (
+              <img src={user.signature_url} alt="Подпись" className="h-20 w-fit max-w-full rounded-xl border object-contain px-3" style={{ borderColor: C.line, background: '#fff' }} />
+            ) : (
+              <p className="text-sm" style={{ color: C.muted }}>Подпись не задана. Нарисуйте её один раз, чтобы ставить в акты одним нажатием.</p>
+            )}
+            <div className="flex flex-wrap gap-2">
+              <button onClick={() => setPadOpen(true)} disabled={sigBusy}
+                      className="cursor-pointer rounded-full px-5 py-2.5 text-[13.5px] font-extrabold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                      style={{ background: C.accent }}>
+                {user.has_signature ? 'Заменить' : 'Нарисовать подпись'}
+              </button>
+              {user.has_signature && (
+                <button onClick={removeSignature} disabled={sigBusy}
+                        className="cursor-pointer rounded-full border px-5 py-2.5 text-[13.5px] font-bold transition-colors disabled:opacity-50"
+                        style={{ borderColor: C.line, color: C.err }}>
+                  Удалить
+                </button>
+              )}
+            </div>
+          </section>
+          <SignaturePad open={padOpen} title="Моя подпись" onClose={() => setPadOpen(false)} onDone={saveSignature} />
 
           {/* Пароль */}
           <section className="grid gap-4 rounded-2xl border p-5" style={{ background: C.surface, borderColor: C.line }}>

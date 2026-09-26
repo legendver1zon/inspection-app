@@ -26,6 +26,11 @@ func apiRouterAs(userID uint, role string) *gin.Engine {
 	r.GET("/api/inspections/:id", as(APIGetInspection))
 	r.GET("/api/inspections/:id/edit-data", as(APIGetEditData))
 	r.POST("/photos/:id/delete", as(DeletePhoto))
+	r.GET("/api/inspections/:id/signature/:role", as(APIGetInspectionSignature))
+	r.GET("/api/profile/signature", as(APIGetProfileSignature))
+	r.POST("/api/profile/signature", as(APISetProfileSignature))
+	r.POST("/api/profile/signature/delete", as(APIDeleteProfileSignature))
+	r.POST("/api/inspections", as(APICreateInspection))
 	return r
 }
 

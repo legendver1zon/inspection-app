@@ -1,4 +1,27 @@
-import type { DefectTemplate, EditRoomData, PhotoRef } from '../../lib/api'
+import type { DefectTemplate, EditRoomData, PhotoRef, SignatureInfo } from '../../lib/api'
+
+// Подпись в форме: нарисованная (dataUrl), из профиля, снятая или уже на сервере
+export type SigRole = 'inspector' | 'owner'
+export interface SigState {
+  dataUrl?: string
+  at?: string
+  fromProfile?: boolean
+  clear?: boolean
+  saved?: SignatureInfo
+}
+export const SIG_ROLES: SigRole[] = ['inspector', 'owner']
+
+// Время с зоной телефона: в PDF печатается как есть
+export function localISO(d = new Date()) {
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const off = -d.getTimezoneOffset()
+  const a = Math.abs(off)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}${off >= 0 ? '+' : '-'}${pad(Math.floor(a / 60))}:${pad(a % 60)}`
+}
+
+export function sigsFrom(s?: { inspector: SignatureInfo | null; owner: SignatureInfo | null }): Record<string, SigState> {
+  return { inspector: s?.inspector ? { saved: s.inspector } : {}, owner: s?.owner ? { saved: s.owner } : {} }
+}
 
 export const SECTIONS: [string, string][] = [
   ['window', 'Окна и откосы'],
@@ -145,9 +168,21 @@ export function roomFromData(r: EditRoomData): RoomForm {
   return room
 }
 
-export function buildParams(header: Record<string, string>, rooms: RoomForm[]): URLSearchParams {
+export function buildParams(header: Record<string, string>, rooms: RoomForm[], sigs: Record<string, SigState> = {}): URLSearchParams {
   const p = new URLSearchParams()
-  for (const [k, v] of Object.entries(header)) p.set(k, v)
+  for (const [k, v] of Object.entries(header)) if (v != null) p.set(k, v)
+  for (const role of SIG_ROLES) {
+    const s = sigs[role]
+    if (!s) continue
+    if (s.clear) p.set(`signature_${role}_clear`, '1')
+    if (role === 'inspector' && s.fromProfile) {
+      p.set('signature_inspector_from_profile', '1')
+      p.set('signature_inspector_at', s.at ?? '')
+    } else if (s.dataUrl) {
+      p.set(`signature_${role}`, s.dataUrl)
+      p.set(`signature_${role}_at`, s.at ?? '')
+    }
+  }
   p.set('active_rooms', String(rooms.length))
   rooms.forEach((room, idx) => {
     const i = String(idx + 1)

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -28,12 +29,20 @@ type apiUser struct {
 	Initials  string `json:"initials"`
 	Role      string `json:"role"`
 	AvatarURL string `json:"avatar_url"`
+	// Рукописная подпись в профиле (ставится в акт одним нажатием)
+	HasSignature bool   `json:"has_signature"`
+	SignatureURL string `json:"signature_url"`
 }
 
 func toAPIUser(u models.User) apiUser {
+	sigURL := ""
+	if u.SignaturePath != "" {
+		sigURL = "/api/profile/signature?v=" + strings.TrimSuffix(filepath.Base(u.SignaturePath), ".png")
+	}
 	return apiUser{
 		ID: u.ID, Email: u.Email, FullName: u.FullName,
 		Initials: u.Initials, Role: string(u.Role), AvatarURL: u.AvatarURL,
+		HasSignature: u.SignaturePath != "", SignatureURL: sigURL,
 	}
 }
 
@@ -332,6 +341,7 @@ func APIGetInspection(c *gin.Context) {
 	for i := range rooms {
 		rooms[i].Photos = photosOrEmpty(roomPhotos[rooms[i].Number])
 	}
+	signatures := signaturesJSON(inspection.ID)
 
 	// Архив: мягко удалённые дефекты с фото (показываются, но не идут в PDF)
 	var deletedDefects []models.RoomDefect
@@ -402,6 +412,9 @@ func APIGetInspection(c *gin.Context) {
 			"plan_image":         planImage,
 			"photo_folder_url":   inspection.PhotoFolderURL,
 			"general_photos":     generalPhotos,
+			"hide_climate":       inspection.HideClimate,
+			"signatures":         signatures,
+			"locked":             signatures[models.SignatureRoleOwner] != nil,
 			"rooms":              rooms,
 			"archived":           archived,
 			"documents":          documents,
@@ -432,6 +445,7 @@ func APIGetEditData(c *gin.Context) {
 	}
 
 	roomPhotos, generalPhotos := loadExtraPhotos(inspection.ID)
+	signatures := signaturesJSON(inspection.ID)
 	rooms := make([]gin.H, 0, len(inspection.Rooms))
 	for _, r := range inspection.Rooms {
 		defects := make([]gin.H, 0, len(r.Defects))
@@ -494,6 +508,9 @@ func APIGetEditData(c *gin.Context) {
 			"general_notes":      inspection.GeneralNotes,
 			"plan_image":         inspection.PlanImage,
 			"general_photos":     generalPhotos,
+			"hide_climate":       inspection.HideClimate,
+			"signatures":         signatures,
+			"locked":             signatures[models.SignatureRoleOwner] != nil,
 		},
 		"rooms":     rooms,
 		"templates": tpls,
