@@ -91,7 +91,7 @@
   --color-col-done-line: var(--col-done-line);
   --color-col-done-ink: var(--col-done-ink);
   --color-track: var(--track);
-  --font-sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
 }
 
