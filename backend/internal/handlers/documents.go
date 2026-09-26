@@ -159,15 +159,7 @@ func GetDownloadDocument(c *gin.Context) {
 		return
 	}
 
-	// Санитизация ActNumber для безопасного использования в HTTP-заголовке
-	safeActNumber := strings.Map(func(r rune) rune {
-		if r == '"' || r == '\\' || r == '/' || r < 32 {
-			return '_'
-		}
-		return r
-	}, doc.Inspection.ActNumber)
-	c.Header("Content-Disposition", fmt.Sprintf(
-		`attachment; filename="act_%s.%s"`, safeActNumber, doc.Format,
-	))
+	utf8Name, asciiName := documentFileName(doc.Inspection, doc.Format)
+	c.Header("Content-Disposition", contentDisposition(utf8Name, asciiName))
 	c.File(absPath)
 }
