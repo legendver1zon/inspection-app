@@ -129,10 +129,11 @@ export function Collapse({ open, onToggle, header, children, className = '' }: {
   )
 }
 
-export function Drawer({ open, onClose, title, footer, children }: {
+export function Drawer({ open, onClose, title, action, footer, children }: {
   open: boolean
   onClose: () => void
   title: ReactNode
+  action?: ReactNode // кнопка в шапке: видна и при открытой клавиатуре, и в альбомной ориентации
   footer?: ReactNode
   children: ReactNode
 }) {
@@ -177,6 +178,7 @@ export function Drawer({ open, onClose, title, footer, children }: {
                 <CloseIcon />
               </button>
               <div className="min-w-0 flex-1 text-[15px] font-semibold" style={{ color: C.ink }}>{title}</div>
+              {action}
             </div>
             <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">{children}</div>
             {footer && (

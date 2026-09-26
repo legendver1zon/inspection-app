@@ -108,25 +108,29 @@ export default function SignaturePad({ open, title, onClose, onDone }: {
     return out.toDataURL('image/png')
   }
 
+  const done = () => {
+    const d = exportPng()
+    if (d) onDone(d)
+  }
+
   return (
     <Drawer
       open={open}
       onClose={onClose}
       title={title}
+      action={<Button variant="primary" className="h-9 px-3 sm:h-9" disabled={empty} onClick={done}>Готово</Button>}
       footer={
-        <>
+        <div className="flex gap-2">
           <Button block onClick={clear}>Очистить</Button>
-          <Button variant="primary" block disabled={empty} onClick={() => { const d = exportPng(); if (d) onDone(d) }}>
-            Готово
-          </Button>
-        </>
+          <Button variant="primary" block disabled={empty} onClick={done}>Готово</Button>
+        </div>
       }
     >
-      <p className="text-[13px]" style={{ color: C.muted }}>Распишитесь пальцем или стилусом в поле ниже.</p>
+      <p className="text-[13px]" style={{ color: C.muted }}>Распишитесь пальцем или стилусом в поле ниже и нажмите «Готово».</p>
       <div className="mt-3 overflow-hidden rounded-xl border" style={{ borderColor: C.line, background: '#fff' }}>
         <canvas
           ref={canvasRef}
-          className="block h-[240px] w-full touch-none"
+          className="block h-[min(240px,45dvh)] w-full touch-none"
           aria-label="Поле для подписи"
           onPointerDown={down}
           onPointerMove={move}
