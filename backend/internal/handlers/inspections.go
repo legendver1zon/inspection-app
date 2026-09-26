@@ -3,6 +3,7 @@ package handlers
 import (
 	"errors"
 	"fmt"
+	"inspection-app/internal/auth"
 	"inspection-app/internal/logger"
 	"inspection-app/internal/models"
 	"inspection-app/internal/security"
@@ -795,6 +796,10 @@ func PostDeleteInspection(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Осмотр не найден"})
 		return
 	}
+	if !canDeleteInspection(c, inspection) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Удалять можно только свои незавершённые акты"})
+		return
+	}
 
 	// Собираем пути файлов до транзакции (удалим после успешного коммита)
 	var docs []models.Document
@@ -841,7 +846,19 @@ func PostDeleteInspection(c *gin.Context) {
 		}
 	}
 
+	if auth.WantsJSON(c) {
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+		return
+	}
 	c.Redirect(http.StatusFound, "/inspections")
+}
+
+// canDeleteInspection — admin удаляет любой акт, инспектор только свой незавершённый.
+func canDeleteInspection(c *gin.Context, inspection models.Inspection) bool {
+	if c.GetString("userRole") == "admin" {
+		return true
+	}
+	return inspection.UserID == c.GetUint("userID") && inspection.Status == "draft"
 }
 
 func loadInspection(c *gin.Context) (*models.Inspection, bool) {

@@ -133,6 +133,7 @@ export interface InspectionDetail {
   general_notes: string
   plan_image: string
   photo_folder_url: string
+  can_delete: boolean
   rooms: Room[]
   archived: ArchivedDefect[]
   documents: DocumentRef[]
@@ -263,6 +264,15 @@ export const api = {
   inspection: (id: number) =>
     request<{ inspection: InspectionDetail }>(`/api/inspections/${id}`),
   createInspection: () => request<{ id: number; act_number: string }>('/api/inspections', { method: 'POST' }),
+  deleteInspection: async (id: number) => {
+    const res = await fetch(`/inspections/${id}/delete`, { method: 'POST', headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+    guard401(res)
+    if (!res.ok) {
+      let message = 'Не удалось удалить акт'
+      try { message = (await res.json()).error ?? message } catch { /* не JSON */ }
+      throw new ApiError(res.status, message)
+    }
+  },
   editData: (id: number) => request<EditData>(`/api/inspections/${id}/edit-data`),
   checkActNumber: (id: number, value: string) =>
     request<{ taken: boolean; other_id?: number }>(

@@ -355,6 +355,7 @@ func APIGetInspection(c *gin.Context) {
 			"owner_name":         inspection.OwnerName,
 			"developer_rep_name": inspection.DeveloperRepName,
 			"inspector":          inspection.User.Initials,
+			"can_delete":         canDeleteInspection(c, *inspection),
 			"rooms_count":        inspection.RoomsCount,
 			"floor":              inspection.Floor,
 			"total_area":         inspection.TotalArea,

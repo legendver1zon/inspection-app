@@ -1,8 +1,8 @@
 import { useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useNavigate, useParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type Defect, type PhotoRef, type User } from '../lib/api'
+import { api, ApiError, type Defect, type PhotoRef, type User } from '../lib/api'
 import { C } from '../lib/palette'
 import Header from '../components/Header'
 import PhotoThumb from '../components/PhotoThumb'
@@ -17,6 +17,21 @@ export default function ActView({ user }: { user: User }) {
   const [pdfBusy, setPdfBusy] = useState(false)
   const [statusBusy, setStatusBusy] = useState(false)
   const [docBusy, setDocBusy] = useState<number | null>(null)
+  const [deleting, setDeleting] = useState(false)
+  const navigate = useNavigate()
+
+  async function removeAct() {
+    if (!window.confirm('Удалить акт вместе с помещениями, дефектами, фото и PDF? Отменить будет нельзя.')) return
+    setDeleting(true)
+    try {
+      await api.deleteInspection(actId)
+      await queryClient.invalidateQueries({ queryKey: ['inspections'] })
+      navigate('/inspections', { replace: true })
+    } catch (e) {
+      window.alert(e instanceof ApiError ? e.message : 'Не удалось удалить акт. Проверьте связь и попробуйте ещё раз.')
+      setDeleting(false)
+    }
+  }
 
   async function removeDocument(docId: number) {
     if (!window.confirm('Удалить этот PDF? Файл будет стёрт с сервера.')) return
@@ -158,6 +173,16 @@ export default function ActView({ user }: { user: User }) {
                 >
                   {statusBusy ? '…' : act.status === 'draft' ? '✓ Завершить акт' : 'Вернуть в работу'}
                 </button>
+                {act.can_delete && (
+                  <button
+                    onClick={removeAct}
+                    disabled={deleting}
+                    className="cursor-pointer rounded-full border px-5 py-2.5 text-[13.5px] font-bold transition-colors disabled:opacity-50"
+                    style={{ borderColor: C.err, color: C.err }}
+                  >
+                    {deleting ? 'Удаляем…' : 'Удалить акт'}
+                  </button>
+                )}
                 {act.photo_folder_url && (
                   <a
                     href={act.photo_folder_url}
