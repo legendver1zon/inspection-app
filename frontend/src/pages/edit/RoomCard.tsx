@@ -105,7 +105,7 @@ function RoomParams({ room, onPatch }: { room: RoomForm; onPatch: Patch }) {
             </Select>
           </Field>
           <Field label="Стены">
-            <div className="flex gap-1.5">
+            <div className="grid grid-cols-3 gap-1.5">
               {WALL_TYPES.map(([v, l]) => {
                 const on = room.wallTypes.includes(v)
                 return (
@@ -113,7 +113,7 @@ function RoomParams({ room, onPatch }: { room: RoomForm; onPatch: Patch }) {
                     key={v}
                     variant={on ? 'ghost-active' : 'default'}
                     aria-pressed={on}
-                    className="flex-1 px-2 text-[13px]"
+                    className="min-w-0 px-1 text-[13px]"
                     onClick={() => set({ wallTypes: on ? room.wallTypes.filter((t) => t !== v) : [...room.wallTypes, v] })}
                   >
                     {l}
@@ -268,9 +268,9 @@ function Defects({ room, templates, actId, onPatch, onPatchSilent }: {
           const binds: BindRef[] = active.flatMap((w) => (room.binds[`${key}_${w}`] ? [{ key: `${key}_${w}`, bind: room.binds[`${key}_${w}`] }] : []))
           return (
             <DefectShell key={key} name={t?.name ?? 'Дефект из справочника'} sub={`Стены${t?.threshold ? ` · норма ${t.threshold}` : ''}`} onRemove={() => removeCard(key)}>
-              <div className="flex gap-1.5" role="group" aria-label="Стены с дефектом">
+              <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="Стены с дефектом">
                 {WALLS.map((w) => (
-                  <Button key={w} variant={on[w] ? 'ghost-active' : 'default'} aria-pressed={on[w]} className="min-w-16 px-2" onClick={() => toggleWall(id, w)}>
+                  <Button key={w} variant={on[w] ? 'ghost-active' : 'default'} aria-pressed={on[w]} className="min-w-0 px-1 text-[13px]" onClick={() => toggleWall(id, w)}>
                     Ст. {w + 1}
                   </Button>
                 ))}

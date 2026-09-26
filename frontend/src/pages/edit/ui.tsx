@@ -20,7 +20,7 @@ export function Card({ title, extra, children, className = '' }: {
           {extra}
         </div>
       )}
-      <div className="p-4">{children}</div>
+      <div className="p-3 sm:p-4">{children}</div>
     </section>
   )
 }
@@ -121,7 +121,7 @@ export function Collapse({ open, onToggle, header, children, className = '' }: {
         <div className="min-w-0 flex-1">{header}</div>
       </button>
       {open && (
-        <div className="border-t p-4" style={{ borderColor: C.line }}>
+        <div className="border-t p-3 sm:p-4" style={{ borderColor: C.line }}>
           {children}
         </div>
       )}

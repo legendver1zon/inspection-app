@@ -137,13 +137,13 @@ export default function DefectPicker({ open, room, templates, onPick, onToggleWa
               return (
                 <div key={t.id} className="flex flex-col gap-2 border-t px-1 py-3" style={{ borderColor: C.line }}>
                   {name(t)}
-                  <div className="flex gap-1.5" role="group" aria-label="Стены с дефектом">
+                  <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="Стены с дефектом">
                     {WALLS.map((w) => (
                       <Button
                         key={w}
                         variant={on[w] ? 'ghost-active' : 'default'}
                         aria-pressed={on[w]}
-                        className="flex-1 px-2"
+                        className="min-w-0 px-1 text-[13px]"
                         onClick={() => onToggleWall(t.id, w)}
                       >
                         Ст. {w + 1}
