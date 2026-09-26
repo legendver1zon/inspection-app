@@ -252,6 +252,36 @@ type apiRoom struct {
 	Number  int         `json:"number"`
 	Name    string      `json:"name"`
 	Defects []apiDefect `json:"defects"`
+	Photos  []apiPhoto  `json:"photos"` // общий вид помещения
+}
+
+// loadExtraPhotos возвращает фото без дефекта: общий вид по номерам помещений
+// и общие замечания по видам (все три ключа есть всегда, пусть и пустые).
+func loadExtraPhotos(inspectionID uint) (map[int][]apiPhoto, gin.H) {
+	var photos []models.Photo
+	storage.DB.Where("inspection_id = ? AND kind <> ?", inspectionID, models.PhotoKindDefect).Order("id").Find(&photos)
+	rooms := map[int][]apiPhoto{}
+	general := map[string][]apiPhoto{models.PhotoKindElectricity: {}, models.PhotoKindVentilation: {}, models.PhotoKindGeneral: {}}
+	for _, p := range photos {
+		ap := apiPhoto{ID: p.ID, Status: p.UploadStatus}
+		if p.Kind == models.PhotoKindRoom {
+			rooms[p.RoomNumber] = append(rooms[p.RoomNumber], ap)
+		} else if _, ok := general[p.Kind]; ok {
+			general[p.Kind] = append(general[p.Kind], ap)
+		}
+	}
+	out := gin.H{}
+	for k, v := range general {
+		out[k] = v
+	}
+	return rooms, out
+}
+
+func photosOrEmpty(ps []apiPhoto) []apiPhoto {
+	if ps == nil {
+		return []apiPhoto{}
+	}
+	return ps
 }
 
 type apiArchivedDefect struct {
@@ -297,6 +327,10 @@ func APIGetInspection(c *gin.Context) {
 			room.Defects = append(room.Defects, toAPIDefect(d))
 		}
 		rooms = append(rooms, room)
+	}
+	roomPhotos, generalPhotos := loadExtraPhotos(inspection.ID)
+	for i := range rooms {
+		rooms[i].Photos = photosOrEmpty(roomPhotos[rooms[i].Number])
 	}
 
 	// Архив: мягко удалённые дефекты с фото (показываются, но не идут в PDF)
@@ -367,6 +401,7 @@ func APIGetInspection(c *gin.Context) {
 			"general_notes":      inspection.GeneralNotes,
 			"plan_image":         planImage,
 			"photo_folder_url":   inspection.PhotoFolderURL,
+			"general_photos":     generalPhotos,
 			"rooms":              rooms,
 			"archived":           archived,
 			"documents":          documents,
@@ -396,6 +431,7 @@ func APIGetEditData(c *gin.Context) {
 		}
 	}
 
+	roomPhotos, generalPhotos := loadExtraPhotos(inspection.ID)
 	rooms := make([]gin.H, 0, len(inspection.Rooms))
 	for _, r := range inspection.Rooms {
 		defects := make([]gin.H, 0, len(r.Defects))
@@ -424,7 +460,7 @@ func APIGetEditData(c *gin.Context) {
 			"w5h": r.Window5Height, "w5w": r.Window5Width,
 			"dh": r.DoorHeight, "dw": r.DoorWidth,
 			"window_type": r.WindowType, "wall_types": wallTypes,
-			"defects": defects,
+			"defects": defects, "photos": photosOrEmpty(roomPhotos[r.RoomNumber]),
 		})
 	}
 	sort.Slice(rooms, func(i, j int) bool {
@@ -457,6 +493,7 @@ func APIGetEditData(c *gin.Context) {
 			"ventilation":        inspection.Ventilation,
 			"general_notes":      inspection.GeneralNotes,
 			"plan_image":         inspection.PlanImage,
+			"general_photos":     generalPhotos,
 		},
 		"rooms":     rooms,
 		"templates": tpls,

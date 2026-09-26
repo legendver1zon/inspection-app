@@ -328,3 +328,5 @@ func tokenFor(t *testing.T, userID uint, role string) string {
 	}
 	return tok
 }
+
+func uptr(v uint) *uint { return &v }

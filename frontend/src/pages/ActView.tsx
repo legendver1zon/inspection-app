@@ -76,7 +76,16 @@ export default function ActView({ user }: { user: User }) {
   }
 
   const totalDefects = act?.rooms.reduce((s, r) => s + r.defects.length, 0) ?? 0
-  const totalPhotos = act?.rooms.reduce((s, r) => s + r.defects.reduce((ss, d) => ss + d.photos.length, 0), 0) ?? 0
+  const generalRows = act
+    ? ([
+        ['Электричество', act.electricity, act.general_photos?.electricity ?? []],
+        ['Вентиляция', act.ventilation, act.general_photos?.ventilation ?? []],
+        ['Общие замечания', act.general_notes, act.general_photos?.general ?? []],
+      ] as [string, string, PhotoRef[]][]).filter(([, text, photos]) => text || photos.length > 0)
+    : []
+  const totalPhotos =
+    (act?.rooms.reduce((s, r) => s + (r.photos?.length ?? 0) + r.defects.reduce((ss, d) => ss + d.photos.length, 0), 0) ?? 0) +
+    generalRows.reduce((s, [, , photos]) => s + photos.length, 0)
 
   return (
     <div className="min-h-dvh" style={{ background: C.bg, color: C.ink }}>
@@ -233,6 +242,13 @@ export default function ActView({ user }: { user: User }) {
                       </span>
                     </div>
 
+                    {(room.photos?.length ?? 0) > 0 && (
+                      <div className="mb-3">
+                        <div className="text-[10.5px] font-bold tracking-wide uppercase" style={{ color: C.faint }}>Общий вид</div>
+                        <PhotoStrip photos={room.photos} />
+                      </div>
+                    )}
+
                     {room.defects.length > 0 && (
                       <div className="grid gap-2.5">
                         {room.defects.filter((d) => d.value || d.notes || d.photos.length > 0).map((d) => <DefectRow key={d.id} defect={d} />)}
@@ -241,6 +257,24 @@ export default function ActView({ user }: { user: User }) {
                   </motion.section>
                 ))}
               </motion.div>
+            )}
+
+            {/* ===== Общие замечания ===== */}
+            {generalRows.length > 0 && (
+              <section className="mt-6 rounded-2xl border p-5" style={{ background: C.surface, borderColor: C.line }} aria-label="Общие замечания по квартире">
+                <h2 className="mb-3 text-[15px] font-extrabold">Общие замечания по квартире</h2>
+                <div className="grid gap-2.5">
+                  {generalRows.map(([label, text, photos]) => (
+                    <div key={label} className="rounded-xl border p-3.5" style={{ borderColor: C.line, background: C.bg }}>
+                      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                        <span className="text-[14px] font-bold">{label}</span>
+                        {text && <span className="text-[13.5px] whitespace-pre-wrap" style={{ color: C.muted }}>{text}</span>}
+                      </div>
+                      <PhotoStrip photos={photos} />
+                    </div>
+                  ))}
+                </div>
+              </section>
             )}
 
             {/* ===== Архив ===== */}

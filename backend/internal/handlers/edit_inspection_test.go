@@ -809,7 +809,7 @@ func TestPostEditInspection_PickedWithoutValue_KeepsPhotoOnResave(t *testing.T) 
 	if len(first) != 1 {
 		t.Fatalf("first save: want 1 defect, got %d", len(first))
 	}
-	photo := models.Photo{DefectID: first[0].ID, FileName: "p.jpg", FileURL: "/static/p.jpg", UploadStatus: "pending"}
+	photo := models.Photo{DefectID: uptr(first[0].ID), FileName: "p.jpg", FileURL: "/static/p.jpg", UploadStatus: "pending"}
 	if err := storage.DB.Create(&photo).Error; err != nil {
 		t.Fatalf("create photo: %v", err)
 	}
@@ -825,7 +825,7 @@ func TestPostEditInspection_PickedWithoutValue_KeepsPhotoOnResave(t *testing.T) 
 
 	var reloaded models.Photo
 	storage.DB.First(&reloaded, photo.ID)
-	if reloaded.DefectID != second[0].ID {
+	if reloaded.DefectID == nil || *reloaded.DefectID != second[0].ID {
 		t.Errorf("фото должно перепривязаться к новому дефекту %d, got defect_id=%d", second[0].ID, reloaded.DefectID)
 	}
 }

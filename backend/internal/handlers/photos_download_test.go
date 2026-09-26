@@ -27,7 +27,7 @@ func createLocalPhoto(t *testing.T, defectID uint, name, content string) models.
 	}
 
 	photo := models.Photo{
-		DefectID: defectID,
+		DefectID: uptr(defectID),
 		FileName: name,
 		FilePath: path,
 		FileURL:  "/static/uploads/testphotos/" + name,
@@ -122,7 +122,7 @@ func TestGetPhotoDownload_FileOutsideUploads_NotServed(t *testing.T) {
 	t.Cleanup(func() { os.Remove(tmp.Name()) })
 
 	photo := models.Photo{
-		DefectID: defect.ID,
+		DefectID: uptr(defect.ID),
 		FileName: "outside.jpg",
 		FilePath: tmp.Name(),
 		FileURL:  "/static/uploads/none.jpg",

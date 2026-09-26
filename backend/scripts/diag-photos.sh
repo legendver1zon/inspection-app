@@ -144,7 +144,7 @@ run <<'EOF'
 $PSQL "SELECT count(*) AS photos_on_deleted_defects FROM photos p JOIN room_defects d ON d.id=p.defect_id WHERE d.deleted_at IS NOT NULL AND p.deleted_at IS NULL;"
 EOF
 run <<'EOF'
-$PSQL "SELECT r.inspection_id, count(*) AS photos FROM photos p JOIN room_defects d ON d.id=p.defect_id JOIN inspection_rooms r ON r.id=d.room_id WHERE p.deleted_at IS NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 10;"
+$PSQL "SELECT p.inspection_id, count(*) AS photos FROM photos p WHERE p.deleted_at IS NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 10;"
 EOF
 run <<'EOF'
 $PSQL "SELECT count(*) AS total_photos, count(*) FILTER (WHERE file_url LIKE 'http%') AS public_url, count(*) FILTER (WHERE file_url LIKE '/static/%') AS static_url, count(*) FILTER (WHERE file_url LIKE 'inspections/%') AS disk_path FROM photos WHERE deleted_at IS NULL;"

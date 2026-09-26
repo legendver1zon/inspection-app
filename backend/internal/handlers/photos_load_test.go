@@ -30,7 +30,7 @@ func createTempPhotosForDefect(t *testing.T, defectID uint, n int) []string {
 		tmp.Close()
 
 		photo := models.Photo{
-			DefectID: defectID,
+			DefectID: uptr(defectID),
 			FileName: fmt.Sprintf("photo_%d.jpg", i),
 			FilePath: tmp.Name(),
 			FileURL:  fmt.Sprintf("/static/uploads/photo_%d.jpg", i),
@@ -301,7 +301,7 @@ func TestPostUploadPhoto_MaxPhotosLimit(t *testing.T) {
 	// Создаём 30 фото напрямую в БД
 	for i := 1; i <= 30; i++ {
 		photo := models.Photo{
-			DefectID: defect.ID,
+			DefectID: uptr(defect.ID),
 			FileName: fmt.Sprintf("photo_%d.jpg", i),
 			FileURL:  fmt.Sprintf("/static/photo_%d.jpg", i),
 		}

@@ -45,6 +45,16 @@ export default function RoomCard({ room, index, templates, actId, open, onToggle
         <Field label="Название помещения">
           <TextInput value={room.name} placeholder="Кухня, гостиная…" onChange={(e) => onPatch((r) => ({ ...r, name: e.target.value }))} />
         </Field>
+        <div className="flex flex-col gap-1">
+          <span className="text-[12px] font-medium" style={{ color: C.muted }}>Общий вид помещения</span>
+          <PhotoDock
+            k={{ actId, roomNumber: index, section: 'overview', templateId: null, wallNumber: 0 }}
+            bindKey="overview"
+            binds={room.binds.overview ? [{ key: 'overview', bind: room.binds.overview }] : []}
+            canUpload
+            onBind={(key, b) => onPatchSilent((r) => ({ ...r, binds: { ...r.binds, [key]: b } }))}
+          />
+        </div>
         <RoomParams room={room} onPatch={onPatch} />
         <span className="text-[14px] font-semibold">Дефекты{nDef > 0 && ` · ${nDef}`}</span>
         <Defects room={room} roomNumber={index} templates={templates} actId={actId} onPatch={onPatch} onPatchSilent={onPatchSilent} />
@@ -178,12 +188,16 @@ function Defects({ room, roomNumber, templates, actId, onPatch, onPatchSilent }:
   // (например, черновик стёрт): достраиваем выбранные дефекты по очереди
   const queued = useUploadQueue()
   useEffect(() => {
-    const mine = queued.filter((i) => i.actId === actId && i.roomNumber === roomNumber && i.status !== 'done')
-    if (mine.length === 0) return
+    const mine = queued.filter((i) => i.actId === actId && i.roomNumber === roomNumber && i.status !== 'done' && i.section !== 'overview')
+    const keyOf = (i: (typeof mine)[number]) => (i.templateId == null ? `n${i.section}` : i.section === 'wall' ? `w${i.templateId}` : `s${i.templateId}`)
+    const missing = mine.some(
+      (i) => !room.picked.includes(keyOf(i)) || (i.section === 'wall' && i.templateId != null && i.wallNumber >= 1 && !room.wallsOn[i.templateId]?.[i.wallNumber - 1]),
+    )
+    if (!missing) return
     onPatch((r) => {
       let next = r
       for (const i of mine) {
-        const key = i.templateId == null ? `n${i.section}` : i.section === 'wall' ? `w${i.templateId}` : `s${i.templateId}`
+        const key = keyOf(i)
         if (!next.picked.includes(key)) next = { ...next, picked: [...next.picked, key] }
         if (i.section === 'wall' && i.templateId != null && i.wallNumber >= 1) {
           const on = [...(next.wallsOn[i.templateId] ?? [false, false, false, false])] as RoomForm['wallsOn'][number]

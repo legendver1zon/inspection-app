@@ -319,8 +319,11 @@ func TestPostUploadInspectionPhoto_SurvivesEditResave(t *testing.T) {
 	var photo models.Photo
 	storage.DB.First(&photo, photoID)
 	var defect models.RoomDefect
-	if err := storage.DB.First(&defect, photo.DefectID).Error; err != nil {
-		t.Fatalf("фото указывает на удалённый дефект %d: %v", photo.DefectID, err)
+	if photo.DefectID == nil {
+		t.Fatal("у фото дефекта должен быть defect_id")
+	}
+	if err := storage.DB.First(&defect, *photo.DefectID).Error; err != nil {
+		t.Fatalf("фото указывает на удалённый дефект %d: %v", *photo.DefectID, err)
 	}
 	if defect.ID == oldDefectID {
 		t.Errorf("после сохранения дефект должен быть пересоздан, а фото перепривязано")

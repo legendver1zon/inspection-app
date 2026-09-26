@@ -55,10 +55,23 @@ type Inspection struct {
 	Rooms []InspectionRoom `gorm:"foreignKey:InspectionID"`
 }
 
-// Photo — фотография дефекта
+// Виды фото: дефекта, общего вида помещения и общих замечаний по квартире.
+const (
+	PhotoKindDefect      = "defect"
+	PhotoKindRoom        = "room"
+	PhotoKindElectricity = "electricity"
+	PhotoKindVentilation = "ventilation"
+	PhotoKindGeneral     = "general"
+)
+
+// Photo — фотография. У фото дефекта заполнен DefectID, у общего вида
+// помещения — RoomNumber, у общих замечаний — только Kind.
 type Photo struct {
 	gorm.Model
-	DefectID      uint   `gorm:"not null;index"`
+	InspectionID  uint   `gorm:"index"`
+	Kind          string `gorm:"size:16;not null;default:'defect';index"`
+	RoomNumber    int
+	DefectID      *uint  `gorm:"index"`
 	FileURL       string // публичная ссылка на файл (после синхронизации с облаком)
 	FilePath      string // локальный путь до файла (до синхронизации)
 	FileName      string
@@ -67,6 +80,26 @@ type Photo struct {
 	LastError     string     // последняя ошибка загрузки (для диагностики)
 	LastAttemptAt *time.Time // время последней попытки загрузки
 	ClientID      *string    `gorm:"size:64;uniqueIndex"` // идентификатор из офлайн-очереди клиента (идемпотентность)
+}
+
+// BeforeCreate доопределяет осмотр по дефекту, если фото создано без
+// InspectionID (старый код, служебные утилиты, фикстуры тестов).
+func (p *Photo) BeforeCreate(tx *gorm.DB) error {
+	if p.Kind == "" {
+		p.Kind = PhotoKindDefect
+	}
+	if p.InspectionID != 0 || p.DefectID == nil {
+		return nil
+	}
+	var row struct{ InspectionID uint }
+	tx.Session(&gorm.Session{NewDB: true}).Unscoped().
+		Table("room_defects").
+		Select("inspection_rooms.inspection_id").
+		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+		Where("room_defects.id = ?", *p.DefectID).
+		Scan(&row)
+	p.InspectionID = row.InspectionID
+	return nil
 }
 
 // InspectionRoom — помещение (основная единица, содержит замеры и дефекты)

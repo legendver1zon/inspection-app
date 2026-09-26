@@ -125,9 +125,7 @@ func requeueStuckUploads() {
 	// Находим инспекции для переставленных фото и запускаем загрузку
 	var inspectionIDs []uint
 	storage.DB.Model(&models.Photo{}).
-		Select("DISTINCT inspection_rooms.inspection_id").
-		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
-		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+		Select("DISTINCT photos.inspection_id").
 		Where("photos.id IN ?", stuckIDs).
 		Scan(&inspectionIDs)
 
@@ -147,9 +145,7 @@ func resyncStalePending() {
 	cutoff := time.Now().Add(-stuckTimeout)
 	var inspectionIDs []uint
 	storage.DB.Model(&models.Photo{}).
-		Select("DISTINCT inspection_rooms.inspection_id").
-		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
-		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+		Select("DISTINCT photos.inspection_id").
 		Where("photos.upload_status = 'pending' AND photos.updated_at < ? AND photos.deleted_at IS NULL", cutoff).
 		Scan(&inspectionIDs)
 
@@ -169,9 +165,7 @@ func retryFailedPhotos() {
 
 	var inspectionIDs []uint
 	storage.DB.Model(&models.Photo{}).
-		Select("DISTINCT inspection_rooms.inspection_id").
-		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
-		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+		Select("DISTINCT photos.inspection_id").
 		Where("photos.upload_status = 'failed' AND photos.retry_count < ? AND photos.deleted_at IS NULL", maxFailRetries).
 		Scan(&inspectionIDs)
 
@@ -184,9 +178,7 @@ func retryFailedPhotos() {
 	for _, id := range inspectionIDs {
 		var failedIDs []uint
 		storage.DB.Table("photos").Select("photos.id").
-			Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
-			Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
-			Where("inspection_rooms.inspection_id = ? AND photos.upload_status = 'failed' AND photos.retry_count < ? AND photos.deleted_at IS NULL", id, maxFailRetries).
+			Where("photos.inspection_id = ? AND photos.upload_status = 'failed' AND photos.retry_count < ? AND photos.deleted_at IS NULL", id, maxFailRetries).
 			Pluck("photos.id", &failedIDs)
 
 		if len(failedIDs) > 0 {
@@ -210,9 +202,7 @@ func TriggerRetryForInspection(inspectionID uint) {
 
 	var failedCount int64
 	storage.DB.Model(&models.Photo{}).
-		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
-		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
-		Where("inspection_rooms.inspection_id = ? AND photos.upload_status = 'failed' AND photos.retry_count < ? AND photos.deleted_at IS NULL",
+		Where("photos.inspection_id = ? AND photos.upload_status = 'failed' AND photos.retry_count < ? AND photos.deleted_at IS NULL",
 			inspectionID, maxFailRetries).
 		Count(&failedCount)
 
@@ -222,9 +212,7 @@ func TriggerRetryForInspection(inspectionID uint) {
 
 	var failedIDs []uint
 	storage.DB.Table("photos").Select("photos.id").
-		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
-		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
-		Where("inspection_rooms.inspection_id = ? AND photos.upload_status = 'failed' AND photos.retry_count < ? AND photos.deleted_at IS NULL",
+		Where("photos.inspection_id = ? AND photos.upload_status = 'failed' AND photos.retry_count < ? AND photos.deleted_at IS NULL",
 			inspectionID, maxFailRetries).
 		Pluck("photos.id", &failedIDs)
 

@@ -566,6 +566,7 @@ func PostEditInspection(c *gin.Context) {
 		tx.Order("section, order_index").Find(&allTemplates)
 
 		simpleSections := []string{"window", "ceiling", "floor", "door", "plumbing"}
+		claimed := map[int]int{} // прежний номер помещения → новый
 
 		createDefect := func(nd models.RoomDefect, roomNumber int) {
 			if err := tx.Create(&nd).Error; err == nil {
@@ -584,6 +585,10 @@ func PostEditInspection(c *gin.Context) {
 				logger.Ctx(c.Request.Context()).Error("room create failed", "room", i, "inspection_id", inspection.ID, "error", err)
 				continue
 			}
+			prev := roomPrevNumber(c, iStr, i)
+			if prev > 0 {
+				claimed[prev] = i
+			}
 
 			// Простые секции (одно значение на дефект)
 			for _, tmpl := range allTemplates {
@@ -601,7 +606,7 @@ func PostEditInspection(c *gin.Context) {
 					DefectTemplateID: &tid,
 					Section:          tmpl.Section,
 					Value:            val,
-				}, i)
+				}, prev)
 			}
 
 			// Стены — 4 значения на дефект
@@ -622,7 +627,7 @@ func PostEditInspection(c *gin.Context) {
 						Section:          "wall",
 						Value:            val,
 						WallNumber:       w,
-					}, i)
+					}, prev)
 				}
 			}
 
@@ -636,10 +641,21 @@ func PostEditInspection(c *gin.Context) {
 					RoomID:  room.ID,
 					Section: sec,
 					Notes:   notes,
-				}, i)
+				}, prev)
 			}
 		}
 
+		// Фото общего вида следуют за помещением по его прежнему номеру;
+		// фото помещений, которых больше нет, уходят в архив
+		for prev, cur := range claimed {
+			tx.Model(&models.Photo{}).
+				Where("inspection_id = ? AND kind = ? AND room_number = ?", inspection.ID, models.PhotoKindRoom, prev).
+				Update("room_number", -cur)
+		}
+		tx.Where("inspection_id = ? AND kind = ? AND room_number > 0", inspection.ID, models.PhotoKindRoom).Delete(&models.Photo{})
+		tx.Model(&models.Photo{}).
+			Where("inspection_id = ? AND kind = ? AND room_number < 0", inspection.ID, models.PhotoKindRoom).
+			Update("room_number", gorm.Expr("-room_number"))
 		return nil
 	})
 
@@ -812,10 +828,7 @@ func PostDeleteInspection(c *gin.Context) {
 	}
 
 	err = storage.DB.Transaction(func(tx *gorm.DB) error {
-		// Удаляем фото дефектов
-		defectIDs := tx.Model(&models.RoomDefect{}).Select("id").
-			Where("room_id IN (?)", tx.Model(&models.InspectionRoom{}).Select("id").Where("inspection_id = ?", id))
-		if err := tx.Where("defect_id IN (?)", defectIDs).Delete(&models.Photo{}).Error; err != nil {
+		if err := tx.Where("inspection_id = ?", id).Delete(&models.Photo{}).Error; err != nil {
 			return err
 		}
 		// Удаляем дефекты всех помещений (subquery вместо N+1 цикла)
@@ -859,6 +872,21 @@ func canDeleteInspection(c *gin.Context, inspection models.Inspection) bool {
 		return true
 	}
 	return inspection.UserID == c.GetUint("userID") && inspection.Status == "draft"
+}
+
+// roomPrevNumber — номер, под которым помещение i было сохранено раньше
+// (поле room_prev_i): по нему к новым дефектам и помещению переезжают фото.
+// 0 — новое помещение; поля нет (старая HTML-форма) — номер не менялся.
+func roomPrevNumber(c *gin.Context, iStr string, i int) int {
+	s := strings.TrimSpace(c.PostForm("room_prev_" + iStr))
+	if s == "" {
+		return i
+	}
+	v, err := strconv.Atoi(s)
+	if err != nil || v < 0 {
+		return i
+	}
+	return v
 }
 
 func loadInspection(c *gin.Context) (*models.Inspection, bool) {

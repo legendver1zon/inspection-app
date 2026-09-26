@@ -87,9 +87,7 @@ func (u *Uploader) processJob(inspectionID uint) {
 	// Проверяем, есть ли pending-фото — если нет, пропускаем
 	var count int64
 	storage.DB.Model(&models.Photo{}).
-		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
-		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
-		Where("inspection_rooms.inspection_id = ? AND photos.upload_status = 'pending'", inspectionID).
+		Where("photos.inspection_id = ? AND photos.upload_status = 'pending'", inspectionID).
 		Count(&count)
 
 	if count == 0 {
@@ -111,9 +109,7 @@ func (u *Uploader) recoverOnStartup(ctx context.Context) {
 	// Найти осмотры с pending-фото и поставить их в очередь
 	var inspectionIDs []uint
 	storage.DB.Model(&models.Photo{}).
-		Select("DISTINCT inspection_rooms.inspection_id").
-		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
-		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+		Select("DISTINCT photos.inspection_id").
 		Where("photos.upload_status = 'pending'").
 		Scan(&inspectionIDs)
 
@@ -146,18 +142,14 @@ func (u *Uploader) requeueFailed(ctx context.Context) {
 func (u *Uploader) retryFailed(ctx context.Context) {
 	var inspectionIDs []uint
 	storage.DB.Model(&models.Photo{}).
-		Select("DISTINCT inspection_rooms.inspection_id").
-		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
-		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
+		Select("DISTINCT photos.inspection_id").
 		Where("photos.upload_status = 'failed' AND photos.retry_count < ?", maxFailRetries).
 		Scan(&inspectionIDs)
 
 	for _, id := range inspectionIDs {
 		var failedIDs []uint
 		storage.DB.Table("photos").Select("photos.id").
-			Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
-			Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
-			Where("inspection_rooms.inspection_id = ? AND photos.upload_status = 'failed' AND photos.retry_count < ? AND photos.deleted_at IS NULL", id, maxFailRetries).
+			Where("photos.inspection_id = ? AND photos.upload_status = 'failed' AND photos.retry_count < ? AND photos.deleted_at IS NULL", id, maxFailRetries).
 			Pluck("photos.id", &failedIDs)
 		if len(failedIDs) > 0 {
 			storage.DB.Model(&models.Photo{}).Where("id IN ?", failedIDs).

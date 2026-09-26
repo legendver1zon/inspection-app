@@ -394,7 +394,7 @@ func TestDeletePhoto_Forbidden(t *testing.T) {
 	_, _, defect := newDefectWithInspection(t, owner.ID)
 
 	// Создаём фото от имени владельца
-	photo := models.Photo{DefectID: defect.ID, FileName: "p.jpg", FileURL: "/static/p.jpg", FilePath: "/tmp/p.jpg"}
+	photo := models.Photo{DefectID: uptr(defect.ID), FileName: "p.jpg", FileURL: "/static/p.jpg", FilePath: "/tmp/p.jpg"}
 	storage.DB.Create(&photo)
 
 	// Роутер с userID=1 (чужой)
@@ -422,7 +422,7 @@ func TestDeletePhoto_Success_LocalFile(t *testing.T) {
 	tmp.Close()
 	tmpPath := tmp.Name()
 
-	photo := models.Photo{DefectID: defect.ID, FileName: "p.jpg", FilePath: tmpPath, FileURL: "/static/p.jpg"}
+	photo := models.Photo{DefectID: uptr(defect.ID), FileName: "p.jpg", FilePath: tmpPath, FileURL: "/static/p.jpg"}
 	storage.DB.Create(&photo)
 
 	gin.SetMode(gin.TestMode)
@@ -459,7 +459,7 @@ func TestDeletePhoto_AdminCanDeleteAnyPhoto(t *testing.T) {
 	owner := newUser(t, "owner3@test.com", "pass1234", "Владелец", models.RoleInspector)
 	_, _, defect := newDefectWithInspection(t, owner.ID)
 
-	photo := models.Photo{DefectID: defect.ID, FileName: "p.jpg", FileURL: "/static/p.jpg"}
+	photo := models.Photo{DefectID: uptr(defect.ID), FileName: "p.jpg", FileURL: "/static/p.jpg"}
 	storage.DB.Create(&photo)
 
 	r := setupPhotoRouterAsAdmin(t)
@@ -497,7 +497,7 @@ func TestSyncInspectionPhotos_NoLocalPhotos(t *testing.T) {
 	tmpl := newDefectTemplate(t, "floor", "Тест")
 	defect := models.RoomDefect{RoomID: room.ID, DefectTemplateID: &tmpl.ID, Section: "floor", Value: "да"}
 	storage.DB.Create(&defect)
-	photo := models.Photo{DefectID: defect.ID, FilePath: "", FileURL: "https://disk.yandex.ru/i/abc"}
+	photo := models.Photo{DefectID: uptr(defect.ID), FilePath: "", FileURL: "https://disk.yandex.ru/i/abc"}
 	storage.DB.Create(&photo)
 
 	SyncInspectionPhotos(insp.ID)
@@ -539,7 +539,7 @@ func TestSyncInspectionPhotos_UploadAndCleanup(t *testing.T) {
 	tmp.Close()
 	tmpPath := tmp.Name()
 
-	photo := models.Photo{DefectID: defect.ID, FileName: "photo_1.jpg", FilePath: tmpPath, FileURL: "/static/uploads/photos/1/1/photo_1.jpg"}
+	photo := models.Photo{DefectID: uptr(defect.ID), FileName: "photo_1.jpg", FilePath: tmpPath, FileURL: "/static/uploads/photos/1/1/photo_1.jpg"}
 	storage.DB.Create(&photo)
 
 	SyncInspectionPhotos(insp.ID)
@@ -608,7 +608,7 @@ func TestSyncInspectionPhotos_WallDefectPath(t *testing.T) {
 	tmp.WriteString("fake")
 	tmp.Close()
 
-	photo := models.Photo{DefectID: defect.ID, FileName: "photo_1.jpg", FilePath: tmp.Name()}
+	photo := models.Photo{DefectID: uptr(defect.ID), FileName: "photo_1.jpg", FilePath: tmp.Name()}
 	storage.DB.Create(&photo)
 
 	SyncInspectionPhotos(insp.ID)
@@ -645,7 +645,7 @@ func TestUploadInspectionPhotos_SkipsDonePhotos(t *testing.T) {
 	storage.DB.Create(&defect)
 
 	// Фото уже done — не должно перезагружаться
-	photo := models.Photo{DefectID: defect.ID, UploadStatus: "done", FileURL: "inspections/test/photo.jpg"}
+	photo := models.Photo{DefectID: uptr(defect.ID), UploadStatus: "done", FileURL: "inspections/test/photo.jpg"}
 	storage.DB.Create(&photo)
 
 	UploadInspectionPhotos(insp.ID)
@@ -673,7 +673,7 @@ func TestUploadInspectionPhotos_MissingFilePath(t *testing.T) {
 	storage.DB.Create(&defect)
 
 	// pending фото с пустым FilePath — файл потерян
-	photo := models.Photo{DefectID: defect.ID, UploadStatus: "pending", FilePath: "", FileName: "lost.jpg"}
+	photo := models.Photo{DefectID: uptr(defect.ID), UploadStatus: "pending", FilePath: "", FileName: "lost.jpg"}
 	storage.DB.Create(&photo)
 
 	UploadInspectionPhotos(insp.ID)
@@ -710,7 +710,7 @@ func TestUploadInspectionPhotos_FileNotExistsOnDisk(t *testing.T) {
 	storage.DB.Create(&defect)
 
 	// pending фото, но файл не существует
-	photo := models.Photo{DefectID: defect.ID, UploadStatus: "pending", FilePath: "/tmp/nonexistent_photo.jpg", FileName: "nonexistent.jpg"}
+	photo := models.Photo{DefectID: uptr(defect.ID), UploadStatus: "pending", FilePath: "/tmp/nonexistent_photo.jpg", FileName: "nonexistent.jpg"}
 	storage.DB.Create(&photo)
 
 	UploadInspectionPhotos(insp.ID)
@@ -743,7 +743,7 @@ func TestUploadInspectionPhotos_MaxRetriesExceeded(t *testing.T) {
 	storage.DB.Create(&defect)
 
 	// Фото с исчерпанными попытками
-	photo := models.Photo{DefectID: defect.ID, UploadStatus: "failed", FilePath: "/tmp/max.jpg", FileName: "max.jpg", RetryCount: maxFailRetries}
+	photo := models.Photo{DefectID: uptr(defect.ID), UploadStatus: "failed", FilePath: "/tmp/max.jpg", FileName: "max.jpg", RetryCount: maxFailRetries}
 	storage.DB.Create(&photo)
 
 	UploadInspectionPhotos(insp.ID)
@@ -774,7 +774,7 @@ func TestUploadInspectionPhotos_SavesLastError(t *testing.T) {
 	tmp.WriteString("fake")
 	tmp.Close()
 
-	photo := models.Photo{DefectID: defect.ID, UploadStatus: "pending", FilePath: tmp.Name(), FileName: "err.jpg"}
+	photo := models.Photo{DefectID: uptr(defect.ID), UploadStatus: "pending", FilePath: tmp.Name(), FileName: "err.jpg"}
 	storage.DB.Create(&photo)
 
 	UploadInspectionPhotos(insp.ID)

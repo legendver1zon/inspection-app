@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { api, type DefectTemplate, type User } from '../lib/api'
+import { api, type DefectTemplate, type GeneralPhotos, type User } from '../lib/api'
 import { C } from '../lib/palette'
 import { isActive, uploadQueue, useUploadQueue } from '../lib/uploadQueue'
 import { useOnline } from '../lib/online'
@@ -9,7 +9,8 @@ import { clearDraft, loadDraft, saveDraft } from '../lib/draftStore'
 import Header from '../components/Header'
 import PlanCard from './edit/PlanCard'
 import RoomCard from './edit/RoomCard'
-import { buildParams, bindsFrom, emptyRoom, fromDraftRoom, numStr, roomFromData, toDraftRoom, type RoomForm } from './edit/form'
+import PhotoDock from './edit/PhotoDock'
+import { buildParams, bindsFrom, emptyRoom, fromDraftRoom, numStr, roomFromData, toDraftRoom, type DefectBind, type RoomForm } from './edit/form'
 import { Button, Card, CheckIcon, Chip, Collapse, Field, PlusIcon, TextArea, TextInput } from './edit/ui'
 
 /* Редактор акта в структуре редактора осмотров CRM. Работает без сети:
@@ -17,6 +18,13 @@ import { Button, Card, CheckIcon, Chip, Collapse, Field, PlusIcon, TextArea, Tex
    появлении связи, фото уходят через очередь по ключу дефекта. */
 
 const RETRY_MS = 8000
+const GENERAL_KINDS = ['electricity', 'ventilation', 'general'] as const
+
+function generalBindsFrom(gp?: GeneralPhotos): Record<string, DefectBind> {
+  const out: Record<string, DefectBind> = {}
+  for (const k of GENERAL_KINDS) out[k] = { defectId: 0, photos: gp?.[k] ?? [] }
+  return out
+}
 
 export default function EditAct({ user }: { user: User }) {
   const { id } = useParams()
@@ -40,6 +48,7 @@ export default function EditAct({ user }: { user: User }) {
   const [expanded, setExpanded] = useState<number[]>([])
   const [paramsOpen, setParamsOpen] = useState(false)
   const [planUrl, setPlanUrl] = useState('')
+  const [generalBinds, setGeneralBinds] = useState<Record<string, DefectBind>>({})
   const [numberTaken, setNumberTaken] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -73,11 +82,12 @@ export default function EditAct({ user }: { user: User }) {
         setActStatus(a.status === 'completed' ? 'completed' : 'draft')
         setTemplates(data.templates)
         setPlanUrl(a.plan_image)
+        setGeneralBinds(generalBindsFrom(a.general_photos))
         setParamsOpen(!a.total_area)
       }
       if (draft) {
         setHeader(draft.header)
-        setRooms(draft.rooms.map((r, idx) => fromDraftRoom(r, data?.rooms[idx] ? bindsFrom(data.rooms[idx]) : {})))
+        setRooms(draft.rooms.map((r, idx) => fromDraftRoom(r, data?.rooms[idx] ? bindsFrom(data.rooms[idx]) : {}, data?.rooms[idx] ? idx + 1 : 0)))
         if (!data) {
           setTemplates(draft.templates)
           setActNumber(draft.actNumber)
@@ -167,9 +177,10 @@ export default function EditAct({ user }: { user: User }) {
   async function refreshBinds() {
     const d = await api.editData(actId)
     setPlanUrl(d.act.plan_image)
+    setGeneralBinds(generalBindsFrom(d.act.general_photos))
     setRooms((rs) =>
       rs.map((room, idx) => {
-        const serverRoom = d.rooms.find((r) => r.number === idx + 1)
+        const serverRoom = d.rooms.find((r) => r.number === (room.prev || idx + 1))
         return serverRoom ? { ...room, binds: bindsFrom(serverRoom) } : room
       }),
     )
@@ -188,6 +199,15 @@ export default function EditAct({ user }: { user: User }) {
         if (!auto) window.scrollTo({ top: 0 })
         return
       }
+      // Помещения сохранены под номерами из этой отправки — они станут
+      // «прежними» при следующем сохранении
+      const sent = rooms
+      setRooms((rs) =>
+        rs.map((r) => {
+          const j = sent.findIndex((s) => s.key === r.key)
+          return j >= 0 && r.prev !== j + 1 ? { ...r, prev: j + 1 } : r
+        }),
+      )
       setSaveFailed(false)
       setRestored(false)
       setOfflineOnly(false)
@@ -242,7 +262,11 @@ export default function EditAct({ user }: { user: User }) {
               ? `Сохранено ${lastSaved}`
               : ''
 
-  const allPhotos = rooms.flatMap((r) => Object.values(r.binds).flatMap((b) => b.photos))
+  const allPhotos = [...rooms.flatMap((r) => Object.values(r.binds).flatMap((b) => b.photos)), ...Object.values(generalBinds).flatMap((b) => b.photos)]
+  const generalPhotoN = Object.values(generalBinds).reduce((s, b) => s + b.photos.length, 0)
+  const generalKey = (kind: string) => ({ actId, roomNumber: 0, section: kind, templateId: null, wallNumber: 0 })
+  const generalRefs = (kind: string) => (generalBinds[kind] ? [{ key: kind, bind: generalBinds[kind] }] : [])
+  const setGeneralBind = (key: string, b: DefectBind) => setGeneralBinds((g) => ({ ...g, [key]: b }))
   const cloudFailed = allPhotos.filter((p) => p.status === 'failed').length
   const cloudPending = allPhotos.filter((p) => p.status === 'pending' || p.status === 'uploading').length
   const roomsN = rooms.length
@@ -250,6 +274,7 @@ export default function EditAct({ user }: { user: User }) {
     header.total_area && `${header.total_area} м²`,
     header.floor && `${header.floor} этаж`,
     header.owner_name,
+    generalPhotoN > 0 && `${generalPhotoN} фото`,
   ].filter(Boolean).join(' · ')
 
   return (
@@ -338,9 +363,18 @@ export default function EditAct({ user }: { user: User }) {
                 <Field label="Влажность, %"><TextInput inputMode="decimal" value={header.humidity ?? ''} onChange={(e) => setH('humidity', e.target.value)} /></Field>
                 <Field label="ФИО собственника" className="col-span-2 sm:col-span-3"><TextInput value={header.owner_name ?? ''} onChange={(e) => setH('owner_name', e.target.value)} /></Field>
                 <Field label="Представитель застройщика" className="col-span-2 sm:col-span-3"><TextInput value={header.developer_rep_name ?? ''} onChange={(e) => setH('developer_rep_name', e.target.value)} /></Field>
-                <Field label="Электрика" className="col-span-2 sm:col-span-3"><TextInput value={header.electricity ?? ''} placeholder="подключено / нет" onChange={(e) => setH('electricity', e.target.value)} /></Field>
-                <Field label="Вентиляция" className="col-span-2 sm:col-span-3"><TextInput value={header.ventilation ?? ''} placeholder="работает / нет" onChange={(e) => setH('ventilation', e.target.value)} /></Field>
-                <Field label="Общие замечания" className="col-span-2 sm:col-span-6"><TextArea rows={2} value={header.general_notes ?? ''} onChange={(e) => setH('general_notes', e.target.value)} /></Field>
+                <div className="col-span-2 flex flex-col gap-2 sm:col-span-3">
+                  <Field label="Электрика"><TextInput value={header.electricity ?? ''} placeholder="подключено / нет" onChange={(e) => setH('electricity', e.target.value)} /></Field>
+                  <PhotoDock k={generalKey('electricity')} bindKey="electricity" binds={generalRefs('electricity')} canUpload onBind={setGeneralBind} />
+                </div>
+                <div className="col-span-2 flex flex-col gap-2 sm:col-span-3">
+                  <Field label="Вентиляция"><TextInput value={header.ventilation ?? ''} placeholder="работает / нет" onChange={(e) => setH('ventilation', e.target.value)} /></Field>
+                  <PhotoDock k={generalKey('ventilation')} bindKey="ventilation" binds={generalRefs('ventilation')} canUpload onBind={setGeneralBind} />
+                </div>
+                <div className="col-span-2 flex flex-col gap-2 sm:col-span-6">
+                  <Field label="Общие замечания"><TextArea rows={2} value={header.general_notes ?? ''} onChange={(e) => setH('general_notes', e.target.value)} /></Field>
+                  <PhotoDock k={generalKey('general')} bindKey="general" binds={generalRefs('general')} canUpload onBind={setGeneralBind} />
+                </div>
               </div>
             </Collapse>
 

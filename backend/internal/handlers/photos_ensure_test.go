@@ -248,7 +248,7 @@ func TestBuildDefectInfoMap_ActNumber(t *testing.T) {
 	defect := models.RoomDefect{RoomID: room.ID, DefectTemplateID: &tmpl.ID, Section: "window", Value: "1 мм"}
 	storage.DB.Create(&defect)
 
-	infoMap := buildDefectInfoMap(insp.ID)
+	infoMap := buildInspectionInfo(insp.ID).defects
 
 	if len(infoMap) != 1 {
 		t.Fatalf("ожидался 1 дефект в infoMap, got %d", len(infoMap))
@@ -282,7 +282,7 @@ func TestBuildDefectInfoMap_FallbackToID(t *testing.T) {
 	defect := models.RoomDefect{RoomID: room.ID, DefectTemplateID: &tmpl.ID, Section: "floor", Value: "есть"}
 	storage.DB.Create(&defect)
 
-	infoMap := buildDefectInfoMap(insp.ID)
+	infoMap := buildInspectionInfo(insp.ID).defects
 
 	info := infoMap[defect.ID]
 	expectedFallback := fmt.Sprintf("%d", insp.ID)

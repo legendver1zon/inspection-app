@@ -81,6 +81,13 @@ export interface PhotoRef {
   status: string // pending | uploading | done | failed
 }
 
+// Фото к общим замечаниям по квартире
+export interface GeneralPhotos {
+  electricity: PhotoRef[]
+  ventilation: PhotoRef[]
+  general: PhotoRef[]
+}
+
 export interface Defect {
   id: number
   section: string
@@ -97,6 +104,7 @@ export interface Room {
   number: number
   name: string
   defects: Defect[]
+  photos: PhotoRef[] // общий вид помещения
 }
 
 export interface ArchivedDefect {
@@ -133,6 +141,7 @@ export interface InspectionDetail {
   general_notes: string
   plan_image: string
   photo_folder_url: string
+  general_photos: GeneralPhotos
   can_delete: boolean
   rooms: Room[]
   archived: ArchivedDefect[]
@@ -172,6 +181,7 @@ export interface EditRoomData {
   window_type: string
   wall_types: string[]
   defects: EditDefect[]
+  photos: PhotoRef[]
 }
 
 export interface EditData {
@@ -194,6 +204,7 @@ export interface EditData {
     ventilation: string
     general_notes: string
     plan_image: string
+    general_photos: GeneralPhotos
   }
   rooms: EditRoomData[]
   templates: DefectTemplate[]
@@ -338,7 +349,7 @@ export const api = {
         if (xhr.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT))
         try {
           const body = JSON.parse(xhr.responseText)
-          if (xhr.status === 200) resolve({ photo: { id: body.id, status: 'pending' }, defectId: body.defect_id })
+          if (xhr.status === 200) resolve({ photo: { id: body.id, status: 'pending' }, defectId: body.defect_id ?? 0 })
           else reject(new ApiError(xhr.status, body.error ?? 'Ошибка загрузки'))
         } catch {
           reject(new ApiError(xhr.status, xhr.status === 413 ? 'Файл слишком большой' : 'Ошибка загрузки'))

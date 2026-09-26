@@ -92,11 +92,9 @@ func buildActCards(list []models.Inspection) []actCard {
 	}
 	var srows []idStatusCount
 	storage.DB.Table("photos p").
-		Select("ir.inspection_id as inspection_id, p.upload_status, count(*) as c").
-		Joins("JOIN room_defects rd ON rd.id = p.defect_id").
-		Joins("JOIN inspection_rooms ir ON ir.id = rd.room_id").
-		Where("ir.inspection_id IN ? AND p.deleted_at IS NULL", ids).
-		Group("ir.inspection_id, p.upload_status").Scan(&srows)
+		Select("p.inspection_id as inspection_id, p.upload_status, count(*) as c").
+		Where("p.inspection_id IN ? AND p.deleted_at IS NULL", ids).
+		Group("p.inspection_id, p.upload_status").Scan(&srows)
 
 	photoTotal := map[uint]int64{}
 	photoFailed := map[uint]int64{}

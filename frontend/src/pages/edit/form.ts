@@ -38,6 +38,9 @@ export type Measures = {
 
 export interface RoomForm {
   key: number
+  // Номер помещения на сервере при загрузке (0 — новое): по нему при
+  // сохранении к помещению переезжают его фото
+  prev: number
   name: string
   m: Measures
   windowType: string
@@ -74,6 +77,7 @@ export function plural(n: number, one: string, few: string, many: string) {
 export function emptyRoom(): RoomForm {
   return {
     key: roomKeySeq++,
+    prev: 0,
     name: '',
     m: { length: '', width: '', height: '', dh: '', dw: '',
          w1h: '', w1w: '', w2h: '', w2w: '', w3h: '', w3w: '', w4h: '', w4w: '', w5h: '', w5w: '' },
@@ -100,11 +104,13 @@ export function bindsFrom(r: EditRoomData): Record<string, DefectBind> {
     else bindKey = `s${d.template_id}`
     binds[bindKey] = { defectId: d.id, photos: d.photos ?? [] }
   }
+  if (r.photos?.length) binds.overview = { defectId: 0, photos: r.photos }
   return binds
 }
 
 export function roomFromData(r: EditRoomData): RoomForm {
   const room = emptyRoom()
+  room.prev = r.number
   room.name = r.name
   room.m = {
     length: numStr(r.length), width: numStr(r.width), height: numStr(r.height),
@@ -146,6 +152,7 @@ export function buildParams(header: Record<string, string>, rooms: RoomForm[]): 
   rooms.forEach((room, idx) => {
     const i = String(idx + 1)
     p.set(`room_name_${i}`, room.name)
+    p.set(`room_prev_${i}`, String(room.prev))
     const mm = room.m
     const measureKeys: [string, string][] = [
       ['room_length_', mm.length], ['room_width_', mm.width], ['room_height_', mm.height],
@@ -179,9 +186,13 @@ export function toDraftRoom(r: RoomForm) {
   return rest
 }
 
-export function fromDraftRoom(d: Omit<RoomForm, 'key' | 'binds' | 'm'> & { m: Record<string, string> }, binds: Record<string, DefectBind> = {}): RoomForm {
+export function fromDraftRoom(
+  d: Omit<RoomForm, 'key' | 'binds' | 'm' | 'prev'> & { m: Record<string, string>; prev?: number },
+  binds: Record<string, DefectBind> = {},
+  fallbackPrev = 0,
+): RoomForm {
   const base = emptyRoom()
-  return { ...base, ...d, m: { ...base.m, ...(d.m as Partial<Measures>) }, binds }
+  return { ...base, ...d, prev: d.prev ?? fallbackPrev, m: { ...base.m, ...(d.m as Partial<Measures>) }, binds }
 }
 
 export function measured(r: RoomForm) {

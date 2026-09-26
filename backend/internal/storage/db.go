@@ -74,5 +74,12 @@ func Migrate() {
 	if err != nil {
 		log.Fatalf("Ошибка миграции: %v", err)
 	}
+	// Фото без дефекта (общий вид помещения, общие замечания): defect_id стал
+	// необязательным, а inspection_id старым записям заполняем по цепочке
+	// дефект → помещение (включая архивные).
+	DB.Exec("ALTER TABLE photos ALTER COLUMN defect_id DROP NOT NULL")
+	DB.Exec(`UPDATE photos p SET inspection_id = r.inspection_id
+		FROM room_defects d JOIN inspection_rooms r ON r.id = d.room_id
+		WHERE d.id = p.defect_id AND (p.inspection_id IS NULL OR p.inspection_id = 0)`)
 	applog.Info("migrations applied")
 }

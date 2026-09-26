@@ -49,8 +49,8 @@ export default function PhotoDock({ k, bindKey, binds, canUpload, hint, onBind }
       const ref = binds.find((b) => b.key === targetKey)
       if (ref) {
         if (!ref.bind.photos.some((p) => p.id === it.photo!.id)) onBind(targetKey, { ...ref.bind, photos: [...ref.bind.photos, it.photo] })
-      } else if (it.defectId) {
-        onBind(targetKey, { defectId: it.defectId, photos: [it.photo] })
+      } else {
+        onBind(targetKey, { defectId: it.defectId ?? 0, photos: [it.photo] })
       }
       uploadQueue.ack(it.key)
       const u = previews.get(it.key)

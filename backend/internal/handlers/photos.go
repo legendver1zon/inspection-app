@@ -91,7 +91,7 @@ func PostUploadPhoto(c *gin.Context) {
 	}
 	defer file.Close()
 
-	photo, ok := storeDefectPhoto(c, file, ext, inspection.ID, defect.ID, nil)
+	photo, ok := storePhoto(c, file, ext, models.Photo{InspectionID: inspection.ID, Kind: models.PhotoKindDefect, DefectID: &defect.ID})
 	if !ok {
 		return
 	}
@@ -100,7 +100,9 @@ func PostUploadPhoto(c *gin.Context) {
 
 var (
 	photoSections = map[string]bool{"window": true, "ceiling": true, "wall": true, "floor": true, "door": true, "plumbing": true}
-	clientIDRe    = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+	// Секции фото без дефекта: «overview» — общий вид помещения, остальные — общие замечания по квартире
+	generalPhotoKinds = map[string]bool{models.PhotoKindElectricity: true, models.PhotoKindVentilation: true, models.PhotoKindGeneral: true}
+	clientIDRe        = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
 )
 
 // PostUploadInspectionPhoto обрабатывает POST /inspections/:id/photos.
@@ -120,18 +122,41 @@ func PostUploadInspectionPhoto(c *gin.Context) {
 		bad("client_id обязателен: до 64 символов из A-Z, a-z, 0-9, _ и -")
 		return
 	}
-	roomNumber, err := strconv.Atoi(strings.TrimSpace(c.PostForm("room_number")))
-	if err != nil || roomNumber < 1 {
-		bad("Неверный номер помещения")
+	section := c.PostForm("section")
+	kind := models.PhotoKindDefect
+	switch {
+	case photoSections[section]:
+	case section == "overview":
+		kind = models.PhotoKindRoom
+	case generalPhotoKinds[section]:
+		kind = section
+	default:
+		bad("Неверная секция фото")
 		return
 	}
-	section := c.PostForm("section")
-	if !photoSections[section] {
-		bad("Неверная секция дефекта")
+	var err error
+	roomNumber := 0
+	if s := strings.TrimSpace(c.PostForm("room_number")); s != "" {
+		if roomNumber, err = strconv.Atoi(s); err != nil || roomNumber < 0 {
+			bad("Неверный номер помещения")
+			return
+		}
+	}
+	if generalPhotoKinds[kind] {
+		if roomNumber != 0 {
+			bad("Фото общих замечаний не привязывается к помещению")
+			return
+		}
+	} else if roomNumber < 1 {
+		bad("Неверный номер помещения")
 		return
 	}
 	var templateID *uint
 	if s := strings.TrimSpace(c.PostForm("template_id")); s != "" && s != "0" {
+		if kind != models.PhotoKindDefect {
+			bad("template_id указывается только для фото дефекта")
+			return
+		}
 		v, err := strconv.ParseUint(s, 10, 32)
 		if err != nil {
 			bad("Неверный template_id")
@@ -179,39 +204,56 @@ func PostUploadInspectionPhoto(c *gin.Context) {
 	}
 	defer file.Close()
 
-	var room models.InspectionRoom
-	if err := storage.DB.Where("inspection_id = ? AND room_number = ?", inspection.ID, roomNumber).
-		Order("id desc").First(&room).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Помещение не найдено"})
-		return
-	}
-
-	q := storage.DB.Where("room_id = ? AND section = ? AND wall_number = ?", room.ID, section, wallNumber)
-	if templateID == nil {
-		q = q.Where("defect_template_id IS NULL")
-	} else {
-		q = q.Where("defect_template_id = ?", *templateID)
-	}
-	var defect models.RoomDefect
-	if err := q.Order("id").First(&defect).Error; err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			logger.Ctx(c.Request.Context()).Error("defect lookup failed", "inspection_id", inspection.ID, "error", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка поиска дефекта"})
+	photo := models.Photo{InspectionID: inspection.ID, Kind: kind, ClientID: &clientID}
+	switch kind {
+	case models.PhotoKindRoom:
+		if !roomExists(inspection.ID, roomNumber) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Помещение не найдено"})
 			return
 		}
-		defect = models.RoomDefect{RoomID: room.ID, DefectTemplateID: templateID, Section: section, WallNumber: wallNumber}
-		if err := storage.DB.Create(&defect).Error; err != nil {
-			logger.Ctx(c.Request.Context()).Error("defect create failed", "inspection_id", inspection.ID, "error", err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания дефекта"})
+		photo.RoomNumber = roomNumber
+	case models.PhotoKindDefect:
+		var room models.InspectionRoom
+		if err := storage.DB.Where("inspection_id = ? AND room_number = ?", inspection.ID, roomNumber).
+			Order("id desc").First(&room).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Помещение не найдено"})
 			return
 		}
+
+		q := storage.DB.Where("room_id = ? AND section = ? AND wall_number = ?", room.ID, section, wallNumber)
+		if templateID == nil {
+			q = q.Where("defect_template_id IS NULL")
+		} else {
+			q = q.Where("defect_template_id = ?", *templateID)
+		}
+		var defect models.RoomDefect
+		if err := q.Order("id").First(&defect).Error; err != nil {
+			if !errors.Is(err, gorm.ErrRecordNotFound) {
+				logger.Ctx(c.Request.Context()).Error("defect lookup failed", "inspection_id", inspection.ID, "error", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка поиска дефекта"})
+				return
+			}
+			defect = models.RoomDefect{RoomID: room.ID, DefectTemplateID: templateID, Section: section, WallNumber: wallNumber}
+			if err := storage.DB.Create(&defect).Error; err != nil {
+				logger.Ctx(c.Request.Context()).Error("defect create failed", "inspection_id", inspection.ID, "error", err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания дефекта"})
+				return
+			}
+		}
+		photo.DefectID = &defect.ID
 	}
 
-	photo, ok := storeDefectPhoto(c, file, ext, inspection.ID, defect.ID, &clientID)
+	photo, ok = storePhoto(c, file, ext, photo)
 	if !ok {
 		return
 	}
 	c.JSON(http.StatusOK, photoJSON(photo, false))
+}
+
+func roomExists(inspectionID uint, roomNumber int) bool {
+	var n int64
+	storage.DB.Model(&models.InspectionRoom{}).Where("inspection_id = ? AND room_number = ?", inspectionID, roomNumber).Count(&n)
+	return n > 0
 }
 
 func photoJSON(p models.Photo, duplicate bool) gin.H {
@@ -231,12 +273,7 @@ func findPhotoByClientID(clientID string) (models.Photo, bool) {
 }
 
 func photoInInspection(p models.Photo, inspectionID uint) bool {
-	var n int64
-	storage.DB.Table("room_defects").
-		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
-		Where("room_defects.id = ? AND inspection_rooms.inspection_id = ?", p.DefectID, inspectionID).
-		Count(&n)
-	return n > 0
+	return p.InspectionID == inspectionID
 }
 
 // readPhotoUpload берёт файл из поля photo и проверяет размер и расширение.
@@ -261,23 +298,24 @@ func readPhotoUpload(c *gin.Context) (multipart.File, string, bool) {
 	return file, ext, true
 }
 
-// storeDefectPhoto кладёт файл в uploads/photos/{inspection}/{defect}, создаёт
+// storePhoto кладёт файл в uploads/photos/{inspection}/{группа}, создаёт
 // запись Photo, строит миниатюру в фоне и ставит осмотр в очередь облака.
+// Группа — дефект, помещение (общий вид) или вид общего замечания.
 // Если ответ уже отправлен (ошибка или повтор по client_id) — возвращает ok=false.
-func storeDefectPhoto(c *gin.Context, file io.Reader, ext string, inspectionID, defectID uint, clientID *string) (models.Photo, bool) {
+func storePhoto(c *gin.Context, file io.Reader, ext string, photo models.Photo) (models.Photo, bool) {
 	var photoCount int64
-	storage.DB.Model(&models.Photo{}).Where("defect_id = ?", defectID).Count(&photoCount)
+	photoGroup(storage.DB.Model(&models.Photo{}), photo).Count(&photoCount)
 	if photoCount >= maxPhotosPerDefect {
 		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Максимум %d фото на дефект", maxPhotosPerDefect)})
 		return models.Photo{}, false
 	}
 
-	inspStr := strconv.FormatUint(uint64(inspectionID), 10)
-	defStr := strconv.FormatUint(uint64(defectID), 10)
+	inspStr := strconv.FormatUint(uint64(photo.InspectionID), 10)
+	group := photoGroupKey(photo)
 	// Уникальное имя через timestamp — исключает race condition при одновременной загрузке
-	fileName := fmt.Sprintf("photo_%s_%d%s", defStr, time.Now().UnixMilli(), ext)
+	fileName := fmt.Sprintf("photo_%s_%d%s", group, time.Now().UnixMilli(), ext)
 
-	localDir := filepath.Join("web", "static", "uploads", "photos", inspStr, defStr)
+	localDir := filepath.Join("web", "static", "uploads", "photos", inspStr, group)
 	if err := os.MkdirAll(localDir, 0755); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка создания директории: " + err.Error()})
 		return models.Photo{}, false
@@ -298,30 +336,27 @@ func storeDefectPhoto(c *gin.Context, file io.Reader, ext string, inspectionID, 
 	}
 
 	absPath, _ := filepath.Abs(localFile)
-	photo := models.Photo{
-		DefectID:     defectID,
-		FileURL:      "/static/uploads/photos/" + inspStr + "/" + defStr + "/" + fileName,
-		FilePath:     absPath,
-		FileName:     fileName,
-		UploadStatus: "pending",
-		ClientID:     clientID,
-	}
+	photo.FileURL = "/static/uploads/photos/" + inspStr + "/" + group + "/" + fileName
+	photo.FilePath = absPath
+	photo.FileName = fileName
+	photo.UploadStatus = "pending"
 	if err := storage.DB.Create(&photo).Error; err != nil {
 		os.Remove(localFile)
 		// Два параллельных запроса с одним client_id: первый уже сохранил фото
-		if clientID != nil && isUniqueConflict(err, "client_id") {
-			if existing, found := findPhotoByClientID(*clientID); found {
+		if photo.ClientID != nil && isUniqueConflict(err, "client_id") {
+			if existing, found := findPhotoByClientID(*photo.ClientID); found {
 				c.JSON(http.StatusOK, photoJSON(existing, true))
 				return existing, false
 			}
 		}
-		logger.Ctx(c.Request.Context()).Error("photo create failed", "inspection_id", inspectionID, "defect_id", defectID, "error", err)
+		logger.Ctx(c.Request.Context()).Error("photo create failed", "inspection_id", photo.InspectionID, "group", group, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка сохранения записи"})
 		return models.Photo{}, false
 	}
 
 	go makeThumbAsync(photo)
 
+	inspectionID := photo.InspectionID
 	if cloudStore != nil {
 		if uploadQueue != nil {
 			if err := uploadQueue.Push(context.Background(), inspectionID); err != nil {
@@ -335,24 +370,59 @@ func storeDefectPhoto(c *gin.Context, file io.Reader, ext string, inspectionID, 
 	return photo, true
 }
 
-// loadPhotoInspection загружает осмотр по цепочке фото → дефект → помещение → осмотр
-// для проверки прав доступа. Дефект и помещение ищутся Unscoped: архивные
-// (soft-deleted) дефекты сохраняют фото, показываемые на странице просмотра.
+// photoGroup ограничивает запрос фотографиями той же группы, что и p:
+// того же дефекта, общего вида того же помещения или того же вида замечаний.
+func photoGroup(db *gorm.DB, p models.Photo) *gorm.DB {
+	switch p.Kind {
+	case models.PhotoKindRoom:
+		return db.Where("inspection_id = ? AND kind = ? AND room_number = ?", p.InspectionID, p.Kind, p.RoomNumber)
+	case models.PhotoKindDefect:
+		return db.Where("defect_id = ?", p.DefectID)
+	default:
+		return db.Where("inspection_id = ? AND kind = ?", p.InspectionID, p.Kind)
+	}
+}
+
+// photoGroupKey — имя группы для каталога на диске и нумерации в облаке.
+func photoGroupKey(p models.Photo) string {
+	switch p.Kind {
+	case models.PhotoKindRoom:
+		return "room" + strconv.Itoa(p.RoomNumber)
+	case models.PhotoKindDefect:
+		if p.DefectID == nil {
+			return "0"
+		}
+		return strconv.FormatUint(uint64(*p.DefectID), 10)
+	default:
+		return p.Kind
+	}
+}
+
+// loadPhotoInspection загружает осмотр фото для проверки прав доступа.
+// У записей до миграции inspection_id пуст — идём по цепочке
+// фото → дефект → помещение → осмотр (Unscoped: архивные дефекты сохраняют фото).
 // При обрыве цепочки отвечает 404 и возвращает ok=false.
 func loadPhotoInspection(c *gin.Context, photo *models.Photo) (models.Inspection, bool) {
 	var inspection models.Inspection
-
-	var defect models.RoomDefect
-	if err := storage.DB.Unscoped().First(&defect, photo.DefectID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Дефект не найден"})
-		return inspection, false
+	inspectionID := photo.InspectionID
+	if inspectionID == 0 {
+		if photo.DefectID == nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Осмотр не найден"})
+			return inspection, false
+		}
+		var defect models.RoomDefect
+		if err := storage.DB.Unscoped().First(&defect, *photo.DefectID).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Дефект не найден"})
+			return inspection, false
+		}
+		var room models.InspectionRoom
+		if err := storage.DB.Unscoped().First(&room, defect.RoomID).Error; err != nil {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Помещение не найдено"})
+			return inspection, false
+		}
+		inspectionID = room.InspectionID
 	}
-	var room models.InspectionRoom
-	if err := storage.DB.Unscoped().First(&room, defect.RoomID).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Помещение не найдено"})
-		return inspection, false
-	}
-	if err := storage.DB.First(&inspection, room.InspectionID).Error; err != nil {
+	if err := storage.DB.First(&inspection, inspectionID).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Осмотр не найден"})
 		return inspection, false
 	}
@@ -494,6 +564,14 @@ func sectionFolderName(section string, wallNumber int) string {
 		return "Двери"
 	case "plumbing":
 		return "Сантехника"
+	case "overview":
+		return "Общий_вид"
+	case models.PhotoKindElectricity:
+		return "Электричество"
+	case models.PhotoKindVentilation:
+		return "Вентиляция"
+	case models.PhotoKindGeneral:
+		return "Общие"
 	default:
 		return section
 	}
@@ -588,9 +666,7 @@ func UploadInspectionPhotos(inspectionID uint) {
 	// Идемпотентность: берём только pending (не done, не uploading)
 	var photos []models.Photo
 	storage.DB.
-		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
-		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
-		Where("inspection_rooms.inspection_id = ? AND photos.upload_status IN ('pending','failed')", inspectionID).
+		Where("photos.inspection_id = ? AND photos.upload_status IN ('pending','failed')", inspectionID).
 		Where("photos.retry_count < ?", maxFailRetries).
 		Find(&photos)
 
@@ -613,26 +689,24 @@ func UploadInspectionPhotos(inspectionID uint) {
 			"last_attempt_at": now,
 		})
 
-	// Собираем данные дефектов для построения путей
-	infoMap := buildDefectInfoMap(inspectionID)
+	// Собираем данные осмотра для построения путей в облаке
+	insInfo := buildInspectionInfo(inspectionID)
 
-	// Считаем уже загруженные фото per defect (done + uploading), чтобы не перезаписать файлы
-	defectPhotoCount := map[uint]int{}
+	// Считаем уже загруженные фото в каждой группе (done + uploading), чтобы не перезаписать файлы
+	groupCount := map[string]int{}
 	var existingPhotos []models.Photo
 	storage.DB.
-		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
-		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
-		Where("inspection_rooms.inspection_id = ? AND photos.upload_status IN ('done','uploading') AND photos.id NOT IN ?", inspectionID, ids).
+		Where("photos.inspection_id = ? AND photos.upload_status IN ('done','uploading') AND photos.id NOT IN ?", inspectionID, ids).
 		Find(&existingPhotos)
 	for _, dp := range existingPhotos {
-		defectPhotoCount[dp.DefectID]++
+		groupCount[photoGroupKey(dp)]++
 	}
 
 	// Фильтруем: пропускаем фото без локального файла
 	var tasks []uploadTask
 	for i := range photos {
 		p := &photos[i]
-		info, ok := infoMap[p.DefectID]
+		info, ok := photoInfo(*p, insInfo)
 		if !ok {
 			continue
 		}
@@ -659,8 +733,8 @@ func UploadInspectionPhotos(inspectionID uint) {
 			continue
 		}
 
-		defectPhotoCount[p.DefectID]++
-		n := defectPhotoCount[p.DefectID]
+		groupCount[photoGroupKey(*p)]++
+		n := groupCount[photoGroupKey(*p)]
 		tasks = append(tasks, buildUploadTask(p, info, n))
 	}
 
@@ -726,9 +800,7 @@ func BuildUploadStatusMap(inspectionID uint) map[string]interface{} {
 	var rows []statusCount
 	storage.DB.Model(&models.Photo{}).
 		Select("photos.upload_status as status, COUNT(*) as count").
-		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
-		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
-		Where("inspection_rooms.inspection_id = ?", inspectionID).
+		Where("photos.inspection_id = ?", inspectionID).
 		Group("photos.upload_status").
 		Scan(&rows)
 
@@ -771,9 +843,7 @@ func SyncInspectionPhotos(inspectionID uint) {
 	storage.DB.
 		Table("photos").
 		Select("photos.id").
-		Joins("JOIN room_defects ON room_defects.id = photos.defect_id").
-		Joins("JOIN inspection_rooms ON inspection_rooms.id = room_defects.room_id").
-		Where("inspection_rooms.inspection_id = ? AND photos.file_path != '' AND photos.upload_status != 'uploading' AND photos.deleted_at IS NULL", inspectionID).
+		Where("photos.inspection_id = ? AND photos.file_path != '' AND photos.upload_status != 'uploading' AND photos.deleted_at IS NULL", inspectionID).
 		Pluck("photos.id", &pendingIDs)
 	if len(pendingIDs) > 0 {
 		storage.DB.Model(&models.Photo{}).Where("id IN ?", pendingIDs).Update("upload_status", "pending")
@@ -798,18 +868,25 @@ type defectInfo struct {
 	ActNumber  string // номер акта для именования папки на Яндекс Диске
 }
 
-func buildDefectInfoMap(inspectionID uint) map[uint]defectInfo {
-	infoMap := map[uint]defectInfo{}
+type inspectionInfo struct {
+	actNumber string
+	defects   map[uint]defectInfo
+	rooms     map[int]string // номер помещения → название
+}
+
+func buildInspectionInfo(inspectionID uint) inspectionInfo {
+	info := inspectionInfo{defects: map[uint]defectInfo{}, rooms: map[int]string{}}
 
 	// Получаем номер акта для именования папки
 	var inspection models.Inspection
 	if err := storage.DB.First(&inspection, inspectionID).Error; err != nil {
-		logger.Warn("buildDefectInfoMap: осмотр не найден", "inspection_id", inspectionID, "error", err)
+		logger.Warn("buildInspectionInfo: осмотр не найден", "inspection_id", inspectionID, "error", err)
 	}
 	actNumber := sanitizeFolderName(inspection.ActNumber)
 	if actNumber == "" {
 		actNumber = fmt.Sprintf("%d", inspectionID) // fallback для старых записей
 	}
+	info.actNumber = actNumber
 
 	var defects []models.RoomDefect
 	storage.DB.Unscoped().
@@ -819,10 +896,14 @@ func buildDefectInfoMap(inspectionID uint) map[uint]defectInfo {
 		Find(&defects)
 
 	var rooms []models.InspectionRoom
-	storage.DB.Unscoped().Where("inspection_id = ?", inspectionID).Find(&rooms)
+	storage.DB.Unscoped().Where("inspection_id = ?", inspectionID).Order("id").Find(&rooms)
 	roomMap := map[uint]models.InspectionRoom{}
 	for _, r := range rooms {
 		roomMap[r.ID] = r
+		// Название по номеру: актуальное помещение главнее архивного
+		if _, ok := info.rooms[r.RoomNumber]; !ok || !r.DeletedAt.Valid {
+			info.rooms[r.RoomNumber] = r.RoomName
+		}
 	}
 	for _, d := range defects {
 		r := roomMap[d.RoomID]
@@ -830,7 +911,7 @@ func buildDefectInfoMap(inspectionID uint) map[uint]defectInfo {
 		if d.DefectTemplateID == nil || name == "" {
 			name = "Прочее"
 		}
-		infoMap[d.ID] = defectInfo{
+		info.defects[d.ID] = defectInfo{
 			RoomName:   r.RoomName,
 			RoomNumber: r.RoomNumber,
 			Section:    d.Section,
@@ -839,7 +920,29 @@ func buildDefectInfoMap(inspectionID uint) map[uint]defectInfo {
 			ActNumber:  actNumber,
 		}
 	}
-	return infoMap
+	return info
+}
+
+// photoInfo описывает, куда в облаке кладётся фото: дефекта — рядом с дефектом,
+// общего вида — в папку помещения, общих замечаний — в «Общие_замечания».
+func photoInfo(p models.Photo, ins inspectionInfo) (defectInfo, bool) {
+	switch p.Kind {
+	case models.PhotoKindRoom:
+		return defectInfo{
+			RoomName: ins.rooms[p.RoomNumber], RoomNumber: p.RoomNumber,
+			Section: "overview", DefectName: sectionFolderName("overview", 0), ActNumber: ins.actNumber,
+		}, true
+	case models.PhotoKindElectricity, models.PhotoKindVentilation, models.PhotoKindGeneral:
+		return defectInfo{
+			RoomName: "Общие_замечания", Section: p.Kind,
+			DefectName: sectionFolderName(p.Kind, 0), ActNumber: ins.actNumber,
+		}, true
+	}
+	if p.DefectID == nil {
+		return defectInfo{}, false
+	}
+	d, ok := ins.defects[*p.DefectID]
+	return d, ok
 }
 
 func buildUploadTask(p *models.Photo, info defectInfo, n int) uploadTask {

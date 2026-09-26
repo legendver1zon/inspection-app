@@ -136,7 +136,7 @@ func TestGetPhotoThumb_NoSource_Fallback(t *testing.T) {
 	insp, defect := newInspectionWithDefect(t, "thumb-nosrc")
 	r := setupThumbRouter(t, insp.UserID, "inspector")
 
-	photo := models.Photo{DefectID: defect.ID, FileName: "gone.jpg"}
+	photo := models.Photo{DefectID: uptr(defect.ID), FileName: "gone.jpg"}
 	if err := storage.DB.Create(&photo).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -193,7 +193,7 @@ func TestGetPhotoThumb_Cloud_SingleDownload(t *testing.T) {
 	cloudStore = &mockCloudStore{downloadURL: srv.URL + "/inspections/x/photo.jpg"}
 	defer func() { cloudStore = nil }()
 
-	photo := models.Photo{DefectID: defect.ID, FileName: "cloud.jpg", FileURL: "inspections/x/photo.jpg", UploadStatus: "done"}
+	photo := models.Photo{DefectID: uptr(defect.ID), FileName: "cloud.jpg", FileURL: "inspections/x/photo.jpg", UploadStatus: "done"}
 	if err := storage.DB.Create(&photo).Error; err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestGetPhotoThumb_CloudHTTPError_Fallback(t *testing.T) {
 	cloudStore = &mockCloudStore{downloadURL: srv.URL + "/missing.jpg"}
 	defer func() { cloudStore = nil }()
 
-	photo := models.Photo{DefectID: defect.ID, FileName: "c.jpg", FileURL: "inspections/x/missing.jpg", UploadStatus: "done"}
+	photo := models.Photo{DefectID: uptr(defect.ID), FileName: "c.jpg", FileURL: "inspections/x/missing.jpg", UploadStatus: "done"}
 	if err := storage.DB.Create(&photo).Error; err != nil {
 		t.Fatal(err)
 	}
