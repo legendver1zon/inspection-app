@@ -58,7 +58,7 @@ export default function EditAct({ user }: { user: User }) {
     })
     const rs = data.rooms.length > 0 ? data.rooms.map(roomFromData) : [emptyRoom()]
     setRooms(rs)
-    setExpanded(rs.length ? [rs[0].key] : [])
+    setExpanded([])
     setParamsOpen(!a.total_area)
     setPlanUrl(a.plan_image)
     setLoaded(true)

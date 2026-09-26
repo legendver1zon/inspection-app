@@ -41,6 +41,9 @@ export default function RoomCard({ room, index, templates, actId, open, onToggle
       }
     >
       <div className="flex flex-col gap-3">
+        <Field label="Название помещения">
+          <TextInput value={room.name} placeholder="Кухня, гостиная…" onChange={(e) => onPatch((r) => ({ ...r, name: e.target.value }))} />
+        </Field>
         <RoomParams room={room} onPatch={onPatch} />
         <span className="text-[14px] font-semibold">Дефекты{nDef > 0 && ` · ${nDef}`}</span>
         <Defects room={room} templates={templates} actId={actId} onPatch={onPatch} onPatchSilent={onPatchSilent} />
@@ -59,7 +62,7 @@ export default function RoomCard({ room, index, templates, actId, open, onToggle
 /* ===== Параметры помещения ===== */
 
 function RoomParams({ room, onPatch }: { room: RoomForm; onPatch: Patch }) {
-  const [open, setOpen] = useState(!measured(room))
+  const [open, setOpen] = useState(false)
   const set = (patch: Partial<RoomForm>) => onPatch((r) => ({ ...r, ...patch }))
   const setM = (k: keyof Measures, v: string) => onPatch((r) => ({ ...r, m: { ...r.m, [k]: v } }))
   const winN = windowsCount(room)
@@ -86,9 +89,6 @@ function RoomParams({ room, onPatch }: { room: RoomForm; onPatch: Patch }) {
       }
     >
       <div className="flex flex-col gap-3">
-        <Field label="Название помещения">
-          <TextInput value={room.name} placeholder="Кухня, гостиная…" onChange={(e) => set({ name: e.target.value })} />
-        </Field>
         <div className="grid grid-cols-3 gap-3">
           <Field label="Длина, м"><TextInput inputMode="decimal" value={room.m.length} onChange={(e) => setM('length', e.target.value)} /></Field>
           <Field label="Ширина, м"><TextInput inputMode="decimal" value={room.m.width} onChange={(e) => setM('width', e.target.value)} /></Field>
