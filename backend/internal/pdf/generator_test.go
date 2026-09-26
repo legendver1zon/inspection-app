@@ -84,7 +84,7 @@ func TestGenerate_CreatesFile(t *testing.T) {
 	}
 
 	// Имя файла содержит номер акта
-	if !strings.Contains(path, "act_42-310326.pdf") {
+	if !strings.Contains(filepath.Base(path), "act_42-310326_") || !strings.HasSuffix(path, ".pdf") {
 		t.Errorf("unexpected filename: %s", path)
 	}
 

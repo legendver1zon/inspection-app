@@ -4,6 +4,13 @@ import { Button, Drawer } from './ui'
 
 const PAD_H = 220
 const INK = '#1d1a16'
+// Линия-опора на GUIDE_BOTTOM px выше низа холста. PNG режется по чернилам
+// только по ширине, а по высоте всегда от верха до KEEP_BELOW px под линией:
+// так положение линии в картинке известно (доля BASELINE = 156/188) и
+// генератор PDF кладёт её точно на линию подписи в акте.
+const GUIDE_BOTTOM = 64
+const KEEP_BELOW = 32
+const CROP_BOTTOM = PAD_H - KEEP_BELOW
 
 // Границы чернил в пикселях битмапа (по альфа-каналу)
 function inkBox(c: HTMLCanvasElement) {
@@ -186,10 +193,11 @@ export default function SignaturePad({ open, title, onClose, onDone }: {
     const { width, height } = c
     const box = inkBox(c)
     if (!box) return null
-    const { minX, minY, maxX, maxY } = box
-    const pad = 16
-    const sx = Math.max(0, minX - pad), sy = Math.max(0, minY - pad)
-    const sw = Math.min(width, maxX + pad) - sx, sh = Math.min(height, maxY + pad) - sy
+    const { minX, maxX } = box
+    const dpr = height / PAD_H
+    const pad = Math.round(16 * dpr)
+    const sx = Math.max(0, minX - pad), sy = 0
+    const sw = Math.min(width, maxX + 1 + pad) - sx, sh = Math.min(height, Math.round(CROP_BOTTOM * dpr))
     const scale = Math.min(1, 900 / sw)
     const out = document.createElement('canvas')
     out.width = Math.max(1, Math.round(sw * scale))
@@ -217,9 +225,9 @@ export default function SignaturePad({ open, title, onClose, onDone }: {
       }
     >
       <p className="text-[13px]" style={{ color: C.muted }}>Распишитесь на линии пальцем или стилусом и нажмите «Готово».</p>
-      <div className="relative mt-3 overflow-hidden rounded-xl border" style={{ borderColor: C.line, background: '#fff', height: PAD_H }}>
+      <div className="relative mt-3 box-content overflow-hidden rounded-xl border" style={{ borderColor: C.line, background: '#fff', height: PAD_H }}>
         {/* Линия-опора: лежит под холстом и в PNG не попадает */}
-        <div aria-hidden className="pointer-events-none absolute inset-x-5 border-b border-dashed" style={{ bottom: 64, borderColor: '#b5ada2' }}>
+        <div aria-hidden className="pointer-events-none absolute inset-x-5 border-b border-dashed" style={{ bottom: GUIDE_BOTTOM, borderColor: '#b5ada2' }}>
           <span className="absolute -top-3.5 -left-1 text-[16px] leading-none" style={{ color: '#b5ada2' }}>×</span>
         </div>
         <canvas

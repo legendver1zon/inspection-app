@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/go-pdf/fpdf"
 	"github.com/skip2/go-qrcode"
@@ -218,7 +219,9 @@ func Generate(inspection *models.Inspection, outputDir string) (string, error) {
 		}
 		return r
 	}, inspection.ActNumber)
-	filename := fmt.Sprintf("act_%s.pdf", safeAct)
+	// Имя уникально для каждой генерации: у акта может быть несколько PDF,
+	// и удаление одного не должно стирать файл другого
+	filename := fmt.Sprintf("act_%s_%s.pdf", safeAct, time.Now().Format("20060102-150405.000"))
 	outPath := filepath.Join(outputDir, filename)
 	if err := f.OutputFileAndClose(outPath); err != nil {
 		return "", fmt.Errorf("ошибка сохранения PDF: %w", err)
@@ -634,22 +637,27 @@ func drawSignatures(f *fpdf.Fpdf, inspection *models.Inspection) {
 
 	// Над линией — место под подпись: картинка рукописной подписи с телефона
 	// или пустое поле для подписи на бумаге (представитель застройщика).
+	// В PNG с телефона линия-опора проходит на доле sigBaseline высоты
+	// (константы поля подписи: 156/188), картинка ставится так, чтобы эта
+	// линия совпала с линией подписи в акте.
 	const imgH, imgMaxW, colX, colW = 14.0, 50.0, marginL + 50.0, 55.0
+	const sigBaseline, sigDrawH = 156.0 / 188.0, 16.0
 	sigLine := func(role, name string, sig *models.Signature) {
 		top := f.GetY()
+		lineY := top + imgH + 5
 		if sig != nil {
 			if p := signatureImagePath(sig); p != "" {
 				opts := fpdf.ImageOptions{ImageType: "PNG"}
 				if info := f.RegisterImageOptions(p, opts); info != nil {
 					iw, ih := info.Extent()
 					if iw > 0 && ih > 0 {
-						drawH := imgH
+						drawH := sigDrawH
 						drawW := iw * (drawH / ih)
 						if drawW > imgMaxW {
 							drawW = imgMaxW
 							drawH = ih * (drawW / iw)
 						}
-						f.ImageOptions(p, colX+(colW-drawW)/2, top+imgH-drawH, drawW, drawH, false, opts, 0, "")
+						f.ImageOptions(p, colX+(colW-drawW)/2, lineY-drawH*sigBaseline, drawW, drawH, false, opts, 0, "")
 					}
 				}
 			}
