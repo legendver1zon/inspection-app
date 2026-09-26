@@ -1,4 +1,4 @@
-import { useEffect, type ButtonHTMLAttributes, type CSSProperties, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
+import { useEffect, useRef, type ButtonHTMLAttributes, type CSSProperties, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { C } from '../../lib/palette'
 import { controlCls, controlStyle } from './controls'
@@ -137,9 +137,11 @@ export function Drawer({ open, onClose, title, action, footer, children }: {
   footer?: ReactNode
   children: ReactNode
 }) {
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
   useEffect(() => {
     if (!open) return
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && closeRef.current()
     document.addEventListener('keydown', onKey)
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -147,7 +149,7 @@ export function Drawer({ open, onClose, title, action, footer, children }: {
       document.removeEventListener('keydown', onKey)
       document.body.style.overflow = prev
     }
-  }, [open, onClose])
+  }, [open])
 
   return (
     <AnimatePresence>
@@ -180,7 +182,7 @@ export function Drawer({ open, onClose, title, action, footer, children }: {
               <div className="min-w-0 flex-1 text-[15px] font-semibold" style={{ color: C.ink }}>{title}</div>
               {action}
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">{children}</div>
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-3">{children}</div>
             {footer && (
               <div className="flex flex-col gap-2 border-t px-4 pt-3 pb-[max(12px,env(safe-area-inset-bottom))]" style={{ borderColor: C.line }}>
                 {footer}
